@@ -232,14 +232,24 @@ def check_desktop_contract(errors: list[str]) -> None:
             errors.append("tauri.conf.json: a non-empty CSP is required")
     if capability is not None:
         permissions = capability.get("permissions")
+        # Reviewed allowlist. Every entry is an explicit `allow-<command>` grant so
+        # the desktop surface never widens implicitly: `default` permission sets are
+        # deliberately excluded because they expand with upstream Tauri releases.
+        # Window controls back the custom titlebar (tauri.conf.json sets
+        # `decorations: false`); see App.tsx for the calling sites.
         expected_permissions = [
-            "core:event:default",
-            "dialog:allow-open",
-            "dialog:allow-save",
+            "core:event:default",  # queue progress/lifecycle events
+            "core:window:allow-close",  # titlebar close button
+            "core:window:allow-minimize",  # titlebar minimize button
+            "core:window:allow-toggle-maximize",  # titlebar maximize button
+            "core:window:allow-start-dragging",  # data-tauri-drag-region titlebar
+            "dialog:allow-open",  # native source path selection
+            "dialog:allow-save",  # native destination path selection
         ]
         if permissions != expected_permissions:
             errors.append(
-                "capabilities/main.json: desktop permissions must remain the reviewed event/dialog allowlist"
+                "capabilities/main.json: desktop permissions must remain the reviewed "
+                "event/window/dialog allowlist"
             )
 
 

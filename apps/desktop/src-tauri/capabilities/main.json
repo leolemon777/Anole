@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local bundled main window with queue-event and native path-selection access.",
+  "description": "Local bundled main window with queue-event, custom-titlebar control, and native path-selection access.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
-    "core:window:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
