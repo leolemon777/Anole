@@ -5,3 +5,27 @@ This product is designed to interoperate with separately distributed third-party
 conversion engines. Those engines retain their own copyright and license terms.
 See the engine manifests and release notices for exact provenance.
 
+--------------------------------------------------------------------------------
+Third-party assets bundled in this repository
+--------------------------------------------------------------------------------
+
+Chicago 95 Design System
+  File:      apps/desktop/src/chicago95.css
+  Copyright: (c) 2026 Uiverse (design.uiverse.io)
+  License:   Uiverse Design System License v1 (proprietary, not Apache-2.0)
+
+  The desktop application's visual language is derived from the commercially
+  licensed Chicago 95 pack. That license grants perpetual use, modification,
+  and production deployment within this application, including commercial use.
+  It does not grant the right to resell, republish, or redistribute the pack --
+  or its source assets -- as a standalone template or component library.
+
+  Accordingly, only the integrated stylesheet above is present here. The
+  upstream pack archive (documentation, preview pages, screenshots) is not
+  redistributed with this repository and must not be re-added. Downstream
+  recipients of FormatWright receive no license to extract these styles for
+  reuse as a design system; obtain your own license from Uiverse for that.
+
+  Local modifications: remote webfont imports removed to satisfy the desktop
+  content security policy; titlebar no-drag rules added.
+

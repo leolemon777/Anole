@@ -3,11 +3,12 @@
 ## Current milestone — Chicago 95 desktop chrome (2026-08-18)
 
 ### Spec Interpretation
-- User asked to restyle the entire desktop UI from `plastic-fly-44-2a81bc35` (Chicago 95). Product behavior stays: Plan, queue, Explorer convert, no new formats.
+- User asked to restyle the entire desktop UI with the licensed Chicago 95 pack (Uiverse). Product behavior stays: Plan, queue, Explorer convert, no new formats.
 
 ### Decisions Made
 - Vend `system.css` as `apps/desktop/src/chicago95.css`. Strip Google Font `@import` because Tauri CSP is `style-src 'self'`; UI uses Tahoma / MS Sans Serif / Courier New fallbacks offline.
-- Main window `decorations: false` with a real Win95 title bar (min/max/close via `core:window:default`).
+- Keep only that stylesheet: the pack's license permits using it in this app but not redistributing the pack's source assets, so the upstream archive is not vendored here. `scripts/check_repository.py` fails the build if it reappears. See NOTICE.
+- Main window `decorations: false` with a real Win95 title bar. Grant the four `core:window:allow-*` permissions the titlebar actually calls (close/minimize/toggle-maximize/start-dragging) rather than `core:window:default`, which widens with upstream Tauri releases.
 - Existing convert/jobs/presets/engines/reports/maintenance/settings flows keep their logic; chrome is windows, folder tabs, beveled controls, teal desktop.
 
 ### Changes From Spec

@@ -2,6 +2,17 @@
    Chicago 95 — Design System
    Skeuomorphic desktop-OS vocabulary rebuilt as reusable CSS tokens and
    components. Square corners, beveled chrome, pixel-tight typography.
+
+   Third-party asset. Copyright (c) 2026 Uiverse (design.uiverse.io),
+   licensed to this project under the Uiverse Design System License v1 --
+   NOT under the Apache-2.0 license that covers the rest of FormatWright.
+   That license permits use, modification, and production deployment inside
+   this application; it does not permit redistributing the pack itself as a
+   template or component library. Do not re-vendor the upstream pack archive
+   into this repository. See NOTICE.
+
+   Local modifications: remote webfont imports removed (CSP), titlebar
+   no-drag rules added.
    ========================================================================== */
 
 /* Remote webfonts omitted: Tauri CSP is style-src 'self'. Fallbacks are

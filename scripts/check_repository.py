@@ -270,6 +270,35 @@ def check_engine_templates(errors: list[str]) -> None:
             errors.append(f"{path.relative_to(ROOT)}: protocol_version must be 1")
 
 
+def check_no_vendored_design_pack(errors: list[str]) -> None:
+    """Reject re-vendoring the proprietary Chicago 95 pack.
+
+    Its license permits using the stylesheet inside this application but not
+    redistributing the pack's source assets. Upstream archives unpack under a
+    randomly named directory, so match on content instead of on a fixed path.
+    """
+    marker = "Uiverse Design System License"
+    allowed = {Path("NOTICE"), Path("apps/desktop/src/chicago95.css"), Path("README.md")}
+    skipped_roots = {".git", "target", "node_modules", "dist", ".artifacts"}
+    for path in ROOT.rglob("*"):
+        relative = path.relative_to(ROOT)
+        if not path.is_file() or relative in allowed:
+            continue
+        if skipped_roots.intersection(relative.parts):
+            continue
+        if path.suffix.lower() not in {".md", ".css", ".html", ".json", ".txt"}:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if marker in content:
+            errors.append(
+                f"{relative}: the licensed Chicago 95 pack must not be redistributed; "
+                "keep only apps/desktop/src/chicago95.css and see NOTICE"
+            )
+
+
 def main() -> int:
     errors: list[str] = []
     check_schemas(errors)
@@ -277,6 +306,7 @@ def main() -> int:
     check_required_files(errors)
     check_desktop_contract(errors)
     check_engine_templates(errors)
+    check_no_vendored_design_pack(errors)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

@@ -12,7 +12,7 @@ FormatWright is under active **Windows development Alpha**. The unsigned Windows
 - Living completed / pending checklist, architecture, and ordered gates: [docs/MASTER_EXECUTION_PLAN.md](docs/MASTER_EXECUTION_PLAN.md) (see §1.1 progress snapshot)
 - Requirement → code → evidence map: [docs/specs/TRACEABILITY.md](docs/specs/TRACEABILITY.md)
 
-**Latest engineering milestones (2026-08-15):**
+**Latest engineering milestones (2026-08-18):**
 1. CLI durable-queue execution runs through shared `JobExecutionService` in Core.
 2. Desktop binds execution to the visible Plan hash, persists reports before terminal state, and supports recoverable immediate pause plus per-job Resume/Retry.
 3. Queue execution closes worker/process-tree failures, normalizes Windows output identity, leaves no cancellation-link tasks, and keeps live history/paging/enqueue available through a separate SQLite connection.
@@ -23,6 +23,9 @@ FormatWright is under active **Windows development Alpha**. The unsigned Windows
 8. A real Tauri/WebView2 automated accessibility gate now covers named controls/landmarks, first-Tab skip navigation, selected-state semantics, 200% physical-equivalent layout, bidi paths, reduced motion, forced colors/high contrast and bilingual document semantics.
 9. Every engine pack now ships a deterministic SPDX 2.3 file SBOM plus an explicit `sources.json` provenance sidecar; the manifest pins both hashes and Core re-verifies identity and exact inventory before and after atomic installation.
 10. The Release UI conversion gate now drives real PDF→PNG and PDF→JPEG conversions from per-format isolated processes with Pass validation reports, and the standard NSIS rebuild carries no test-only DevTools arguments.
+11. Engine certification is threaded through activation and pack compatibility is enforced, so an incompatible or uncertified pack cannot back a conversion.
+12. The desktop shell moved to the Chicago 95 visual language with an undecorated window and a custom titlebar; window controls run on four explicit `core:window:allow-*` grants rather than a broad `default` permission set.
+13. Explorer convert verbs are generated from the supported-target matrix instead of a hand-maintained list, keeping the shell menu honest about what the installed packs can actually convert.
 
 The next engineering gate moves into format/engine-supply-chain hardening, clean-VM install and release certification, while live screen-reader/physical-DPI/usability evidence remains in the Desktop gate. Release certification still requires a clean offline Windows VM and the supply-chain work above.
 
@@ -112,3 +115,5 @@ Do not use FormatWright on untrusted files until the relevant engine sandbox and
 ## License
 
 The Rust core, CLI, desktop application, and engine SDK are licensed under Apache-2.0. The planned self-hosted service will be licensed separately under AGPL-3.0. Documentation is intended to use CC BY 4.0. Third-party engines retain their own licenses and are distributed separately.
+
+One bundled asset is **not** covered by Apache-2.0: the desktop stylesheet `apps/desktop/src/chicago95.css` is derived from the commercially licensed Chicago 95 pack by Uiverse and stays under the Uiverse Design System License v1. FormatWright may use and ship it; you may not extract it for reuse as a design system. See [NOTICE](NOTICE) for the exact terms and boundary.
