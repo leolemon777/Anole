@@ -1,0 +1,71 @@
+name: Clean-VM e2e binary
+
+# Manual job for the R-008/R-009 clean-VM certification: builds the release
+# desktop binary with the e2e overlay (DevTools port 9338) that
+# scripts/test_clean_vm_certification.ps1 drives inside the VM. Built on CI
+# because the local box hits Defender/索引器 file-lock races while tauri_build
+# copies the 102 MB engine-pack ffmpeg.exe (os error 32, 3/3 reproducible).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  PNPM_VERSION: 11.16.0
+  NODE_VERSION: 24
+
+jobs:
+  build-e2e-binary:
+    name: Build e2e-overlay desktop binary
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare pinned Windows Starter packs
+        shell: pwsh
+        run: scripts/prepare_windows_starter_pack.ps1
+      - name: Assert the starter pack is populated
+        shell: pwsh
+        run: |
+          $root = 'dist/engine-packs/windows-x86_64/starter'
+          $bundle = Join-Path $root 'bundle.json'
+          if (-not (Test-Path -LiteralPath $bundle)) {
+            throw "starter pack is empty or missing $bundle"
+          }
+          $entries = @(Get-ChildItem -LiteralPath $root -Recurse -File)
+          if ($entries.Count -lt 5) {
+            throw "starter pack looks incomplete: only $($entries.Count) files under $root"
+          }
+          Write-Output "starter pack verified: $($entries.Count) files, bundle.json present"
+      - name: Build e2e-overlay binary (no bundle)
+        run: pnpm --filter @formatwright/desktop tauri build --no-bundle --config src-tauri/tauri.release-e2e.conf.json
+      - name: Assert the DevTools overlay landed
+        shell: pwsh
+        run: |
+          $exe = 'target/release/formatwright-desktop.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw "missing $exe" }
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exe))
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch 'remote-debugging-port') {
+            throw 'e2e binary does not embed the remote-debugging-port overlay'
+          }
+          Write-Output "overlay verified: remote-debugging-port present in $exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: formatwright-desktop-e2e
+          path: target/release/formatwright-desktop.exe
+          retention-days: 14
+          if-no-files-found: error
