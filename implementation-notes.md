@@ -595,3 +595,21 @@ freshly written copy that the build script immediately re-opens. Workaround:
 3. Launch `cleanvm.wsb`, run `run-certification.ps1`, capture artifacts.
 4. Manual checklist incl. in-sandbox adapter disable for the offline phase.
 5. Update `docs/DEFECT_REGISTER.md` + `CLEAN_VM_CERTIFICATION.md` with evidence.
+
+### Reboot pending (Leo's action)
+- Third UAC attempt was approved; DISM enabled `Containers-DisposableClientVM`
+  with exit code **3010 (success, reboot required)**. Sandbox binaries
+  (`WindowsSandbox.exe`) have not landed yet — they appear after the reboot's
+  specialize phase.
+- Post-reboot flow is fully automated: `cleanvm.wsb` now carries a
+  `LogonCommand` that launches `run-certification.ps1` inside the sandbox
+  (network wait → winget pwsh7 + Node → cleanliness asserts → the certification
+  suite). `run-certification.ps1` re-validated (PARSE-OK) after adding the
+  network-wait guard; `.wsb` XML validated.
+- CI artifact landed: `formatwright-desktop-e2e.exe` (21,862,912 B,
+  `remote-debugging-port` overlay verified, sha256
+  `e1db7d08abea295ffa2189a15e61057ce184d5d7aff403181dfc5196fd6c1f59`) — the
+  portable exe correctly does NOT embed engine packs; it shares the engine
+  store that the installed app provisions on first launch.
+- A scheduled probe (20 min) will check `WindowsSandbox.exe` and continue the
+  certification automatically once the reboot has happened.
