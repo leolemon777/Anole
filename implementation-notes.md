@@ -543,3 +543,55 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 ### Follow-up
 - Tailscale data plane on the box still needs Leo's attention when convenient (LAN works; nothing blocked).
 - The 20-minute auto-probe automation is obsolete (verification closed) — deleted.
+
+## 2026-09-06 — Clean-VM certification (R-008/R-009 closeout): preparation wave
+
+Goal: execute `docs/testing/CLEAN_VM_CERTIFICATION.md` (Batch D) against the shipped
+v0.1.0 installer to close R-008/R-009 Fixed → Closed. Host is Windows 11 Pro
+(build 26200, 48 GB RAM) — Windows Sandbox was chosen as the clean-VM substrate
+(fresh image per boot matches the "no snapshots of prior testing" requirement).
+
+### Materials prepared (all under `target/clean-vm/`, gitignored)
+- `Anole_0.1.0_x64-setup.exe` (330,623,750 B) downloaded from the v0.1.0 Release;
+  SHA256 `b76ab8825fb87c7dc73a3bb1182298de2821ed17cc597b5f722b4cdef9c98c9f` matches
+  the Release `SHA256SUMS`.
+- `fixture-15p.pdf` — 15-page A4 fixture **generated on the Linux executor**
+  (soffice HTML→PDF over `macair-away`; LAN channel was down at that moment),
+  SHA256 `d7d01ce93b4013a9162040e8d559c92d33036a9ffb19ede83498bcf6bc009c8e`
+  re-verified locally after scp.
+- Scripts staged in the layout `test_clean_vm_certification.ps1` expects
+  (`scripts/` + `apps/desktop/src-tauri/explorer-verbs.json` for the uninstall
+  assertion), plus `cleanvm.wsb` (online), `cleanvm-offline.wsb` (networking
+  disabled), and `run-certification.ps1` (in-sandbox bootstrap: winget pwsh7 +
+  Node.js, cleanliness re-assert, then the suite).
+
+### Local e2e-binary build blocked; moved to CI
+Three consecutive `tauri build --no-bundle --config tauri.release-e2e.conf.json`
+attempts failed in the tauri build script with `os error 32` while copying the
+102 MB engine-pack `ffmpeg.exe` (the `dist/engine-packs/.../starter/` resource
+mapping). Probes show no persistent holder (source and `out/` copies open
+exclusively fine between runs) — consistent with a Defender/indexer race on the
+freshly written copy that the build script immediately re-opens. Workaround:
+`.github/workflows/build-e2e-binary.yml` (manual `workflow_dispatch`, commit
+`173e277`) builds the overlay binary on `windows-latest` and uploads it as the
+`formatwright-desktop-e2e` artifact, with an in-CI assertion that the
+`remote-debugging-port` overlay is embedded.
+
+### Sandbox enablement status (blocked on Leo)
+- Hypervisor already running (WSL2-era), so **no reboot is expected** after the
+  feature install.
+- First elevated attempt: DISM ran but my flag was wrong (`/enable` instead of
+  `/enable-feature`) — Error 87, feature NOT enabled.
+- Corrected script (`target/enable-sandbox.bat`) attempted next, but the UAC
+  prompt was **canceled** — enablement awaits Leo approving one more UAC
+  (dism `/enable-feature /featurename:Containers-DisposableClientVM /all /norestart`).
+- A combined offer (Defender exclusions for `target\` + `dist\engine-packs\` to
+  also fix the local build race, plus Sandbox enablement, one UAC) was posed;
+  no answer yet at the time of this note.
+
+### Next steps from here
+1. CI artifact → `target/clean-vm/formatwright-desktop-e2e.exe`.
+2. UAC approval → Sandbox feature on (verify `WindowsSandbox.exe` appears).
+3. Launch `cleanvm.wsb`, run `run-certification.ps1`, capture artifacts.
+4. Manual checklist incl. in-sandbox adapter disable for the offline phase.
+5. Update `docs/DEFECT_REGISTER.md` + `CLEAN_VM_CERTIFICATION.md` with evidence.
