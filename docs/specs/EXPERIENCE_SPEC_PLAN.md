@@ -76,7 +76,7 @@
 规模标尺沿用 COMPETITIVE_GAP_ROADMAP：S ≤ 3 天 / M 1–2 周 / L ≥ 3 周（单人）。
 Clean-VM 认证证据（VOC 4.2 / R-008·R-009 Closed）已有专属脚本与文档，本文件只引用不重定义。
 
-**执行状态（2026-09-06 第一、二波）：** E-05、E-06、E-07、E-08、E-09、E-10 已实现并验证（core 275/0、desktop 40/0、contracts 9/0、前端 29/0、clippy -D warnings 0、fmt 干净）；E-02 已交付过渡缓解（设置页 + Doctor 的 Win11 提示文案），完整 sparse-MSIX 菜单仍阻塞于 DECISION-1/6；E-01/E-03/E-04/E-11/E-12 仍等 DECISION-1..4 与外部条件。已知偏差（E-07 密码走 argv 而非 env、E-09 预览无磁盘缓存、E-06 注册走 reg.exe 而非 Win32 API——workspace `forbid(unsafe_code)` 所致）已记录在 implementation-notes 与 SECURITY.md。
+**执行状态（2026-09-07 第三波收口）：** E-05、E-06、E-07、E-08、E-09、E-10、E-11（OCR pack 三件套落地）、E-04（Document pack 实体落地：官方 LO 26.2.6 MSI 在 Linux 无执行解包、19,476 文件 SBOM、真跑 docx→pdf 通过、发布 zip 哈希已固定并激活下载按钮待挂资产）已实现并验证；E-02 已交付过渡缓解，完整 sparse-MSIX 菜单等 DECISION-1 证书到账后开工；E-03 已完成供应链调查，等清单 A 批复后解包验证 import 表并组 pack；E-01 CI 骨架就绪、CA 采购为 Leo 动作；E-12 任务单就绪、等 Leo 排 3–5 名测试者。已知偏差（E-07 密码 argv、E-09 无缓存、E-06 reg.exe 注册）见 implementation-notes 与 SECURITY.md。
 
 ---
 
