@@ -613,3 +613,242 @@ freshly written copy that the build script immediately re-opens. Workaround:
   store that the installed app provisions on first launch.
 - A scheduled probe (20 min) will check `WindowsSandbox.exe` and continue the
   certification automatically once the reboot has happened.
+
+## 2026-09-06 — Experience spec plan execution wave 1 (E-02 hint / E-05 / E-07 / E-08 / E-09 / E-10)
+
+Executed from `docs/specs/EXPERIENCE_SPEC_PLAN.md` (approved for implementation).
+Six items landed; E-01/E-02 (full)/E-03/E-04/E-11/E-12 stay blocked on
+DECISION-1..4 (certificate, HEIC legal, LibreOffice legal, Tesseract) and
+E-06 was deliberately deferred (see risks).
+
+### Decisions & deviations
+1. **E-08 rate channel**: spec wording said "(engine, capability) rolling
+   stats in SQLite" — implemented exactly so (schema v6 table
+   `engine_throughput_samples`, 64-sample window, 16-sample rate window);
+   `QueueProgressUpdate` gained `measured_throughput_bytes_per_sec`, injected
+   on the Running update from history. No ETA is synthesized anywhere.
+2. **E-07 password channel deviates from spec wording**: spec said
+   "per-process env var, argv forbidden". Poppler engines read passwords only
+   from argv, so the render lane injects `-upw` at spawn time with the
+   cleartext held in the pre-existing `pdf_secret_store` (G-22 hand-off,
+   single-use, keyed by `plan_id`). Serialized plans carry `[redacted]` only.
+   Same-process immediate conversion works; a durably queued encrypted-PDF
+   plan fails re-inspect with the clear "password required" error (secret
+   store is single-use by design). qpdf lanes keep their existing hand-off.
+3. **E-05 directory verbs**: registered 2 Directory verbs only
+   (folder → JPG / WebP) pending DECISION-5; generator asserts updated 17→19
+   and the generator's stale "Open in FormatWright" template drift was fixed
+   to "Open in Anole". Folder convert = one approval (KD-2), but the full
+   folder-batch safety chain (mapping preview, per-file plan checks, skipped
+   list, disk budget, no-clobber fresh output root `<name>-anole-<target>`)
+   runs before queueing.
+4. **E-09 preview**: inline images ≤ 8 MiB pass through un-re-encoded
+   (browser scales); PDF first page via pdftoppm 256px; video first frame via
+   ffmpeg. Missing engines degrade to a hidden block (spec acceptance).
+   The 256px engine-rendered thumbnails are not cached on disk in this wave
+   (regenerated per report open; ≤ 20 s timeout, no persistent cache dir) —
+   spec's "cache + maintenance cleanup" clause is partially met (no cache to
+   clean). Recorded as follow-up if profiling shows cost.
+5. **E-10 settings v2**: `ApplicationSettings` gained `theme`
+   (system/light/dark); v1 files migrate in memory on read (persisted v2 on
+   next save), restore bundles with v1 settings hit the same path. Meadowlark
+   colors now fully token-driven incl. warning/deco colors; dark set defined
+   for both explicit and `prefers-color-scheme` resolution; `color-scheme`
+   declared for native controls.
+
+### Verification (this machine, MSVC env via target/*.bat)
+- `cargo test -p formatwright-core --lib`: **273 passed / 0 failed**
+  (4 known symlink/reparse privilege failures excluded as the documented
+  baseline; they fail identically on unmodified main).
+- `cargo test -p formatwright-desktop --lib`: **34 passed / 0 failed**
+  (new: directory shell-convert acceptance, output-root reservation).
+- `cargo test -p formatwright-core --test schema_contracts`: **9 passed**
+  (application-settings v2 contract included).
+- Frontend: `tsc -b` clean, vitest **29 passed** (progress type extended).
+- `cargo clippy --workspace --all-targets -- -D warnings`: **0 errors**;
+  `cargo fmt --all --check`: clean.
+- `scripts/generate_explorer_verbs.ps1 -Check`: regenerated nsh/register
+  script match the 19-verb table.
+
+### Risks / follow-ups
+- **E-07 queue limitation**: encrypted PDFs through the *durable queue*
+  (multi-select Explorer convert, `jobs run`) re-inspect without the password
+  and fail with the clear PolicyBlocked error; immediate conversion (single
+  right-click / convert form / CLI convert) is the supported path this wave.
+- **E-06 not started** (right-click verb configurability + HKCU runtime
+  registration): deliberate — it is a behavior migration whose data source
+  should be shared with E-02's Win11 menu; needs DECISION-6 anyway.
+- **Windows smoke test** (`test_windows_explorer_integration.ps1`) and
+  clean-VM script were extended for Directory verbs but not executed this
+  wave (they require a full NSIS build + GUI session); run them before the
+  next release candidate.
+- Dark theme contrast was designed to WCAG-ish targets but the automated
+  accessibility baseline script run is pending a real WebView session.
+
+## 2026-09-06 — Experience spec plan execution wave 2 (E-06 runtime verb configuration)
+
+E-06 landed after the first wave: Explorer convert-verb registration moved
+from the NSIS script to the application, and verbs became user-configurable.
+
+### What changed
+1. **`PresetLibrary` v2** adds `shell_verbs: Vec<ShellVerbBinding>`
+   (`verb_id`, `enabled`, optional `preset_id`); v1 libraries migrate in
+   memory on read (`migrate_legacy`) and persist v2 on next save. Bindings
+   validate uniqueness, count bounds, and that a bound preset exists in the
+   same library. Public schema `preset-library/v2.schema.json` added; contract
+   test now runs against v2.
+2. **`explorer_integration.rs` (desktop)**: baseline table embedded from
+   `explorer-verbs.json`; `resolve_registrations` folds bindings (missing =
+   enabled default; cross-target preset bindings ignored); disabled verbs are
+   removed. Registration is **zero-unsafe** (workspace `forbid(unsafe_code)`):
+   enabled verbs render into a UTF-16 `.reg` document imported via built-in
+   `reg.exe`, deletions use `reg delete` — typed argv, no PowerShell. Key
+   gotcha found by test: `.reg` files silently ignore the `HKCU` short hive
+   name; documents must spell `HKEY_CURRENT_USER`.
+3. **Bootstrap & first launch**: NSIS POSTINSTALL now only keeps the two
+   Open-in keys plus `ExecWait … --register-shell`; `main.rs` intercepts the
+   flag and exits after applying verbs (no GUI, no single-instance plugin).
+   The app also re-applies verbs on every startup (background thread, failure
+   only logs). PREUNINSTALL deletions stay as the cleanup backstop, so
+   upgraded installs keep cleaning the same fixed verb IDs.
+4. **Preset plumbing**: verb commands carry `--preset <uuid>`;
+   `parse_shell_invocation` returns a triple, the coordinator batches by
+   (target, preset) and never merges different presets, and both ingest lanes
+   (per-file and E-05 folder) fold the bound preset into the `PlanRequest`
+   (target-mismatch presets ignored — defense in depth).
+5. **Settings UI**: new right-click-menu section listing all 19 verbs with
+   enable toggles and preset pickers (filtered to matching targets),
+   "restore default menu" button; changes persist into the preset library,
+   re-apply HKCU immediately, and travel with preset export/import (imported
+   bindings override local ones per verb, then verbs re-apply in background).
+   Menu labels show the bound preset ("Convert to WebP · Small WebP").
+
+### Verification
+- desktop `--lib`: **40 passed / 0 failed** (new: registry write/remove
+  round-trip against real HKCU scratch keys, preset parse, baseline shape).
+- core `--lib`: **275 passed / 0 failed** (known 4 symlink-privilege
+  failures skipped as baseline); schema contracts **9/9** incl. v2.
+- Frontend: tsc clean, vitest **29/29**; `cargo clippy --workspace
+  --all-targets -- -D warnings`: 0; `cargo fmt --all --check` clean;
+  verb generator `-Check` green (nsh now bootstrap-only for convert verbs).
+
+### Risks / follow-ups
+- Smoke test (`test_windows_explorer_integration.ps1`) assertions still hold
+  (install-time `--register-shell` pre-creates the same keys) but were not
+  executed this wave — run before the next release candidate.
+- `register_dev_explorer_convert.ps1` still writes static registrations for
+  dev builds (by design; it does not read bindings).
+- First-run registration is best-effort on a background thread; if `reg.exe`
+  is blocked by policy the installer-time bootstrap remains the fallback.
+
+## 2026-09-07 — DECISION-1 waiting-materials wave (E-01 CI skeleton, E-12 script)
+
+All engineering-reachable spec items are done; this wave only lowers the cost
+of Leo's pending decisions. No product decision was assumed anywhere.
+
+1. **`docs/release/CODE_SIGNING_DECISION_BRIEF.md`** — DECISION-1 decision
+   brief with a 2026-09 market check: EV no longer guarantees instant
+   SmartScreen reputation (Microsoft/DigiCert both confirm), OV and EV both
+   require hardware/cloud key media (a plain PFX in CI secrets is no longer
+   purchasable from compliant CAs), and 1-year max terms start Feb 2026.
+   Recommendation on record: OV + CA cloud-signing KSP (~$130–300/yr); EV's
+   only hard benefit (driver signing) does not apply to Anole.
+2. **`release-candidate.yml` E-01 skeleton** — new Authenticode step that
+   self-activates when the `WINDOWS_CODESIGN_PFX` secret exists (signtool
+   SHA256 + RFC3161 timestamp + `verify /pa /all`), checksums moved after
+   signing, and the old "must be NotSigned" assert flipped into a two-way
+   "signature state must match the configured secret" assert. Without the
+   secret the workflow behaves exactly as before (explicit skip message).
+   Cloud-KSP middleware installation point is marked in a comment for the
+   DECISION-1 outcome. YAML validated; live workflow run pending a real
+   secret (next release rehearsal).
+3. **`docs/testing/USER_STUDY_R1.md`** — E-12 first-run study script: five
+   read-aloud tasks (install, drag PDF, right-click convert, folder batch,
+   "prove it converted correctly"), per-participant record sheet, observer
+   rules (90-second rule), and a P0/P1/P2 findings triage. Execution needs
+   3–5 non-developer participants plus a signed installer (task 1 is polluted
+   by SmartScreen on an unsigned build).
+
+## 2026-09-07 — Accessibility-baseline audit attempt (R-011 opened)
+
+Tried to close the E-10 follow-up ("rerun the real WebView accessibility
+baseline"). The script itself is broken against the current UI and has been
+since the Meadowlark/chicago95 rework — before this week's changes:
+
+- `scripts/cdp_accessibility_audit.mjs` waits for `.shell`, `header nav`,
+  `#input-path`, `.skip-link`; none exist in the shipped DOM (root is
+  `article.c95-window.fw-main-window`; navigation is `.c95-tabs`; no skip
+  link). The audit times out at `waitFor FormatWirth document` before any
+  assertion runs, on a pristine state directory and after state warm-up
+  alike (cold-start tolerance widened 15s→45s as an independent fix; the
+  timeout persists).
+- Verified the app itself is healthy: debug build with the accessibility
+  overlay boots under isolated APPDATA/LOCALAPPDATA, CDP target appears
+  within ~5 s warm, `--shell-open` with the RTL/Unicode fixture survives,
+  and the state-isolation harness restores state cleanly.
+- Recorded as **R-011 (P2, Open)** in `docs/DEFECT_REGISTER.md` with
+  reproduction evidence and a closure criterion (audit rewritten against the
+  chicago95 DOM, zh/en rerun green, MASTER §1.1 baseline row re-dated).
+  MASTER's "automated accessibility baseline green" claim predates the UI
+  rework and should not be cited for the current DOM until R-011 closes.
+- E-10's verification therefore stands on: schema-v2 settings contract,
+  token-driven dark palette (explicit + prefers-color-scheme), forced-colors
+  override precedence retained, and vitest/tsc/clippy/fmt green. The real
+  WebView baseline rerun moves to R-011 rather than being silently claimed.
+
+Build evidence: `tauri build --debug --no-bundle` with the accessibility
+overlay completed; `target\debug\formatwright-desktop.exe` boots with
+`--remote-debugging-port=9337` reachable.
+
+## 2026-09-07 — R-011 fixed: accessibility baseline restored on the chicago95 DOM
+
+The stale audit turned out to hide a real regression and three selector drifts:
+
+- **Product-side gaps (fixed)**: the Meadowlark/chicago95 rework had dropped
+  the navigation landmark, `aria-current="page"` on the active tab, and the
+  `main` landmark. Added `nav.fw-tabs-nav` (localized `aria-label`), tab
+  `aria-current`, and a `main.fw-tabs-main` wrapper — pure semantic wrappers,
+  zero layout change (`display: block`, one CSS rule).
+- **Audit-side drift (fixed)**: readiness gate `.shell` → `.fw-main-window`;
+  navigation assertions → `nav.fw-tabs-nav` / `[role="tab"]`; settings
+  navigation click via escaped selector quote; DPR assertion tolerance for
+  WebView2's 2.0000000596046448; 45 s cold-start allowance from the earlier
+  attempt (kept).
+- **Result (2026-09-07, real WebView2)**: 210 nodes, 0 unnamed focusable
+  controls, zh-CN→en switch with localized navigation label, skip-link →
+  `#main-content` keyboard flow, 200 % viewport overflow-free (dark-token
+  refactor included), reduced-motion + forced-colors honored. Evidence under
+  `.artifacts/desktop-accessibility/suite-1a9ec04c…`. R-011 → Fixed; MASTER
+  §1.1 baseline row re-dated. Frontend tsc + vitest 29/29 still green; no
+  Rust changes this round (earlier workspace clippy/fmt results stand).
+
+## 2026-09-07 — Remaining decision briefs (DECISION-2/3/4/5)
+
+`docs/release/ENGINE_PACK_DECISION_BRIEFS.md` completes the decision-material
+set alongside `CODE_SIGNING_DECISION_BRIEF.md`, with a one-line reply format
+so all pending gates can be unblocked in a single answer. Facts verified
+2026-09-07: tessdata (incl. chi_sim, fast variants) is Apache-2.0 across the
+official repo and distro packaging; LibreOffice is MPL-2.0 with the TDF
+trademark policy's "substantially unmodified" allowance covering
+packaging-level redistribution. HEVC patent-pool exposure for the HEIC decode
+route is presented as an explicit risk-acceptance choice (option a), not a
+no-risk conclusion. No product decision was assumed.
+
+## 2026-09-07 — UX_FLOWS.md sync (final doc-debt item)
+
+Closed the last item from the spec's test/documentation sync checklist:
+`docs/specs/UX_FLOWS.md` v0.2 now records the runtime verb registration and
+folder verbs (E-05/E-06), the implemented encrypted-PDF secret flow with its
+disclosed argv deviation (E-07), and two new flow sections (output preview
+E-09, Explorer verb configuration E-06). All other checklist entries
+(WINDOWS_PACKAGING/RELEASE_CHECKLIST need DECISION-1; FORMAT_SUPPORT_MATRIX
+caveats need E-03/E-04; smoke-test execution needs a release rehearsal) remain
+correctly gated on the pending decisions.
+
+## 2026-09-07 — Leo approved all decisions ("ok")
+
+Recorded in the spec's decision table: DECISION-1 by recommendation (OV +
+cloud-signing KSP; CA purchase remains Leo's manual step), DECISION-2/3/4 all
+option a, DECISION-5 keep 2 folder verbs, and the 45-file change set is
+approved for Conventional Commit submission. E-11 (OCR pack) starts first as
+the lowest-risk unlocked item.

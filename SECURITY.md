@@ -21,3 +21,18 @@ Do not attach sensitive user files. Prefer a synthetic reproducer.
 
 The main application treats conversion engines and input files as potentially unsafe. The current development builds do not yet claim a complete OS sandbox. Release claims must match the controls proven by docs/security/THREAT_MODEL.md and the release checklist.
 
+### Document passwords (encrypted PDF conversion)
+
+Cleartext passwords are execution-only: they live in process memory and in a
+single-use, plan-keyed secret store; serialized Plans, reports, logs, and the
+SQLite job store carry only a `[redacted]` marker. Two residual exposures are
+accepted and disclosed rather than claimed away: (1) Poppler engines accept
+passwords only as command-line arguments, so the cleartext is visible in the
+engine process's argv for the duration of the conversion (on Windows this is
+readable by other same-user processes, the same exposure an environment
+variable would have); (2) passwords are not wiped with `zeroize` and may
+remain in freed memory until reused. Crash dumps are not produced by default;
+if you enable them, assume captured memory can contain the password. A
+durably queued encrypted-PDF plan never carries its password across process
+restarts — it fails closed with a "password unavailable" error instead.
+

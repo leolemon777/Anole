@@ -56,7 +56,7 @@
 - [x] 10,000 mixed release gate：9,600 JSON→YAML + 200 PNG→WebP + 200 MKV→MP4；首窗口 86/85/85，批次首启差 1.791s，P50/P95 137.533/193.880s，49.762 jobs/s，控制面 RSS 70,877,184、WAL 峰值 48,092,792 bytes；20 个合法格式内容变化逐项确认为 `INPUT_CHANGED`，修复后全部完成，10,000 输出/报告、400 独立 probe、0 partial。
 - [x] Windows NSIS 安装钩子注册文件/目录经典 Explorer 菜单与 17 个 Convert verb，卸载精确删除生成表自有键；`--shell-open` 只预填转换页，`--shell-convert --to` 视为 CLI 批准。官方单实例插件先于其他插件注册，已打开应用接收新路径并聚焦，不会启动第二套恢复流程。
 - [x] 真实 current-user 安装烟测发现并修复 NSIS `$\"` 字面量引用缺陷；实际 Windows Shell verb 的 Unicode/空格文件冷启动和目录热转发、单 PID、零持久任务、缺失路径拒绝、卸载自有键/安装根清理及无关 sibling 保留全部通过，应用状态逐文件哈希恢复。
-- [x] Desktop 自动可访问性基线：真实 Tauri/WebView2 Accessibility Tree 为 198 节点、0 个无名称可聚焦控件；首 Tab 跳到主内容、导航/模式状态语义、200% 物理等效视口无页面横向溢出、RTL 路径隔离、reduced-motion/高对比/forced-colors、中英文 `lang` 与可访问名称切换全部通过。
+- [x] Desktop 自动可访问性基线：真实 Tauri/WebView2 Accessibility Tree 为 198 节点、0 个无名称可聚焦控件；首 Tab 跳到主内容、导航/模式状态语义、200% 物理等效视口无页面横向溢出、RTL 路径隔离、reduced-motion/高对比/forced-colors、中英文 `lang` 与可访问名称切换全部通过。（2026-09-07 R-011 复测：Meadowlark/chicago95 重构后基线曾失效，已修复 audit 选择器并补回 nav/main 地标与 tab `aria-current`；当前 UI（含暗色主题、右键菜单区、PDF 密码框）复跑绿：210 节点、0 无名可聚焦控件，全套断言含中英切换/键盘流/200%/forced-colors 通过，证据 `.artifacts/desktop-accessibility/`。）
 
 **计划完成（按 Gate 顺序，尚未勾选为完成）：**
 

@@ -1,8 +1,8 @@
 # Desktop UX Flows and State Matrix
 
 - Status: Phase 4 implementation in progress
-- Version: 0.1
-- Updated: 2026-08-12
+- Version: 0.2
+- Updated: 2026-09-07
 
 ## 1. Information architecture
 
@@ -18,6 +18,8 @@ Primary destinations:
 The default launch destination is Convert unless interrupted jobs require attention.
 
 The current Windows development slice implements Convert, Jobs, Presets, Engines, Reports, and Settings. Native input/output pickers, versioned named preset editing/import/export, and classic Explorer Open-in plus Convert-to-X verbs are implemented. Open-in only pre-fills an existing local absolute path. A named Convert verb is treated as CLI `convert` approval (Plan is still generated and validated). A running single instance receives and focuses later requests. Windows 11 modern top-level, macOS/Linux shell integration, and release usability studies remain pending.
+
+Since 2026-09-06 (spec E-05/E-06): the application owns HKCU convert-verb registration at runtime (installer bootstraps via `--register-shell`), Settings exposes a right-click-menu editor (enable/disable per verb, bind a target-matching preset, restore defaults; changes re-apply immediately and travel with preset export/import), and two folder verbs (`Convert folder to JPG/WebP`) route a right-clicked directory through the full folder-batch safety chain (fresh `<name>-anole-<target>` output root, per-file plan checks with an explicit skipped list, disk budget, no-clobber) before queueing.
 
 ## 2. First-run flow
 
@@ -90,6 +92,13 @@ On launch with interrupted jobs:
 - Remembering a secret is out of scope for v0.1.
 - The prompt clearly identifies the file and engine requesting access.
 
+Implemented 2026-09-06 (spec E-07): an encrypted-PDF input raises a dedicated
+`POLICY_BLOCKED` error and the Convert page shows the password field; the
+cleartext lives in the single-use plan-keyed secret store, serialized Plans
+carry `[redacted]`, and the engine receives it only for the child's lifetime
+(Poppler argv — the accepted deviation is disclosed in `SECURITY.md`). A
+durably queued encrypted-PDF plan fails closed on replay instead of stalling.
+
 ## 9. Insufficient disk flow
 
 - Show destination free space, estimated output, estimated temporary space, and confidence.
@@ -105,6 +114,18 @@ On launch with interrupted jobs:
 - Reduced motion.
 - UI zoom and high contrast.
 - Chinese and English layouts tested; content fixtures include RTL.
+
+## 11a. Output preview (spec E-09)
+
+- Loading a report renders an in-app preview: images ≤ 8 MiB inline, PDF first page at 256 px (`pdftoppm`), video first frame (`ffmpeg`).
+- Missing engines or unsupported outputs hide the block silently; preview never nags the user to install anything.
+- Previews are decorative; correctness evidence remains the validation report.
+
+## 11b. Explorer verb configuration (spec E-06)
+
+- Settings lists every baseline verb with an enable toggle and a preset picker filtered to the verb's target format; the menu label shows the bound preset.
+- Edits persist into the preset library, re-apply HKCU immediately, and import/export with presets (imported bindings override per verb).
+- "Restore default menu" returns to the enabled-with-default-parameters baseline.
 
 ## 11. Usability acceptance
 
