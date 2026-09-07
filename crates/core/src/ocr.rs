@@ -29,6 +29,24 @@ fn ensure_tesseract(tesseract: &EngineIdentity) -> Result<()> {
     Ok(())
 }
 
+fn normalize_ocr_language(raw: Option<&str>) -> Result<String> {
+    let language = raw.unwrap_or("eng").trim().to_ascii_lowercase();
+    if language.is_empty()
+        || language.len() > 16
+        || !language
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+    {
+        return Err(FormatWrightError::new(
+            ErrorCode::InputInvalid,
+            Stage::Plan,
+            format!("Unsupported OCR language code: {language:?}"),
+            "Use a Tesseract language code such as eng or chi_sim.",
+        ));
+    }
+    Ok(language)
+}
+
 fn ensure_image_probe(probe: &Probe) -> Result<()> {
     if !matches!(
         probe.format.id.as_str(),
@@ -55,15 +73,17 @@ pub fn plan_image_ocr(
     probe: &Probe,
     output_path: PathBuf,
     tesseract: &EngineIdentity,
+    language: Option<&str>,
 ) -> Result<Plan> {
     ensure_image_probe(probe)?;
     ensure_tesseract(tesseract)?;
+    let language = normalize_ocr_language(language)?;
     let arguments = BTreeMap::from([
         // `ocr_mode` (not `operation`) keeps this plan off the ADR-0013
         // qpdf dispatch, which routes on the `operation` argument.
         ("ocr_mode".to_owned(), "image".to_owned()),
         ("source_format".to_owned(), probe.format.id.clone()),
-        ("language".to_owned(), "eng".to_owned()),
+        ("language".to_owned(), language),
         ("psm".to_owned(), OCR_PSM.to_string()),
     ]);
     ocr_plan(
@@ -87,6 +107,7 @@ pub fn plan_pdf_ocr(
     probe: &Probe,
     output_path: PathBuf,
     tesseract: &EngineIdentity,
+    language: Option<&str>,
 ) -> Result<Plan> {
     if probe.format.id != "pdf" {
         return Err(FormatWrightError::new(
@@ -97,12 +118,13 @@ pub fn plan_pdf_ocr(
         ));
     }
     ensure_tesseract(tesseract)?;
+    let language = normalize_ocr_language(language)?;
     let page_count = u32::try_from(probe.streams.len()).unwrap_or(u32::MAX);
     let arguments = BTreeMap::from([
         ("operation".to_owned(), "pdf-ocr".to_owned()),
         ("ocr_mode".to_owned(), "pdf".to_owned()),
         ("dpi".to_owned(), OCR_PDF_DPI.to_string()),
-        ("language".to_owned(), "eng".to_owned()),
+        ("language".to_owned(), language),
         ("psm".to_owned(), OCR_PSM.to_string()),
         ("expected_pages".to_owned(), page_count.to_string()),
     ]);
@@ -247,7 +269,7 @@ pub(crate) fn validate_ocr_output(
 
 #[cfg(test)]
 mod tests {
-    use super::{ocr_text_nonempty, plan_image_ocr};
+    use super::{normalize_ocr_language, ocr_text_nonempty, plan_image_ocr};
 
     fn tesseract_engine() -> formatwright_engine_sdk::EngineIdentity {
         use formatwright_engine_sdk::{Certification, EngineIdentity};
@@ -260,6 +282,18 @@ mod tests {
             build_configuration: None,
             certification: Certification::Experimental,
         }
+    }
+
+    #[test]
+    fn ocr_language_codes_validate_and_default_to_eng() {
+        assert_eq!(normalize_ocr_language(None).expect("default"), "eng");
+        assert_eq!(
+            normalize_ocr_language(Some(" CHI_sim ")).expect("normalized"),
+            "chi_sim"
+        );
+        assert!(normalize_ocr_language(Some("")).is_err());
+        assert!(normalize_ocr_language(Some("eng;rm")).is_err());
+        assert!(normalize_ocr_language(Some("too-long-code")).is_err());
     }
 
     #[test]
@@ -308,8 +342,8 @@ mod tests {
     fn image_ocr_plan_requires_a_raster_input() {
         let engine = tesseract_engine();
         let probe = image_probe("input.png");
-        let plan =
-            plan_image_ocr(&probe, std::path::PathBuf::from("out.txt"), &engine).expect("plan");
+        let plan = plan_image_ocr(&probe, std::path::PathBuf::from("out.txt"), &engine, None)
+            .expect("plan");
         assert_eq!(plan.target_format, "txt");
         assert_eq!(plan.steps[0].engine.engine_id, "tesseract");
         assert_eq!(plan.steps[0].arguments["ocr_mode"], "image");

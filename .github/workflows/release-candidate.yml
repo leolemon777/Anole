@@ -41,10 +41,14 @@ jobs:
             throw "starter pack is empty or missing $bundle - an empty-directory workaround must never ship"
           }
           $entries = @(Get-ChildItem -LiteralPath $root -Recurse -File)
-          if ($entries.Count -lt 5) {
-            throw "starter pack looks incomplete: only $($entries.Count) files under $root"
+          if ($entries.Count -lt 400) {
+            throw "starter pack looks incomplete: only $($entries.Count) files under $root (pdf+media+ocr expected)"
           }
-          Write-Output "starter pack verified: $($entries.Count) files, bundle.json present"
+          $manifests = @(Get-ChildItem -LiteralPath $root -Filter manifest.json -Recurse)
+          if ($manifests.Count -ne 3) {
+            throw "starter pack must contain exactly three engine manifests (pdf/media/ocr), found $($manifests.Count)"
+          }
+          Write-Output "starter pack verified: $($entries.Count) files, 3 manifests, bundle.json present"
       - name: Stage dev updater key for the unsigned rehearsal
         env:
           DEV_KEY: ${{ secrets.TAURI_DEV_UPDATER_KEY }}

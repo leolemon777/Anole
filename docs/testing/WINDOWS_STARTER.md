@@ -61,3 +61,28 @@ This is Windows development/release-candidate evidence, not a certified public r
 - Complete transitive component attribution and license/source-offer review, including regional codec/patent review. The file-level SPDX inventory is implemented but is intentionally not labeled full legal certification.
 - Trusted pack signatures, keyring verification, revocation, downgrade, upgrade, rollback, and half-install failure tests.
 - Authenticode-signed application/installer verification and retained release evidence.
+
+## OCR pack (E-11, DECISION-4 approved 2026-09-07)
+
+The starter now carries a third engine pack, `starter/ocr/`:
+
+- Engine: Tesseract `5.4.0.20240606` (UB-Mannheim Windows build, Apache-2.0).
+  The NSIS installer is **unpacked with 7-Zip, never executed** (installer
+  sha256 `c885ff…60c9` pinned in `prepare_windows_starter_pack.ps1`).
+- Traineddata: pinned upstream `eng` (`daa0c9…c047`) and `chi_sim`
+  (`fc05d8…b363`) from `tesseract-ocr/tessdata` (Apache-2.0); tessdata lives
+  in `bin/tessdata/` so the engine resolves it next to the executable.
+- `engines verify starter/ocr/manifest.json`: executables verified, SBOM 97
+  files valid. First-launch install + activation verified on 2026-09-07: the
+  debug desktop run versioned the pack into the engine store and all three
+  registry entries (`formatwright-ocr`, `-media`, `-pdf`) are active.
+- Real conversions (engine via `FORMATWRIGHT_ENGINE_TESSERACT`):
+  `convert <png> --to txt` (eng) and `--ocr-language chi_sim` both end
+  `validation: Pass` with correct recognized text; fixtures were rendered
+  bitmaps with English and Simplified Chinese strings.
+- OCR language selection: new `--ocr-language` CLI flag / `ocr_language`
+  PlanRequest field (validated `[a-z_]{1,16}`, default `eng`) threaded
+  through `plan_image_ocr`/`plan_pdf_ocr`.
+- GUI-driven conversion against the activated pack rides the same
+  first-launch install path proven for pdf/media and is covered by the next
+  release smoke run (starter assertions now expect exactly three manifests).

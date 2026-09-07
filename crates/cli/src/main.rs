@@ -219,6 +219,13 @@ enum Command {
         #[arg(long, value_name = "PW", help = "Password for pdf-encrypt/pdf-decrypt")]
         password: Option<String>,
 
+        #[arg(
+            long = "ocr-language",
+            value_name = "eng|chi_sim|…",
+            help = "Tesseract language code for OCR conversions (default: eng)"
+        )]
+        ocr_language: Option<String>,
+
         #[arg(long, value_name = "TEXT", help = "Watermark text for pdf-watermark")]
         watermark_text: Option<String>,
 
@@ -693,6 +700,7 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                 allow_lossy_data,
                 rotate_angle: None,
                 password: None,
+                ocr_language: None,
                 watermark_text: None,
                 watermark_angle: None,
                 target_size_bytes: None,
@@ -742,6 +750,7 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
             pages,
             angle,
             password,
+            ocr_language,
             watermark_text,
             watermark_angle,
             target_size_kb,
@@ -775,6 +784,7 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                 allow_lossy_data,
                 rotate_angle: angle,
                 password,
+                ocr_language,
                 watermark_text,
                 watermark_angle,
                 target_size_bytes: target_size_kb.map(|kb| kb.saturating_mul(1024)),

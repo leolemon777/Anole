@@ -116,7 +116,92 @@ foreach ($dependency in $dependencies) {
     $resolved[$dependency.Name] = Expand-VerifiedArchive $dependency $archive
 }
 
+# --- OCR pack sources (spec E-11, DECISION-4) -------------------------------
+# The engine ships as an NSIS installer; it is unpacked with 7-Zip instead of
+# being executed. Traineddata files are fetched separately so eng/chi_sim are
+# the pinned upstream artifacts rather than whatever the installer bundles.
+$TesseractVersion = "5.4.0.20240606"
+$tesseractInstaller = [ordered]@{
+    Name = "tesseract-$TesseractVersion"
+    Archive = "tesseract-ocr-w64-setup-$TesseractVersion.exe"
+    Url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$TesseractVersion/tesseract-ocr-w64-setup-$TesseractVersion.exe"
+    Sha256 = "c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9"
+}
+$tessdataFiles = @(
+    [ordered]@{
+        File = "eng.traineddata"
+        Url = "https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata"
+        Sha256 = "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
+    },
+    [ordered]@{
+        File = "chi_sim.traineddata"
+        Url = "https://github.com/tesseract-ocr/tessdata/raw/main/chi_sim.traineddata"
+        Sha256 = "fc05d89ab31d8b4e226910f16a8bcbf78e43bae3e2580bb5feefd052efdab363"
+    },
+    [ordered]@{
+        File = "tessdata-LICENSE"
+        Url = "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/LICENSE"
+        Sha256 = $null
+    }
+)
+foreach ($data in $tessdataFiles) {
+    $target = Join-Path $downloadPath $data.File
+    if (-not ((Test-Path -LiteralPath $target -PathType Leaf) -and
+        ($null -eq $data.Sha256 -or (Get-Sha256 $target) -eq $data.Sha256))) {
+        Invoke-WebRequest -Uri $data.Url -OutFile $target
+    }
+    if ($null -ne $data.Sha256 -and (Get-Sha256 $target) -ne $data.Sha256) {
+        throw "tessdata hash mismatch for $($data.File)"
+    }
+}
+$tesseractRoot = Join-Path $sourcePath "tesseract-$TesseractVersion"
+$tesseractReady = (Test-Path -LiteralPath (Join-Path $tesseractRoot "tesseract.exe") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $tesseractRoot "tessdata/chi_sim.traineddata") -PathType Leaf)
+if (-not $tesseractReady) {
+    $installerPath = Get-VerifiedArchive $tesseractInstaller
+    # GitHub-hosted downloads arrive with Mark-of-the-Web on developer PCs;
+    # 7-Zip extraction never executes the installer either way.
+    Unblock-File -LiteralPath $installerPath -ErrorAction SilentlyContinue
+    $unpack = Join-Path $sourcePath ".tesseract-unpack.$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $unpack -Force | Out-Null
+    $sevenZip = @("7z.exe", "7za.exe") |
+        ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+    if ($null -eq $sevenZip) {
+        throw "7-Zip is required to unpack the Tesseract installer (no installer execution). Install 7-Zip or place an unpacked tree at $tesseractRoot"
+    }
+    & $sevenZip.Source x -y "-o$unpack" $installerPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "7-Zip could not unpack the Tesseract installer"
+    }
+    if (Test-Path -LiteralPath $tesseractRoot) {
+        Remove-Item -LiteralPath $tesseractRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $tesseractRoot -Force | Out-Null
+    # The installer payload unpacks flat: executables, DLLs, and tessdata all
+    # land next to each other, which is the layout the engine pack expects.
+    foreach ($item in Get-ChildItem -LiteralPath $unpack) {
+        if ($item.PSIsContainer -and $item.Name -eq '$PLUGINSDIR') { continue }
+        Move-Item -LiteralPath $item.FullName -Destination $tesseractRoot
+    }
+    Remove-Item -LiteralPath $unpack -Recurse -Force
+}
+# Pin the traineddata files into the unpacked tree (installer-bundled eng is
+# replaced by the pinned upstream artifact; chi_sim is added).
+foreach ($data in $tessdataFiles) {
+    if ($data.File -like "*.traineddata") {
+        Copy-Item -LiteralPath (Join-Path $downloadPath $data.File) `
+            -Destination (Join-Path $tesseractRoot "tessdata/$($data.File)") -Force
+    }
+}
+if (-not (Test-Path -LiteralPath (Join-Path $repoRoot ".devtools/downloads/tessdata-LICENSE") -PathType Leaf)) {
+    New-Item -ItemType Directory -Path (Join-Path $repoRoot ".devtools/downloads") -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $downloadPath "tessdata-LICENSE") `
+        -Destination (Join-Path $repoRoot ".devtools/downloads/tessdata-LICENSE") -Force
+}
+
 & (Join-Path $PSScriptRoot "build_windows_starter_pack.ps1") `
     -PopplerRoot $resolved["poppler-26.02.0-0"] `
     -FfmpegRoot $resolved["ffmpeg-9.0.1-essentials"] `
+    -TesseractRoot $tesseractRoot `
     -OutputRoot $OutputRoot

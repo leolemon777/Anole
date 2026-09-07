@@ -128,7 +128,12 @@ pub async fn prepare_conversion(
         let probe = inspect_media(input, &ffprobe).await?;
         let tesseract = inspect_engine("tesseract").await?;
         let output = required_output(request, "Image OCR")?;
-        let plan = crate::ocr::plan_image_ocr(&probe, output, &tesseract)?;
+        let plan = crate::ocr::plan_image_ocr(
+            &probe,
+            output,
+            &tesseract,
+            request.ocr_language.as_deref(),
+        )?;
         return Ok((probe, plan, tesseract));
     }
     if matches!(target.as_str(), "docx" | "epub") {
@@ -440,7 +445,12 @@ async fn prepare_pdf_operation(
             inspect_engine("pdftoppm").await?;
             let tesseract = inspect_engine("tesseract").await?;
             let output = required_output(request, "PDF OCR")?;
-            let plan = crate::ocr::plan_pdf_ocr(&probe, output, &tesseract)?;
+            let plan = crate::ocr::plan_pdf_ocr(
+                &probe,
+                output,
+                &tesseract,
+                request.ocr_language.as_deref(),
+            )?;
             Ok((probe, plan, pdfinfo))
         }
         "pdf-metadata" => {

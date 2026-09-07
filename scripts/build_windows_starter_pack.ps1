@@ -5,6 +5,8 @@ param(
     [string]$FfmpegRoot,
     [string]$PopplerVersion = "26.02.0-0",
     [string]$FfmpegVersion = "9.0",
+    [string]$TesseractRoot = "",
+    [string]$TesseractVersion = "5.4.0.20240606",
     [long]$SourceDateEpoch = 0,
     [string]$OutputRoot = "dist/engine-packs/windows-x86_64/starter"
 )
@@ -29,6 +31,19 @@ $ffmpegPath = [System.IO.Path]::GetFullPath($FfmpegRoot)
 $popplerBin = Join-Path $popplerPath "Library/bin"
 $popplerData = Join-Path $popplerPath "share/poppler"
 $ffmpegBin = Join-Path $ffmpegPath "bin"
+$tesseractPath = if ($TesseractRoot) { [System.IO.Path]::GetFullPath($TesseractRoot) } else { "" }
+if ($tesseractPath) {
+    foreach ($required in @(
+        (Join-Path $tesseractPath "tesseract.exe"),
+        (Join-Path $tesseractPath "LICENSE"),
+        (Join-Path $tesseractPath "tessdata/eng.traineddata"),
+        (Join-Path $tesseractPath "tessdata/chi_sim.traineddata")
+    )) {
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+            throw "Required OCR pack source file is missing: $required"
+        }
+    }
+}
 foreach ($required in @(
     (Join-Path $popplerBin "pdfinfo.exe"),
     (Join-Path $popplerBin "pdftoppm.exe"),
@@ -270,11 +285,117 @@ Certification status: development/unverified; GPL source-offer and patent/region
     }
     Add-SupplyChainFiles $mediaRoot $mediaManifest $mediaSources
 
+    $packList = @("pdf/manifest.json", "media/manifest.json")
+    if ($tesseractPath) {
+        $ocrRoot = Join-Path $staging "ocr"
+        New-Item -ItemType Directory -Path $ocrRoot | Out-Null
+        $tessdataRoot = Join-Path $tesseractPath "tessdata"
+        # The engine runs from bin/, and tesseract resolves tessdata next to
+        # the executable, so data lives in bin/tessdata.
+        $tesseractFile = Copy-PackFile (Join-Path $tesseractPath "tesseract.exe") $ocrRoot "bin/tesseract.exe"
+        $ocrExecutables = @(
+            [ordered]@{ name = "tesseract"; relative_path = $tesseractFile.relative_path; sha256 = $tesseractFile.sha256 }
+        )
+        $ocrRuntime = @()
+        foreach ($file in Get-ChildItem -LiteralPath $tesseractPath -Filter "*.dll" -File | Sort-Object Name) {
+            $ocrRuntime += Copy-PackFile $file.FullName $ocrRoot ("bin/{0}" -f $file.Name)
+        }
+        foreach ($file in Get-ChildItem -LiteralPath $tessdataRoot -Recurse -File | Sort-Object FullName) {
+            $relative = [System.IO.Path]::GetRelativePath($tessdataRoot, $file.FullName).Replace("\", "/")
+            $ocrRuntime += Copy-PackFile $file.FullName $ocrRoot ("bin/tessdata/{0}" -f $relative)
+        }
+        $engineNotice = Copy-PackFile (Join-Path $tesseractPath "LICENSE") $ocrRoot "licenses/APACHE-2.0.txt"
+        $tessdataLicensePath = Join-Path $repoRoot ".devtools/downloads/tessdata-LICENSE"
+        if (Test-Path -LiteralPath $tessdataLicensePath) {
+            $tessdataNotice = Copy-PackFile $tessdataLicensePath $ocrRoot "licenses/TESSDATA-APACHE-2.0.txt"
+        } else {
+            $tessdataNotice = $engineNotice
+        }
+        $ocrProvenancePath = Join-Path $ocrRoot "PROVENANCE.txt"
+        Write-Utf8File $ocrProvenancePath @"
+FormatWright Windows OCR development pack
+Tesseract upstream version: $TesseractVersion (UB-Mannheim Windows build)
+Binary installer SHA-256: c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9
+Unpacked with 7-Zip from the NSIS installer (no installer execution).
+eng.traineddata SHA-256: daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047
+chi_sim.traineddata SHA-256: fc05d89ab31d8b4e226910f16a8bcbf78e43bae3e2580bb5feefd052efdab363
+Source project: https://github.com/tesseract-ocr/tesseract (Apache-2.0)
+Certification status: development/unverified; transitive dependency license inventory remains a release gate.
+"@
+        $ocrRuntime += [ordered]@{
+            relative_path = "PROVENANCE.txt"
+            sha256 = Get-Sha256 $ocrProvenancePath
+        }
+        $ocrManifest = [ordered]@{
+            schema_version = 1
+            engine_id = "formatwright-ocr"
+            version = $TesseractVersion
+            platform = "windows"
+            architecture = "x86_64"
+            protocol_version = 1
+            formatwright_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
+            executables = $ocrExecutables
+            runtime_files = $ocrRuntime
+            source = [ordered]@{
+                project_url = "https://github.com/tesseract-ocr/tesseract"
+                source_url = "https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.4.0.tar.gz"
+                source_revision = "5.4.0"
+                build_configuration = "UB-Mannheim tesseract-ocr-w64-setup $TesseractVersion installer (sha256=c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9), unpacked with 7-Zip; leptonica-1.84.1 runtime DLLs included"
+            }
+            licenses = @(
+                [ordered]@{ spdx = "Apache-2.0"; notice_path = $engineNotice.relative_path; source_offer_path = $null }
+            )
+            capabilities = @(
+                [ordered]@{ capability_id = "tesseract.image-ocr"; inputs = @("png", "jpg", "jpeg", "tiff", "bmp"); outputs = @("txt"); operation = "transform"; loss_class = "lossy"; constraints = [ordered]@{ network_policy = "deny"; languages = @("eng", "chi_sim") } },
+                [ordered]@{ capability_id = "tesseract.pdf-ocr"; inputs = @("pdf"); outputs = @("txt"); operation = "transform"; loss_class = "lossy"; constraints = [ordered]@{ network_policy = "deny"; languages = @("eng", "chi_sim") } }
+            )
+            signature = $null
+        }
+        $ocrSources = [ordered]@{
+            schema_version = 1
+            engine_id = "formatwright-ocr"
+            version = $TesseractVersion
+            review_status = "incomplete"
+            artifacts = @(
+                [ordered]@{
+                    name = "UB-Mannheim tesseract Windows build"
+                    artifact_type = "binary-distribution"
+                    download_url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$TesseractVersion/tesseract-ocr-w64-setup-$TesseractVersion.exe"
+                    sha256 = "c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9"
+                    source_url = "https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.4.0.tar.gz"
+                    source_revision = "5.4.0"
+                    license_review_status = "incomplete"
+                },
+                [ordered]@{
+                    name = "tessdata eng"
+                    artifact_type = "runtime-data"
+                    download_url = "https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata"
+                    sha256 = "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
+                    source_url = "https://github.com/tesseract-ocr/tessdata"
+                    source_revision = "main"
+                    license_review_status = "incomplete"
+                },
+                [ordered]@{
+                    name = "tessdata chi_sim"
+                    artifact_type = "runtime-data"
+                    download_url = "https://github.com/tesseract-ocr/tessdata/raw/main/chi_sim.traineddata"
+                    sha256 = "fc05d89ab31d8b4e226910f16a8bcbf78e43bae3e2580bb5feefd052efdab363"
+                    source_url = "https://github.com/tesseract-ocr/tessdata"
+                    source_revision = "main"
+                    license_review_status = "incomplete"
+                }
+            )
+            completeness_notes = "The file-level SPDX inventory is complete for the declared pack payload (engine + DLLs + eng/chi_sim traineddata). Transitive DLL attribution and legal review remain incomplete; this pack is not Certified."
+        }
+        Add-SupplyChainFiles $ocrRoot $ocrManifest $ocrSources
+        $packList += "ocr/manifest.json"
+    }
+
     $bundle = [ordered]@{
         schema_version = 1
         bundle_id = "formatwright-windows-starter"
         application_version = "0.1.0"
-        packs = @("pdf/manifest.json", "media/manifest.json")
+        packs = $packList
     }
     Write-Utf8File (Join-Path $staging "bundle.json") ($bundle | ConvertTo-Json -Depth 8)
 
@@ -293,6 +414,7 @@ Certification status: development/unverified; GPL source-offer and patent/region
         bytes = ($files | Measure-Object Length -Sum).Sum
         pdf_manifest = Join-Path $outputPath "pdf/manifest.json"
         media_manifest = Join-Path $outputPath "media/manifest.json"
+        ocr_manifest = if ($tesseractPath) { Join-Path $outputPath "ocr/manifest.json" } else { $null }
     } | ConvertTo-Json
 } catch {
     if (Test-Path -LiteralPath $staging) {

@@ -1407,6 +1407,7 @@ mod tests {
 
     fn request() -> PlanRequest {
         PlanRequest {
+            ocr_language: None,
             target_format: "mp4".to_owned(),
             output_path: Some(PathBuf::from("output.mp4")),
             preserve_all_streams: true,

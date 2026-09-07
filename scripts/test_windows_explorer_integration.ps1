@@ -287,7 +287,7 @@ try {
 
     $engineRoot = Join-Path $env:APPDATA 'local.formatwright.desktop\engines'
     $installedManifests = @(Get-ChildItem -LiteralPath $engineRoot -Filter 'manifest.json' -File -Recurse)
-    Assert-True ($installedManifests.Count -eq 2) 'installed Starter does not contain exactly two engine manifests'
+    Assert-True ($installedManifests.Count -eq 3) 'installed Starter does not contain exactly three engine manifests (pdf/media/ocr)'
     $installedPackIds = @()
     foreach ($manifestFile in $installedManifests) {
         $manifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json

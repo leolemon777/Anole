@@ -156,6 +156,10 @@ pub struct PlanRequest {
     /// field never reaches a serialized Plan or report.
     #[serde(default)]
     pub password: Option<String>,
+    /// Tesseract language code for the OCR lanes (`eng`, `chi_sim`, ...).
+    /// Defaults to `eng`; validated into the plan's language argument.
+    #[serde(default)]
+    pub ocr_language: Option<String>,
     /// Watermark text for the `pdf-watermark` operation. Unlike passwords,
     /// watermark text is not confidential and travels inside the Plan.
     #[serde(default)]

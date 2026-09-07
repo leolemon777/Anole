@@ -852,3 +852,21 @@ cloud-signing KSP; CA purchase remains Leo's manual step), DECISION-2/3/4 all
 option a, DECISION-5 keep 2 folder verbs, and the 45-file change set is
 approved for Conventional Commit submission. E-11 (OCR pack) starts first as
 the lowest-risk unlocked item.
+
+## 2026-09-07 — E-11 OCR starter pack shipped (DECISION-4)
+
+Executed on Leo's "ok" approval of all decisions. Third starter pack
+(`starter/ocr/`, 97 files, SBOM-verified) with Tesseract 5.4.0.20240606 +
+pinned eng/chi_sim traineddata. Supply chain: installer downloaded and
+**7-Zip-unpacked on the Linux executor (macair-away) at Leo's request** —
+the NSIS installer never ran on the Windows host; the assembled tree tarred
+back with a verified sha256 and the prepare script reproduces the same flow
+on CI via 7z.exe (Windows runners ship it; developer machines without 7z
+can drop an unpacked tree into `.devtools/starter-sources`). Verified:
+engines verify / first-launch install+activation into the real engine store /
+doctor resolves the pack engine / real eng and chi_sim conversions Pass with
+correct text via the new `--ocr-language` pipeline (PlanRequest field +
+planner threading + CLI flag + unit test). Starter assertions updated to
+expect three manifests (CI workflow + explorer smoke). Core 276/0, clippy 0,
+fmt clean. GUI-click conversion against the activated pack remains covered by
+the next release smoke, same as pdf/media.
