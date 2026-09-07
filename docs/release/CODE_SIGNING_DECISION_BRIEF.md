@@ -2,7 +2,7 @@
 
 **文档类型：** 负责人拍板材料（spec `EXPERIENCE_SPEC_PLAN.md` DECISION-1）
 **日期：** 2026-09-07（行情核查日）
-**状态：** 等待 Leo 拍板。拍板后 E-01 签名流、E-02 Win11 现代菜单、E-12 用户研究的签名包全部解锁；CI 侧已就绪（`release-candidate.yml` 的签名步骤会在 secret 配好后自动启用，无需改代码）。
+**状态：** ✅ 已拍板（2026-09-07，Leo：按推荐 — OV + CA 云签名 KSP）。剩余为 Leo 的采购动作（CA 注册/主体验证/付费）；工程侧就绪：`release-candidate.yml` 签名步骤在 `WINDOWS_CODESIGN_PFX` secret 配好后自动激活，云签名 KSP 中间件的安装位已在步骤内注释标记。
 
 ---
 
