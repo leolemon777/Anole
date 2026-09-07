@@ -29,3 +29,14 @@ Deleting an output does not delete its local job/report history. The current des
 There is no opt-out switch because telemetry is absent. Any future crash-report or diagnostic upload must be opt-in, show a redaction preview, identify the destination, and update this document before release.
 
 Security issues involving privacy should follow `SECURITY.md`.
+
+### Optional engine pack downloads (added 2026-09-07)
+
+The Engines page lists curated optional packs (for example the Document pack
+enabling Office→PDF). A pack downloads **only when you click its button**:
+the app connects directly to the official FormatWright release location over
+TLS, verifies the archive against a release-pinned SHA-256 before installing,
+and never falls back to third-party mirrors. No telemetry accompanies the
+download; the only data leaving the machine is the standard HTTPS request.
+Packs whose release hash has not been pinned disable their own download
+button instead of fetching unpinned content.

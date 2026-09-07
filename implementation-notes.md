@@ -870,3 +870,32 @@ planner threading + CLI flag + unit test). Starter assertions updated to
 expect three manifests (CI workflow + explorer smoke). Core 276/0, clippy 0,
 fmt clean. GUI-click conversion against the activated pack remains covered by
 the next release smoke, same as pdf/media.
+
+## 2026-09-07 — E-04 application side: optional-pack downloader (no downloads performed)
+
+New download policy recorded (Leo, 2026-09-07): nothing is ever downloaded
+onto the Windows host; downloads happen only on the Linux executor after
+Leo's explicit approval. This wave therefore shipped only zero-download
+engineering:
+
+- `optional_packs.rs` (desktop): curated pack registry. The Document pack
+  (LibreOffice, MPL-2.0) is announced with an **empty pinned hash**, which
+  disables its download button until the pack is published — unpinned
+  content can never be fetched. Core staging path (`stage_verified_pack_archive`)
+  enforces the pinned SHA-256, extracts the zip (manifest at root or one
+  nested directory), and routes through the standard verified-install +
+  registry activation; `download_pinned_archive` streams with reqwest
+  (rustls, reusing the updater's existing dependency set — no new crates)
+  and emits per-chunk progress events.
+- Engines page: "Optional engine packs" card listing the Document pack with
+  installed/downloadable states, progress percentage, and a privacy note.
+- PRIVACY.md discloses the button-triggered, pinned-hash, direct-to-release
+  download (the app's only non-updater outbound traffic).
+- Tests: hash mismatch and unpinned-hash refusals, nested-manifest
+  extraction, announced-but-not-downloadable state. Desktop 43/0, clippy 0,
+  fmt clean, frontend tsc + vitest 29/29.
+
+Pending for E-04 completion (needs Leo-approved downloads on the Linux box):
+LibreOffice official installer fetch, MSI unpack, Document pack assembly,
+hash pinning, real docx→pdf run. Same for E-03 (MSYS2 libheif/libde265
+decode-only tree investigation).

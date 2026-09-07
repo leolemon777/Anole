@@ -113,6 +113,15 @@ type JobRecord = {
 type ShellOpen = { path: string; directory: boolean; convert_to?: string | null };
 type DropClassification = { kind: "file" | "directory" | "rejected"; path?: string | null };
 type ShellConvertBatch = { target: string; preset: string | null; paths: string[] };
+type OptionalPackView = {
+  packId: string;
+  displayName: string;
+  description: string;
+  sizeBytes: number;
+  downloadable: boolean;
+  installed: boolean;
+};
+
 type ShellVerbView = {
   verbId: string;
   assoc: string;
@@ -420,6 +429,9 @@ export default function App() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [shellVerbs, setShellVerbs] = useState<ShellVerbView[]>([]);
+  const [optionalPacks, setOptionalPacks] = useState<OptionalPackView[]>([]);
+  const [optionalPackBusy, setOptionalPackBusy] = useState<string | null>(null);
+  const [optionalPackProgress, setOptionalPackProgress] = useState<string | null>(null);
   const [shellVerbNotice, setShellVerbNotice] = useState<string | null>(null);
   const [shellVerbBusy, setShellVerbBusy] = useState<string | null>(null);
   const [presetBusy, setPresetBusy] = useState(false);
@@ -497,6 +509,16 @@ export default function App() {
       }));
       setProgressClock(Date.now());
     }).then((dispose) => disposers.push(dispose));
+    void listen<{ packId: string; downloaded: number; total: number }>(
+      "formatwright://optional-pack-progress",
+      (event) => {
+        if (!mounted.current) return;
+        const percent = event.payload.total > 0
+          ? Math.floor((event.payload.downloaded / event.payload.total) * 100)
+          : 0;
+        setOptionalPackProgress(`${copy.optionalPackDownloading} ${percent}%`);
+      },
+    ).then((dispose) => disposers.push(dispose));
     void listen<QueueRunReport>("formatwright://queue-window-finished", (event) => {
       if (mounted.current) setQueueReport(event.payload);
       void refreshJobs();
@@ -609,6 +631,7 @@ export default function App() {
     void refreshRecovery();
     void refreshMaintenanceStatus();
     void refreshEngines();
+    void refreshOptionalPacks();
     void refreshPresets();
     void refreshShellVerbs();
     void loadStarterProbes();
@@ -1384,6 +1407,31 @@ export default function App() {
     }
   }
 
+  async function refreshOptionalPacks() {
+    try {
+      setOptionalPacks(await invoke<OptionalPackView[]>("list_optional_engine_packs"));
+    } catch {
+      // Browser-only development has no engine registry.
+    }
+  }
+
+  async function downloadOptionalPack(packId: string) {
+    setOptionalPackBusy(packId);
+    setOptionalPackProgress(null);
+    try {
+      const summary = await invoke<{ engine_id: string | null; version: string | null; valid: boolean }>(
+        "download_optional_engine_pack",
+        { packId },
+      );
+      setOptionalPackProgress(copy.optionalPackInstalled.replace("{engine}", summary.engine_id ?? packId));
+      await Promise.all([refreshOptionalPacks(), refreshEngines()]);
+    } catch (reason) {
+      setError(parseDesktopError(reason));
+    } finally {
+      setOptionalPackBusy(null);
+    }
+  }
+
   async function resetShellVerbs() {
     setShellVerbBusy("*");
     setShellVerbNotice(null);
@@ -2000,6 +2048,35 @@ export default function App() {
           <div className="page-heading"><div><p className="section-label">LOCAL INVENTORY</p><h1>{copy.doctor}</h1><p>{copy.doctorHint}</p></div><div className="heading-actions"><button className="secondary" type="button" disabled={engineBusy} onClick={importEnginePack}>{engineBusy ? copy.verifyingEnginePack : copy.importEnginePack}</button><button type="button" onClick={refreshEngines}>{copy.refresh}</button></div></div>
           {!doctor ? <p className="empty">{copy.importHint}</p> : <div className="engine-grid">{Object.entries(doctor.engines).map(([name, health]) => <article key={name}><strong>{name}</strong><span className={`status ${health.available ? "status-completed" : "status-failed"}`}>{health.available ? `✓ ${copy.available}` : `× ${copy.unavailable}`}</span><small>{health.identity?.version ?? health.message}</small>{health.identity && <small>{certificationLabel(health.identity.certification, copy)}</small>}</article>)}</div>}
           <p className="typed-note">{copy.win11MenuHint}</p>
+          <div className="optional-packs-section">
+            <p className="section-label">{copy.optionalPacksTitle}</p>
+            {optionalPacks.map((pack) => (
+              <div className="optional-pack-row" key={pack.packId}>
+                <div>
+                  <strong>{pack.displayName}</strong>
+                  <small>{pack.description}</small>
+                  {pack.sizeBytes > 0 && <small>· {(pack.sizeBytes / 1e6).toFixed(0)} MB</small>}
+                </div>
+                {pack.installed ? (
+                  <span className="status status-completed">✓ {copy.optionalPackInstalledBadge}</span>
+                ) : (
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={!pack.downloadable || optionalPackBusy !== null}
+                    title={pack.downloadable ? undefined : copy.optionalPackUnpinned}
+                    onClick={() => void downloadOptionalPack(pack.packId)}
+                  >
+                    {optionalPackBusy === pack.packId ? (optionalPackProgress ?? copy.optionalPackDownloading) : copy.optionalPackInstall}
+                  </button>
+                )}
+              </div>
+            ))}
+            {optionalPackProgress && !optionalPackBusy && (
+              <p className="success-notice" role="status" aria-live="polite">{optionalPackProgress}</p>
+            )}
+            <small>{copy.optionalPackPrivacy}</small>
+          </div>
           <div className="pack-section"><p className="section-label">{copy.importedPacks}</p>{enginePacks.length === 0 ? <p className="empty">{copy.noImportedPacks}</p> : <div className="pack-list">{enginePacks.map((pack) => <article key={pack.manifest_sha256 ?? pack.manifest_path}><div><strong>{pack.engine_id ?? copy.invalidPack} {pack.version ?? ""}</strong><small><bdi>{pack.manifest_path}</bdi></small><small>{pack.executable_names.join(", ")}</small><small>{pack.valid ? packReviewText(pack, copy) : pack.message}</small></div><div className="pack-status">{engineRecoveryState(recovery?.engine_recovery, pack.engine_id) === "fell-back" && <span className="status status-warning">{copy.engineRolledBackBadge}</span>}{engineRecoveryState(recovery?.engine_recovery, pack.engine_id) === "failed" && <span className="status status-failed">{copy.engineRecoveryFailedBadge}</span>}<span className={`status ${packBadgeStatusClass(packBadgeKind(pack))}`}>{packBadgeText(pack, copy)}</span></div></article>)}</div>}</div>
         </section>
       )}

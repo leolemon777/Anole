@@ -1989,3 +1989,32 @@ label.wide,
   display: block;
   min-width: 0;
 }
+
+/* Optional engine packs (spec E-04) */
+.optional-packs-section {
+  display: grid;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.optional-packs-section > small {
+  color: var(--color-ink-faint);
+}
+.optional-pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-size: var(--text-label);
+}
+.optional-pack-row > div {
+  display: grid;
+  gap: var(--space-3xs, 2px);
+}
+.optional-pack-row small {
+  color: var(--color-ink-faint);
+}

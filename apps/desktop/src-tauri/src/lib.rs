@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod explorer_integration;
+mod optional_packs;
 mod queue_bridge;
 mod shell_convert;
 
@@ -2248,6 +2249,81 @@ fn reset_desktop_shell_verbs(
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn list_optional_engine_packs(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<optional_packs::OptionalPackView>, String> {
+    Ok(optional_packs::optional_pack_views(
+        &state.engine_registry_directory,
+    ))
+}
+
+/// Downloads a curated optional pack (spec E-04). User-initiated, pinned
+/// hash, disclosed in PRIVACY.md; the only non-updater outbound traffic.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+async fn download_optional_engine_pack(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    pack_id: String,
+) -> Result<DesktopEnginePackSummary, String> {
+    let _operation = acquire_active_operation(&state.operation_gate)?;
+    let spec = optional_packs::optional_pack_by_id(&pack_id)
+        .ok_or_else(|| format!("unknown optional pack: {pack_id}"))?;
+    if spec.archive_sha256.is_empty() || spec.size_bytes == 0 {
+        return Err(format!(
+            "the {} is announced but not published yet; its release hash is not pinned",
+            spec.display_name
+        ));
+    }
+    let staging_root = state
+        .engine_store_directory
+        .parent()
+        .unwrap_or(&state.engine_store_directory)
+        .join(".optional-pack-downloads");
+    std::fs::create_dir_all(&staging_root).map_err(|error| error.to_string())?;
+    let archive = staging_root.join(format!("{pack_id}.zip"));
+    let progress_window = window.clone();
+    let pack_name = spec.display_name.to_owned();
+    optional_packs::download_pinned_archive(
+        spec.archive_url,
+        spec.size_bytes,
+        &archive,
+        &(move |downloaded, total| {
+            let _ = progress_window.emit(
+                "formatwright://optional-pack-progress",
+                serde_json::json!({
+                    "packId": pack_name,
+                    "downloaded": downloaded,
+                    "total": total,
+                }),
+            );
+        }),
+    )
+    .await?;
+    let staging = staging_root.join(format!("{pack_id}.extracted"));
+    let manifest_path =
+        optional_packs::stage_verified_pack_archive(&archive, spec.archive_sha256, &staging)?;
+    let engine_store_directory = state.engine_store_directory.clone();
+    let verified = tokio::task::spawn_blocking(move || {
+        formatwright_core::install_engine_pack(manifest_path, engine_store_directory)
+    })
+    .await
+    .map_err(|error| format!("engine-pack verification worker failed: {error}"))?
+    .map_err(serialize_error)?;
+    EngineRegistry::new(
+        state.engine_registry_directory.clone(),
+        state.engine_store_directory.clone(),
+    )
+    .set_active(&verified)
+    .map_err(serialize_error)?;
+    // Best-effort cleanup of the downloaded artifacts; the install is done.
+    let _ = std::fs::remove_dir_all(&staging);
+    let _ = std::fs::remove_file(&archive);
+    Ok(valid_engine_summary(&verified))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 fn show_desktop_toast(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -3076,6 +3152,8 @@ pub fn run() {
             get_desktop_shell_verbs,
             set_desktop_shell_verb,
             reset_desktop_shell_verbs,
+            list_optional_engine_packs,
+            download_optional_engine_pack,
             requeue_desktop_job,
             cleanup_desktop_job_staging,
             list_desktop_jobs,
