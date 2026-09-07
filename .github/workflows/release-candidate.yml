@@ -1,4 +1,4 @@
-name: Unsigned release candidate
+name: Release candidate
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ env:
 
 jobs:
   windows-alpha:
-    name: Windows unsigned Alpha
+    name: Windows Alpha (signed when the code-signing secret exists)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -66,18 +66,67 @@ jobs:
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$env:DEV_KEY_PASSWORD" >> $env:GITHUB_ENV
       - name: Build offline NSIS candidate
         run: pnpm --filter @formatwright/desktop tauri build --bundles nsis
-      - name: Generate checksums
-        run: python scripts/generate_checksums.py target/release/formatwright-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
-      - name: Reject accidental signed-release claim
+      - name: Authenticode-sign release artifacts (spec E-01)
+        # Activates itself once DECISION-1 lands and the signing secret exists;
+        # until then the rehearsal stays an explicit unsigned Alpha.
+        env:
+          CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+          # Timestamp authority must be reached over the network; DigiCert's
+          # public TSA works with any issuer's certificate.
+          CODESIGN_TSA_URL: ${{ vars.WINDOWS_CODESIGN_TSA_URL || 'http://timestamp.digicert.com' }}
         shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CODESIGN_PFX)) {
+            Write-Output 'No WINDOWS_CODESIGN_PFX secret configured; skipping Authenticode signing (DECISION-1 pending).'
+            exit 0
+          }
+          # DECISION-1 (cloud-signing KSP route, see
+          # docs/release/CODE_SIGNING_DECISION_BRIEF.md): install the CA's
+          # KSP middleware here, then signtool addresses the certificate by
+          # subject/thumbprint instead of the PFX below.
+          $pfx = New-TemporaryFile
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODESIGN_PFX))
+            $files = @(
+              'target/release/formatwright-desktop.exe',
+              'target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe'
+            )
+            $signtool = Join-Path `
+              'C:\Program Files (x86)\Windows Kits\10\bin' `
+              ((Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' |
+                Sort-Object Name -Descending | Select-Object -First 1).Name) `
+              'x64\signtool.exe'
+            foreach ($file in $files) {
+              & $signtool sign /fd SHA256 /tr $env:CODESIGN_TSA_URL /td SHA256 `
+                /f $pfx /p $env:CODESIGN_PASSWORD $file
+              if ($LASTEXITCODE -ne 0) { throw "signtool failed for $file" }
+              & $signtool verify /pa /all $file
+              if ($LASTEXITCODE -ne 0) { throw "signature verification failed for $file" }
+              Write-Output "signed and verified: $file"
+            }
+          } finally {
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
+      - name: Generate checksums
+        # Runs after signing so SHA256SUMS covers the signed bytes.
+        run: python scripts/generate_checksums.py target/release/formatwright-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
+      - name: Assert signature state matches the signing decision
+        shell: pwsh
+        env:
+          CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
         run: |
           $files = @(
             'target/release/formatwright-desktop.exe',
             'target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe'
           )
+          $expectSigned = -not [string]::IsNullOrWhiteSpace($env:CODESIGN_PFX)
           foreach ($file in $files) {
             $status = (Get-AuthenticodeSignature -LiteralPath $file).Status.ToString()
-            if ($status -ne 'NotSigned') {
+            if ($expectSigned -and $status -ne 'Valid') {
+              throw "signing secret is configured but $file reports signature state $status"
+            }
+            if (-not $expectSigned -and $status -ne 'NotSigned') {
               throw "Unsigned Alpha workflow received unexpected signature state $status for $file"
             }
           }
