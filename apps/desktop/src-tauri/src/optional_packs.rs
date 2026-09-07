@@ -36,8 +36,10 @@ pub const DOCUMENT_PACK: OptionalPackSpec = OptionalPackSpec {
     display_name: "Document pack (LibreOffice)",
     description: "docx/xlsx/pptx → PDF without installing LibreOffice yourself",
     archive_url: "https://github.com/leolemon777/FormatWright/releases/download/v0.1.1/document-pack-windows-x86_64.zip",
-    archive_sha256: "",
-    size_bytes: 0,
+    // LibreOffice 26.2.6 official TDF build; reproducible zip (fixed
+    // timestamps) so the pinned hash matches the published asset byte-for-byte.
+    archive_sha256: "44126a49ac2c2ff0ab1e459c73010c9315f665744dbb2a4548901e6f36325369",
+    size_bytes: 511_845_052,
 };
 
 pub const OPTIONAL_PACKS: &[OptionalPackSpec] = &[DOCUMENT_PACK];
@@ -276,17 +278,18 @@ mod tests {
     }
 
     #[test]
-    fn document_pack_announced_but_not_downloadable_until_pinned() {
-        assert!(DOCUMENT_PACK.archive_sha256.is_empty());
+    fn document_pack_pinned_and_downloadable_when_listed() {
+        assert_eq!(DOCUMENT_PACK.archive_sha256.len(), 64);
+        assert_eq!(DOCUMENT_PACK.size_bytes, 511_845_052);
         let views = optional_pack_views(Path::new("does-not-exist"));
         let document = views
             .iter()
             .find(|view| view.pack_id == "document")
             .expect("document pack listed");
+        assert!(document.downloadable, "pinned pack must enable download");
         assert!(
-            !document.downloadable,
-            "unpinned pack must disable download"
+            !document.installed,
+            "absent registry entry means not installed"
         );
-        assert!(!document.installed);
     }
 }

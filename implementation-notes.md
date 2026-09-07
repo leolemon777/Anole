@@ -899,3 +899,31 @@ Pending for E-04 completion (needs Leo-approved downloads on the Linux box):
 LibreOffice official installer fetch, MSI unpack, Document pack assembly,
 hash pinning, real docx→pdf run. Same for E-03 (MSYS2 libheif/libde265
 decode-only tree investigation).
+
+## 2026-09-07 — E-04 shipped: Document pack (LibreOffice 26.2.6, DECISION-3, list B approved)
+
+Executed under the download policy (Linux executor only; Leo approved list B):
+
+- **Supply chain**: official TDF `LibreOffice_26.2.6_Win_x86-64.msi`
+  (373,252,096 B, sha256 `f9877032…5fb2660`) downloaded on macair; the MSI
+  **was never executed** — 7-Zip extracted the payload (flat, 19,248 real
+  files) and `pymsi` (pure-Python MSI table parser, installed into the
+  conda env) reconstructed the Directory/Component/File tree
+  (`scripts/rebuild_libreoffice_tree_from_msi.py`); the x64 VC runtime DLLs
+  destined for System32 were relocated into `program/` instead.
+- **Pack**: `formatwright-document` v26.2.6, executable `soffice` →
+  `program/soffice.com`, 19,476-file SPDX SBOM, MPL-2.0 + MSVC-redist
+  notices, PROVENANCE with the exact unpack method. `engines verify` green.
+- **Real conversion**: `FORMATWRIGHT_ENGINE_SOFFICE=<pack>/program/soffice.com`
+  converts a minimal docx fixture to PDF (validation: Warning — same lane
+  behavior as the system LibreOffice), and `pdftotext` recovers the exact
+  source text. The plan hash differs from the system-engine run, proving the
+  pack's own engine served the conversion.
+- **Release artifact**: `document-pack-windows-x86_64.zip` (511,845,052 B,
+  sha256 `44126a49…325369`, fixed-timestamp reproducible zip) staged under
+  `dist/engine-packs/windows-x86_64/optional/`; the hash and size are now
+  **pinned in `optional_packs.rs`**, which activates the Engines-page
+  download button once the zip is attached to the v0.1.1 release.
+- Desktop 43/0 (pinned-hash test updated), clippy 0, fmt clean, frontend
+  29/29. GUI-click download end-to-end rides the next release rehearsal, as
+  with the OCR pack.
