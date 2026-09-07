@@ -927,3 +927,23 @@ Executed under the download policy (Linux executor only; Leo approved list B):
 - Desktop 43/0 (pinned-hash test updated), clippy 0, fmt clean, frontend
   29/29. GUI-click download end-to-end rides the next release rehearsal, as
   with the OCR pack.
+
+## 2026-09-07 — E-04/E-11 acceptance hardening (zero-download wave)
+
+Filled the remaining acceptance gaps for the shipped packs:
+
+- **E-04 xlsx**: hand-built minimal xlsx → PDF through the pack's own
+  soffice.com; `pdftotext` recovers "SheetSmoke 440010147700".
+- **E-04 pptx**: hand-built fixtures convert to valid PDFs; both the pack
+  engine and the system LibreOffice render the synthetic shape without a
+  text layer (identical behavior — the limitation is the synthetic fixture,
+  not the pack). Real-world pptx validation rides E-12 / the release smoke.
+- **E-04 profile isolation proven**: after all conversions, the user's
+  `%APPDATA%\LibreOffice\4\user` tree has zero new or modified entries
+  (find -newer empty); the runner's `-env:UserInstallation` profile lives
+  in staging and is cleaned with it.
+- **E-11 pdf-ocr lane**: a scanned-style image PDF (Chinese text rendered at
+  150 dpi) converts via `--operation pdf-ocr --ocr-language chi_sim` to
+  `validation: Pass` with the exact source text recognized. Note for
+  callers: plain `convert x.pdf --to txt` routes through the chain lane,
+  not OCR — the OCR lane is the explicit `pdf-ocr` operation.
