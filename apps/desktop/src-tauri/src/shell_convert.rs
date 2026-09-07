@@ -11,12 +11,16 @@ pub const CONVERT_PATHS_LIMIT: usize = 32;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DesktopShellOpenBatch {
     pub target: String,
+    /// Optional preset bound to the invoked verb (spec E-06); batches with a
+    /// different preset never merge even when the target matches.
+    pub preset: Option<String>,
     pub paths: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct ShellConvertCoordinator {
     buffer_target: Option<String>,
+    buffer_preset: Option<String>,
     buffer_paths: Vec<PathBuf>,
     ready: VecDeque<DesktopShellOpenBatch>,
     pub generation: u64,
@@ -34,12 +38,18 @@ impl ShellConvertCoordinator {
         Self::default()
     }
 
-    pub fn push(&mut self, target: String, path: PathBuf) -> ConvertPushOutcome {
+    pub fn push(
+        &mut self,
+        target: String,
+        preset: Option<String>,
+        path: PathBuf,
+    ) -> ConvertPushOutcome {
         let mut flushed_ready = false;
         if self
             .buffer_target
             .as_ref()
             .is_some_and(|current| current != &target)
+            || self.buffer_preset != preset
         {
             self.flush_quiet();
             flushed_ready = true;
@@ -47,6 +57,7 @@ impl ShellConvertCoordinator {
         if self.buffer_target.is_none() {
             self.buffer_target = Some(target);
         }
+        self.buffer_preset = preset;
         let mut overflowed = false;
         if self.buffer_paths.len() >= CONVERT_PATHS_LIMIT {
             self.buffer_paths.remove(0);
@@ -62,11 +73,13 @@ impl ShellConvertCoordinator {
 
     pub fn flush_quiet(&mut self) -> Option<DesktopShellOpenBatch> {
         let target = self.buffer_target.take()?;
+        let preset = self.buffer_preset.take();
         if self.buffer_paths.is_empty() {
             return None;
         }
         let batch = DesktopShellOpenBatch {
             target,
+            preset,
             paths: std::mem::take(&mut self.buffer_paths),
         };
         if self.ready.len() >= CONVERT_READY_FIFO_LIMIT {
@@ -218,8 +231,11 @@ mod tests {
     fn same_target_paths_merge_until_quiet_flush() {
         let mut coordinator = ShellConvertCoordinator::new();
         for index in 0..10 {
-            let outcome =
-                coordinator.push("webp".to_owned(), PathBuf::from(format!("p{index}.jpg")));
+            let outcome = coordinator.push(
+                "webp".to_owned(),
+                None,
+                PathBuf::from(format!("p{index}.jpg")),
+            );
             assert!(!outcome.flushed_ready);
         }
         assert_eq!(coordinator.ready_len(), 0);
@@ -236,8 +252,8 @@ mod tests {
     #[test]
     fn mixed_targets_flush_the_previous_batch_immediately() {
         let mut coordinator = ShellConvertCoordinator::new();
-        coordinator.push("png".to_owned(), PathBuf::from(r"C:\in\manual.pdf"));
-        let outcome = coordinator.push("webp".to_owned(), PathBuf::from(r"C:\in\photo.jpg"));
+        coordinator.push("png".to_owned(), None, PathBuf::from(r"C:\in\manual.pdf"));
+        let outcome = coordinator.push("webp".to_owned(), None, PathBuf::from(r"C:\in\photo.jpg"));
         assert!(outcome.flushed_ready);
         let first = coordinator.take_ready().expect("first batch");
         assert_eq!(first.target, "png");
@@ -249,7 +265,7 @@ mod tests {
     #[test]
     fn ready_fifo_survives_until_take() {
         let mut coordinator = ShellConvertCoordinator::new();
-        coordinator.push("yaml".to_owned(), PathBuf::from(r"C:\in\a.json"));
+        coordinator.push("yaml".to_owned(), None, PathBuf::from(r"C:\in\a.json"));
         coordinator.flush_quiet();
         assert_eq!(coordinator.ready_len(), 1);
         assert_eq!(coordinator.take_ready().expect("batch").target, "yaml");
@@ -259,7 +275,11 @@ mod tests {
     fn convert_buffer_keeps_the_newest_thirty_two_paths() {
         let mut coordinator = ShellConvertCoordinator::new();
         for index in 0..=CONVERT_PATHS_LIMIT {
-            coordinator.push("json".to_owned(), PathBuf::from(format!("{index}.csv")));
+            coordinator.push(
+                "json".to_owned(),
+                None,
+                PathBuf::from(format!("{index}.csv")),
+            );
         }
         let batch = coordinator.flush_quiet().expect("flush");
         assert_eq!(batch.paths.len(), CONVERT_PATHS_LIMIT);

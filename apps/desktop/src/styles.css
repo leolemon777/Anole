@@ -52,6 +52,17 @@
   --color-focus-ring: rgba(232, 103, 74, 0.32);
   --color-error: #be3a2b;
   --color-error-soft: #f5ddd8;
+  --color-error-border: rgba(190, 58, 43, 0.25);
+  --color-peach-border: rgba(232, 103, 74, 0.25);
+  --color-peach-border-strong: rgba(232, 103, 74, 0.3);
+  --color-sky-border: rgba(46, 107, 118, 0.2);
+  --color-warning-ink: #9a6b13;
+  --color-warning-ink-strong: #7a5310;
+  --color-warning-soft: rgba(231, 169, 60, 0.22);
+
+  /* Decorative page wash */
+  --deco-wash-a: rgba(244, 217, 206, 0.55);
+  --deco-wash-b: rgba(207, 224, 228, 0.5);
 
   /* Typography */
   --font-display: "Marcellus", Georgia, "Times New Roman", serif;
@@ -108,6 +119,103 @@
   /* Motion */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --dur: 180ms;
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   1b. DARK TOKENS
+   Applied on explicit dark choice; the media query resolves
+   the "system" preference against the OS setting.
+   ============================================================ */
+:root[data-theme="dark"] {
+  --color-page: #10181b;
+  --color-surface: #1a262b;
+  --color-surface-peach: #42291f;
+  --color-surface-sky: #24373d;
+
+  --color-ink: #e3e9e6;
+  --color-ink-soft: #aebcb8;
+  --color-ink-faint: #7d8d89;
+
+  --color-primary: #ef7c5f;
+  --color-primary-deep: #f08d73;
+  --color-secondary: #7db8c3;
+  --color-secondary-deep: #9cccd6;
+  --color-tertiary: #e0a83e;
+
+  --color-border: #31414a;
+  --color-border-strong: #455963;
+  --color-focus: #ef7c5f;
+  --color-focus-ring: rgba(239, 124, 95, 0.42);
+  --color-error: #e0705f;
+  --color-error-soft: #3d2420;
+  --color-error-border: rgba(224, 112, 95, 0.35);
+  --color-peach-border: rgba(240, 122, 92, 0.35);
+  --color-peach-border-strong: rgba(240, 122, 92, 0.45);
+  --color-sky-border: rgba(125, 184, 195, 0.3);
+  --color-warning-ink: #d9a441;
+  --color-warning-ink-strong: #e3b45c;
+  --color-warning-soft: rgba(231, 169, 60, 0.14);
+
+  --deco-wash-a: rgba(66, 41, 31, 0.4);
+  --deco-wash-b: rgba(36, 55, 61, 0.45);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md:
+    0 1px 2px rgba(0, 0, 0, 0.32),
+    0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-lg:
+    0 2px 4px rgba(0, 0, 0, 0.32),
+    0 28px 64px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --color-page: #10181b;
+    --color-surface: #1a262b;
+    --color-surface-peach: #42291f;
+    --color-surface-sky: #24373d;
+
+    --color-ink: #e3e9e6;
+    --color-ink-soft: #aebcb8;
+    --color-ink-faint: #7d8d89;
+
+    --color-primary: #ef7c5f;
+    --color-primary-deep: #f08d73;
+    --color-secondary: #7db8c3;
+    --color-secondary-deep: #9cccd6;
+    --color-tertiary: #e0a83e;
+
+    --color-border: #31414a;
+    --color-border-strong: #455963;
+    --color-focus: #ef7c5f;
+    --color-focus-ring: rgba(239, 124, 95, 0.42);
+    --color-error: #e0705f;
+    --color-error-soft: #3d2420;
+    --color-error-border: rgba(224, 112, 95, 0.35);
+    --color-peach-border: rgba(240, 122, 92, 0.35);
+    --color-peach-border-strong: rgba(240, 122, 92, 0.45);
+    --color-sky-border: rgba(125, 184, 195, 0.3);
+    --color-warning-ink: #d9a441;
+    --color-warning-ink-strong: #e3b45c;
+    --color-warning-soft: rgba(231, 169, 60, 0.14);
+
+    --deco-wash-a: rgba(66, 41, 31, 0.4);
+    --deco-wash-b: rgba(36, 55, 61, 0.45);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md:
+      0 1px 2px rgba(0, 0, 0, 0.32),
+      0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-lg:
+      0 2px 4px rgba(0, 0, 0, 0.32),
+      0 28px 64px rgba(0, 0, 0, 0.55);
+
+    color-scheme: dark;
+  }
 }
 
 /* ============================================================
@@ -405,8 +513,8 @@ label.wide,
   min-height: 100vh;
   padding: var(--space-md);
   background:
-    radial-gradient(120% 90% at 12% 6%, rgba(244, 217, 206, 0.55) 0%, rgba(244, 217, 206, 0) 46%),
-    radial-gradient(120% 90% at 92% 96%, rgba(207, 224, 228, 0.5) 0%, rgba(207, 224, 228, 0) 44%),
+    radial-gradient(120% 90% at 12% 6%, var(--deco-wash-a) 0%, rgba(244, 217, 206, 0) 46%),
+    radial-gradient(120% 90% at 92% 96%, var(--deco-wash-b) 0%, rgba(207, 224, 228, 0) 44%),
     var(--color-page);
 }
 
@@ -655,7 +763,7 @@ label.wide,
   margin-bottom: var(--space-md);
   padding: var(--space-md);
   background: var(--color-error-soft);
-  border: 1px solid rgba(190, 58, 43, 0.25);
+  border: 1px solid var(--color-error-border);
   border-radius: var(--radius-lg);
 }
 
@@ -683,7 +791,7 @@ label.wide,
   justify-content: space-between;
   gap: var(--space-lg);
   background: var(--color-surface-peach);
-  border: 1px solid rgba(232, 103, 74, 0.25);
+  border: 1px solid var(--color-peach-border);
 }
 
 .recovery-banner > div,
@@ -707,7 +815,7 @@ label.wide,
   padding: var(--space-sm) var(--space-md);
   color: var(--color-secondary-deep);
   background: var(--color-surface-sky);
-  border: 1px solid rgba(46, 107, 118, 0.2);
+  border: 1px solid var(--color-sky-border);
   border-radius: var(--radius-md);
   font-size: var(--text-body-sm);
 }
@@ -724,7 +832,7 @@ label.wide,
 .capability-blocked {
   color: var(--color-ink);
   background: var(--color-surface-peach);
-  border-color: rgba(232, 103, 74, 0.3);
+  border-color: var(--color-peach-border-strong);
 }
 
 .restore-confirm {
@@ -733,7 +841,7 @@ label.wide,
   margin-top: var(--space-lg);
   padding: var(--space-md);
   background: var(--color-surface-peach);
-  border: 1px solid rgba(232, 103, 74, 0.25);
+  border: 1px solid var(--color-peach-border);
   border-radius: var(--radius-lg);
 }
 
@@ -1334,7 +1442,7 @@ label.wide,
 
 .status-warning,
 .status-unknown {
-  color: #9a6b13;
+  color: var(--color-warning-ink);
 }
 
 .status-failed,
@@ -1473,8 +1581,8 @@ label.wide,
 
 .report-warning,
 .report-unknown {
-  background: rgba(231, 169, 60, 0.22);
-  color: #7a5310;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-ink-strong);
 }
 
 .report-fail {
@@ -1814,4 +1922,70 @@ label.wide,
     --color-border: #000000;
     --color-border-strong: #000000;
   }
+}
+
+/* Output preview thumbnail (spec E-09) */
+.output-preview {
+  width: 100%;
+  max-width: 256px;
+  margin-top: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+/* Encrypted-PDF password entry (spec E-07) */
+.pdf-password-row {
+  display: grid;
+  gap: var(--space-2xs);
+  margin-top: var(--space-sm);
+  font-size: var(--text-label);
+  color: var(--color-ink-soft);
+}
+.pdf-password-row input {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+/* Right-click menu editor (spec E-06) */
+.shell-verbs-section {
+  display: grid;
+  gap: var(--space-2xs);
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.shell-verbs-section > label {
+  font-weight: var(--weight-semibold);
+}
+.shell-verb-list {
+  display: grid;
+  gap: var(--space-2xs);
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: var(--space-2xs);
+}
+.shell-verb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-size: var(--text-label);
+}
+.shell-verb-row select {
+  margin-left: var(--space-2xs);
+}
+
+/* Navigation/main landmarks wrapping the chicago95 tabs (R-011):
+   pure block wrappers so the landmark elements add semantics, not layout. */
+.fw-tabs-nav,
+.fw-tabs-main {
+  display: block;
+  min-width: 0;
 }

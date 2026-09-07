@@ -108,6 +108,7 @@ describe("desktop workflow model", () => {
       wait_reason: null,
       occurred_unix_ms: 4_000,
       eta_milliseconds: null,
+      measured_throughput_bytes_per_sec: null,
     };
     const stale = { ...running, job_sequence: 3, state: "inspecting", occurred_unix_ms: 5_000 };
     expect(latestJobProgress(running, stale)).toBe(running);

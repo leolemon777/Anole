@@ -15,6 +15,7 @@ export type JobProgressUpdate = {
   wait_reason: string | null;
   occurred_unix_ms: number;
   eta_milliseconds: number | null;
+  measured_throughput_bytes_per_sec: number | null;
 };
 
 export function latestJobProgress(

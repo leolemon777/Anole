@@ -112,7 +112,16 @@ type JobRecord = {
 
 type ShellOpen = { path: string; directory: boolean; convert_to?: string | null };
 type DropClassification = { kind: "file" | "directory" | "rejected"; path?: string | null };
-type ShellConvertBatch = { target: string; paths: string[] };
+type ShellConvertBatch = { target: string; preset: string | null; paths: string[] };
+type ShellVerbView = {
+  verbId: string;
+  assoc: string;
+  target: string;
+  label: string;
+  enabled: boolean;
+  presetId: string | null;
+  presetName: string | null;
+};
 type IngestResult = {
   ran_immediately: boolean;
   batch_id?: string | null;
@@ -327,10 +336,12 @@ type ConversionPreset = {
 };
 
 type PresetImportResult = { imported: number; total: number };
+type ThemePreference = "system" | "light" | "dark";
 type ApplicationSettings = {
   schema_version: number;
   language: Language;
   expert_mode: boolean;
+  theme: ThemePreference;
 };
 
 const emptySnapshot: QueueSnapshot = {
@@ -361,9 +372,11 @@ export default function App() {
     navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
   );
   const [expert, setExpert] = useState(false);
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("convert");
   const [inputPath, setInputPath] = useState("");
+  const [pdfPassword, setPdfPassword] = useState("");
   const [convertMode, setConvertMode] = useState<"file" | "folder">("file");
   const [folderInputRoot, setFolderInputRoot] = useState("");
   const [folderOutputRoot, setFolderOutputRoot] = useState("");
@@ -385,6 +398,7 @@ export default function App() {
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [reportBusy, setReportBusy] = useState<"report" | "recipe" | "reveal" | "revalidate" | null>(null);
   const [reportNotice, setReportNotice] = useState<string | null>(null);
+  const [outputPreview, setOutputPreview] = useState<string | null>(null);
   const [redactReportPaths, setRedactReportPaths] = useState(true);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
@@ -405,6 +419,9 @@ export default function App() {
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const [shellVerbs, setShellVerbs] = useState<ShellVerbView[]>([]);
+  const [shellVerbNotice, setShellVerbNotice] = useState<string | null>(null);
+  const [shellVerbBusy, setShellVerbBusy] = useState<string | null>(null);
   const [presetBusy, setPresetBusy] = useState(false);
   const [jobActionBusy, setJobActionBusy] = useState<string | null>(null);
   const [jobCleanupBusy, setJobCleanupBusy] = useState<string | null>(null);
@@ -445,11 +462,20 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.lang = language;
+  }, [language]);
+
+  useEffect(() => {
+    // The stylesheet resolves "system" against prefers-color-scheme, so the
+    // data attribute is the single source the CSS tokens branch on.
+    document.documentElement.dataset.theme = themePreference;
+  }, [themePreference]);
+
+  useEffect(() => {
     if (!settingsLoaded || !("__TAURI_INTERNALS__" in window)) return;
     void invoke<ApplicationSettings>("save_desktop_settings", {
-      settings: { schema_version: 1, language, expert_mode: expert },
+      settings: { schema_version: 2, language, expert_mode: expert, theme: themePreference },
     }).catch((reason) => setError(parseDesktopError(reason)));
-  }, [expert, language, settingsLoaded]);
+  }, [expert, language, themePreference, settingsLoaded]);
 
   useEffect(() => {
     mounted.current = true;
@@ -540,16 +566,18 @@ export default function App() {
         .then(async (settings) => {
           if (!mounted.current) return;
           const migrated: ApplicationSettings = settings ?? {
-            schema_version: 1,
+            schema_version: 2,
             language: localStorage.getItem("fw-language") === "zh-CN"
               ? "zh-CN"
               : localStorage.getItem("fw-language") === "en"
                 ? "en"
                 : navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
             expert_mode: localStorage.getItem("fw-expert") === "true",
+            theme: "system",
           };
           setLanguage(migrated.language);
           setExpert(migrated.expert_mode);
+          setThemePreference(migrated.theme);
           if (!settings) {
             try {
               await invoke<ApplicationSettings>("save_desktop_settings", { settings: migrated });
@@ -582,6 +610,7 @@ export default function App() {
     void refreshMaintenanceStatus();
     void refreshEngines();
     void refreshPresets();
+    void refreshShellVerbs();
     void loadStarterProbes();
     return () => {
       mounted.current = false;
@@ -866,6 +895,7 @@ export default function App() {
       preserveAllStreams,
       approvedPlanHash,
       idempotencyKey,
+      password: pdfPassword || null,
     };
   }
 
@@ -930,12 +960,64 @@ export default function App() {
 
   async function handleIngestBatch(batch: ShellConvertBatch) {
     pendingShellConvert.current = null;
-    const first = batch.paths[0] ?? "";
     applyDefaultPlanConstraints(batch.target);
-    if (first) {
-      setInputPath(first);
+    // E-05: directory paths from the folder Explorer verbs take the
+    // folder-batch lane (mapping preview, per-file plan checks, disk budget,
+    // no-clobber) instead of the per-file convert lane.
+    const classifications = await Promise.all(
+      batch.paths.map((path) =>
+        invoke<DropClassification>("classify_desktop_drop_path", { path }).catch(() => null),
+      ),
+    );
+    const directories = batch.paths.filter(
+      (path, index) => classifications[index]?.kind === "directory",
+    );
+    const files = batch.paths.filter(
+      (path, index) => classifications[index]?.kind === "file",
+    );
+    if (directories.length > 0) {
+      setBusy("run");
+      setError(null);
+      try {
+        let queuedTotal = 0;
+        let skippedTotal = 0;
+        let lastBatchId = "";
+        for (const directory of directories) {
+          const result = await invoke<{
+            batch: { id: string };
+            queued: number;
+            planned: number;
+            skipped: number;
+            outputRoot: string;
+          }>("ingest_desktop_shell_directory", {
+            path: directory,
+            target: batch.target,
+            presetId: batch.preset,
+          });
+          queuedTotal += result.queued;
+          skippedTotal += result.skipped;
+          lastBatchId = result.batch.id;
+        }
+        if (lastBatchId) setJobBatchId(lastBatchId);
+        setTab("jobs");
+        await Promise.all([refreshJobs(0), refreshJobBatches()]);
+        await notifyToast(
+          copy.toastQueued,
+          `${copy.queuedCount.replace("{count}", String(queuedTotal))}${skippedTotal > 0 ? ` · ${copy.folderSkipped.replace("{count}", String(skippedTotal))}` : ""}`,
+        );
+      } catch (reason) {
+        setError(parseDesktopError(reason));
+      } finally {
+        setBusy(null);
+      }
+      if (files.length === 0) return;
+    }
+    const effectivePaths = files.length > 0 ? files : batch.paths;
+    const effectiveFirst = effectivePaths[0] ?? "";
+    if (effectiveFirst) {
+      setInputPath(effectiveFirst);
       setTarget(batch.target);
-      setOutputPath(suggestedOutput(first, batch.target));
+      setOutputPath(suggestedOutput(effectiveFirst, batch.target));
       setConvertMode("file");
       setTab("convert");
     }
@@ -943,13 +1025,14 @@ export default function App() {
     setError(null);
     try {
       const result = await invoke<IngestResult>("ingest_shell_convert_paths", {
-        paths: batch.paths,
+        paths: effectivePaths,
         target: batch.target,
+        presetId: batch.preset,
       });
       if (result.ran_immediately && result.report) {
         setReport(result.report);
         setActiveJobId(null);
-        await notifyToast(copy.toastSuccess, result.report.output.display_path ?? first);
+        await notifyToast(copy.toastSuccess, result.report.output.display_path ?? effectiveFirst);
       } else {
         if (result.batch_id) {
           setJobBatchId(result.batch_id);
@@ -967,7 +1050,7 @@ export default function App() {
       const parsed = parseDesktopError(reason);
       setError({
         ...parsed,
-        message: basicModeFailureCopy(first, parsed, [], {
+        message: basicModeFailureCopy(effectiveFirst, parsed, [], {
           oldExcel: copy.oldExcel,
           unsupported: copy.pairUnsupported,
           engineMissing: copy.engineMissingPack,
@@ -1276,6 +1359,44 @@ export default function App() {
     }
   }
 
+  async function refreshShellVerbs() {
+    try {
+      setShellVerbs(await invoke<ShellVerbView[]>("get_desktop_shell_verbs"));
+    } catch {
+      // Browser-only development has no Explorer menu to configure.
+    }
+  }
+
+  async function updateShellVerb(verbId: string, enabled: boolean, presetId: string | null) {
+    setShellVerbBusy(verbId);
+    setShellVerbNotice(null);
+    try {
+      setShellVerbs(await invoke<ShellVerbView[]>("set_desktop_shell_verb", {
+        verbId,
+        enabled,
+        presetId,
+      }));
+      setShellVerbNotice(copy.shellVerbUpdated);
+    } catch (reason) {
+      setError(parseDesktopError(reason));
+    } finally {
+      setShellVerbBusy(null);
+    }
+  }
+
+  async function resetShellVerbs() {
+    setShellVerbBusy("*");
+    setShellVerbNotice(null);
+    try {
+      setShellVerbs(await invoke<ShellVerbView[]>("reset_desktop_shell_verbs"));
+      setShellVerbNotice(copy.shellVerbUpdated);
+    } catch (reason) {
+      setError(parseDesktopError(reason));
+    } finally {
+      setShellVerbBusy(null);
+    }
+  }
+
   async function checkForUpdates() {
     setUpdateStatus(copy.updateChecking);
     try {
@@ -1423,9 +1544,24 @@ export default function App() {
   async function loadReport(jobId: string) {
     setError(null);
     setReportNotice(null);
+    setOutputPreview(null);
     try {
-      setReport(await invoke<ValidationReport | null>("get_desktop_report", { jobId }));
+      const loaded = await invoke<ValidationReport | null>("get_desktop_report", { jobId });
+      setReport(loaded);
       setTab("reports");
+      const previewPath = loaded?.output.display_path;
+      if (previewPath) {
+        // Preview is decorative: a missing engine or unsupported output hides
+        // the block instead of surfacing an error (spec E-09).
+        void invoke<{ mime_type: string; data_base64: string } | null>(
+          "generate_desktop_output_preview",
+          { outputPath: previewPath },
+        ).then((preview) => {
+          if (mounted.current && preview) {
+            setOutputPreview(`data:${preview.mime_type};base64,${preview.data_base64}`);
+          }
+        }).catch(() => undefined);
+      }
     } catch (reason) {
       setError(parseDesktopError(reason));
     }
@@ -1612,21 +1748,25 @@ export default function App() {
           </span>
         </header>
         <div className="c95-tabs fw-tabs">
-          <div className="c95-tabs__strip" role="tablist" aria-label={copy.primaryNavigation}>
-            {tabs.map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                className="c95-tabs__tab"
-                aria-selected={tab === item}
-                onClick={() => setTab(item)}
-              >
-                {copy[item]}
-              </button>
-            ))}
-          </div>
-          <div className="c95-tabs__panel c95-scroll fw-tabs-panel" id="main-content" tabIndex={-1} role="tabpanel">
+          <nav className="fw-tabs-nav" aria-label={copy.primaryNavigation}>
+            <div className="c95-tabs__strip" role="tablist">
+              {tabs.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  role="tab"
+                  className="c95-tabs__tab"
+                  aria-selected={tab === item}
+                  aria-current={tab === item ? "page" : undefined}
+                  onClick={() => setTab(item)}
+                >
+                  {copy[item]}
+                </button>
+              ))}
+            </div>
+          </nav>
+          <main className="fw-tabs-main">
+            <div className="c95-tabs__panel c95-scroll fw-tabs-panel" id="main-content" tabIndex={-1} role="tabpanel">
       {error && (() => {
         const localized = localizeDesktopError(error, copy);
         return (
@@ -1637,6 +1777,19 @@ export default function App() {
           </section>
         );
       })()}
+
+      {error?.code === "POLICY_BLOCKED" && /encrypted pdf/i.test(error.message) && (
+        <label className="pdf-password-row">
+          {copy.pdfPassword}
+          <input
+            type="password"
+            value={pdfPassword}
+            autoComplete="off"
+            onChange={(event) => { setPdfPassword(event.target.value); setPreview(null); }}
+          />
+          <small>{copy.pdfPasswordHint}</small>
+        </label>
+      )}
 
       {showRecovery && (
         <section className="recovery-banner" role="status" aria-live="polite">
@@ -1806,7 +1959,7 @@ export default function App() {
                     <div>
                       <strong title={job.output_path}><bdi>{job.output_path}</bdi></strong>
                       <small title={job.input_path}><bdi>{job.input_path}</bdi></small>
-                      {liveProgress && <span className="job-progress"><span>{copy.stageLabel}: {liveState}</span>{waitReason && <span>{copy.waitingFor}: {waitReason}</span>}<span>{copy.elapsedLabel}: {elapsedProgressSeconds(liveProgress, progressClock)}s</span>{liveProgress.eta_milliseconds == null && <span>{copy.rateEtaUnavailable}</span>}</span>}
+                      {liveProgress && <span className="job-progress"><span>{copy.stageLabel}: {liveState}</span>{waitReason && <span>{copy.waitingFor}: {waitReason}</span>}<span>{copy.elapsedLabel}: {elapsedProgressSeconds(liveProgress, progressClock)}s</span>{liveProgress.measured_throughput_bytes_per_sec != null ? <span>{copy.measuredRate}: ~{formatBytes(liveProgress.measured_throughput_bytes_per_sec)}/s</span> : liveProgress.eta_milliseconds == null && <span>{copy.rateEtaUnavailable}</span>}</span>}
                     </div>
                     <span className={`status status-${liveState}`}>{liveState}</span>
                     <span className="job-actions">
@@ -1846,6 +1999,7 @@ export default function App() {
         <section className="page-card">
           <div className="page-heading"><div><p className="section-label">LOCAL INVENTORY</p><h1>{copy.doctor}</h1><p>{copy.doctorHint}</p></div><div className="heading-actions"><button className="secondary" type="button" disabled={engineBusy} onClick={importEnginePack}>{engineBusy ? copy.verifyingEnginePack : copy.importEnginePack}</button><button type="button" onClick={refreshEngines}>{copy.refresh}</button></div></div>
           {!doctor ? <p className="empty">{copy.importHint}</p> : <div className="engine-grid">{Object.entries(doctor.engines).map(([name, health]) => <article key={name}><strong>{name}</strong><span className={`status ${health.available ? "status-completed" : "status-failed"}`}>{health.available ? `✓ ${copy.available}` : `× ${copy.unavailable}`}</span><small>{health.identity?.version ?? health.message}</small>{health.identity && <small>{certificationLabel(health.identity.certification, copy)}</small>}</article>)}</div>}
+          <p className="typed-note">{copy.win11MenuHint}</p>
           <div className="pack-section"><p className="section-label">{copy.importedPacks}</p>{enginePacks.length === 0 ? <p className="empty">{copy.noImportedPacks}</p> : <div className="pack-list">{enginePacks.map((pack) => <article key={pack.manifest_sha256 ?? pack.manifest_path}><div><strong>{pack.engine_id ?? copy.invalidPack} {pack.version ?? ""}</strong><small><bdi>{pack.manifest_path}</bdi></small><small>{pack.executable_names.join(", ")}</small><small>{pack.valid ? packReviewText(pack, copy) : pack.message}</small></div><div className="pack-status">{engineRecoveryState(recovery?.engine_recovery, pack.engine_id) === "fell-back" && <span className="status status-warning">{copy.engineRolledBackBadge}</span>}{engineRecoveryState(recovery?.engine_recovery, pack.engine_id) === "failed" && <span className="status status-failed">{copy.engineRecoveryFailedBadge}</span>}<span className={`status ${packBadgeStatusClass(packBadgeKind(pack))}`}>{packBadgeText(pack, copy)}</span></div></article>)}</div>}</div>
         </section>
       )}
@@ -1855,6 +2009,7 @@ export default function App() {
           <div className="page-heading"><div><p className="section-label">VALIDATION</p><h1>{copy.report}</h1></div>{report && <div className="heading-actions"><button className="secondary" type="button" disabled={reportBusy !== null} onClick={revealOutput}>{reportBusy === "reveal" ? copy.openingOutput : copy.openOutput}</button><button type="button" disabled={reportBusy !== null} onClick={revalidateJob}>{reportBusy === "revalidate" ? copy.revalidatingReport : copy.revalidateReport}</button><button type="button" disabled={reportBusy !== null} onClick={exportRecipe}>{reportBusy === "recipe" ? copy.exportingRecipe : copy.exportRecipe}</button><button className="primary" type="button" disabled={reportBusy !== null} onClick={exportReport}>{reportBusy === "report" ? copy.exportingReport : copy.exportReport}</button><span className={`report-status report-${report.status}`}>{report.status}</span></div>}</div>
           {report && <label className="checkbox-control report-export-option"><input type="checkbox" checked={redactReportPaths} onChange={(event) => setRedactReportPaths(event.target.checked)} />{copy.redactReportPaths}</label>}
           {reportNotice && <p className="success-notice" role="status" aria-live="polite">{reportNotice}</p>}
+          {outputPreview && <img className="output-preview" src={outputPreview} alt={copy.outputPreviewAlt} />}
           {!report ? <p className="empty">{copy.noReport}</p> : <ReportView report={report} copy={copy} />}
         </section>
       )}
@@ -1884,6 +2039,42 @@ export default function App() {
           <div><p className="section-label">PREFERENCES</p><h1>{copy.settings}</h1></div>
           <label>{copy.language}<select value={language} onChange={(event) => setLanguage(event.target.value as Language)}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
           <label>{copy.mode}<select value={expert ? "expert" : "basic"} onChange={(event) => setExpert(event.target.value === "expert")}><option value="basic">{copy.basic}</option><option value="expert">{copy.expert}</option></select></label>
+          <label>{copy.theme}<select value={themePreference} onChange={(event) => setThemePreference(event.target.value as ThemePreference)}><option value="system">{copy.themeSystem}</option><option value="light">{copy.themeLight}</option><option value="dark">{copy.themeDark}</option></select></label>
+          <div className="shell-verbs-section">
+            <label>{copy.shellMenuTitle}</label>
+            <small>{copy.shellMenuHint}</small>
+            <div className="shell-verb-list">
+              {shellVerbs.map((verb) => (
+                <div className="shell-verb-row" key={`${verb.assoc}:${verb.verbId}`}>
+                  <label className="checkbox-control">
+                    <input
+                      type="checkbox"
+                      checked={verb.enabled}
+                      disabled={shellVerbBusy !== null}
+                      onChange={(event) => void updateShellVerb(verb.verbId, event.target.checked, verb.presetId)}
+                    />
+                    {verb.label} <small>({verb.assoc === "Directory" ? copy.folder : verb.assoc} → {verb.target})</small>
+                  </label>
+                  <label>
+                    {copy.shellPreset}
+                    <select
+                      value={verb.presetId ?? ""}
+                      disabled={shellVerbBusy !== null || !verb.enabled}
+                      onChange={(event) => void updateShellVerb(verb.verbId, verb.enabled, event.target.value || null)}
+                    >
+                      <option value="">{copy.shellPresetNone}</option>
+                      {presets.filter((preset) => preset.target_format === verb.target).map((preset) => (
+                        <option key={preset.preset_id} value={preset.preset_id}>{preset.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            </div>
+            {shellVerbNotice && <p className="success-notice" role="status" aria-live="polite">{shellVerbNotice}</p>}
+            <button type="button" className="secondary" disabled={shellVerbBusy !== null} onClick={() => void resetShellVerbs()}>{shellVerbBusy === "*" ? copy.shellVerbUpdating : copy.shellResetVerbs}</button>
+          </div>
+          <p>{copy.win11MenuHint}</p>
           <p>{copy.privacy}</p><p>{copy.accessibility}</p>
           <div><label>{copy.updates}</label>
             <button type="button" className="secondary" onClick={() => void checkForUpdates()}>{copy.checkUpdate}</button>
@@ -1891,7 +2082,8 @@ export default function App() {
           </div>
         </section>
       )}
-          </div>
+            </div>
+          </main>
         </div>
         <footer className="c95-window__statusbar">
           <span className="c95-window__statusbar-cell">{copy.localOnly}</span>

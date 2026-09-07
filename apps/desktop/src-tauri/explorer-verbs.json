@@ -26,6 +26,8 @@
     { "assoc": ".avi", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
     { "assoc": ".webm", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
     { "assoc": ".mp3", "verb": "FormatWright.ToWav", "target": "wav", "label": "Convert to WAV" },
-    { "assoc": ".wav", "verb": "FormatWright.ToMp3", "target": "mp3", "label": "Convert to MP3" }
+    { "assoc": ".wav", "verb": "FormatWright.ToMp3", "target": "mp3", "label": "Convert to MP3" },
+    { "assoc": "Directory", "verb": "FormatWright.FolderToJpg", "target": "jpg", "label": "Convert folder to JPG" },
+    { "assoc": "Directory", "verb": "FormatWright.FolderToWebp", "target": "webp", "label": "Convert folder to WebP" }
   ]
 }

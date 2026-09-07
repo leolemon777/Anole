@@ -18,6 +18,7 @@ authors = ["Anole contributors"]
 
 [workspace.dependencies]
 anyhow = "1"
+base64 = "0.22"
 axum = "0.8"
 blake3 = "1"
 clap = { version = "4", features = ["derive", "env"] }

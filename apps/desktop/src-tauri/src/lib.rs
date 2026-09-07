@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod explorer_integration;
 mod queue_bridge;
 mod shell_convert;
 
@@ -19,7 +20,7 @@ use formatwright_core::{
     JobRecord, JobRecoveryService, JobSelectionQuery, JobState, JobStateCount, MaintenanceService,
     MaintenanceStatus, PRESET_SCHEMA_VERSION, Plan, PlanRequest, PresetLibrary, Probe,
     QueueProgressUpdate, QueueRunReport, QueueWindowControl, ReportService, RevalidationService,
-    SelectionSnapshot, SignatureTrust, SqliteJobStore, StagedCleanupReport,
+    SelectionSnapshot, ShellVerbBinding, SignatureTrust, SqliteJobStore, StagedCleanupReport,
     StateBundleBackupReport, StateBundleOptions, StateBundlePreflightReport,
     SupplyChainReviewStatus, ValidationReport, VerifiedEnginePack, activate_engine_pack,
     capability_snapshot_for_input, cleanup_staged_output, prepare_conversion,
@@ -124,6 +125,8 @@ struct DesktopShellOpen {
     path: PathBuf,
     directory: bool,
     convert_to: Option<String>,
+    /// Preset bound to the invoked verb (spec E-06).
+    preset: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -333,6 +336,9 @@ struct DesktopConversionRequest {
     preserve_all_streams: Option<bool>,
     approved_plan_hash: Option<String>,
     idempotency_key: Option<String>,
+    /// Document password for encrypted PDF inputs (spec E-07). Execution-only:
+    /// forwarded to the planner's secret hand-off and never persisted.
+    password: Option<String>,
 }
 
 impl DesktopConversionRequest {
@@ -349,6 +355,7 @@ impl DesktopConversionRequest {
             video_preset: self.video_preset.clone(),
             audio_bitrate_kbps: self.audio_bitrate_kbps,
             audio_stream_index: self.audio_stream_index,
+            password: self.password.clone(),
             ..PlanRequest::default()
         }
     }
@@ -567,6 +574,7 @@ async fn run_desktop_conversion(
                     wait_reason: None,
                     occurred_unix_ms: job.updated_unix_ms,
                     eta_milliseconds: None,
+                    measured_throughput_bytes_per_sec: None,
                 },
             );
         },
@@ -632,6 +640,34 @@ fn empty_ingest_result(
     }
 }
 
+/// Applies a verb-bound preset to a shell-conversion request (spec E-06).
+/// The preset must match the batch target; anything else is ignored — the
+/// binding layer already enforces this, the check here is defense in depth.
+fn apply_shell_preset(
+    request: &mut PlanRequest,
+    presets: &[ConversionPreset],
+    preset_id: Option<&str>,
+    target: &str,
+) {
+    let Some(id) = preset_id.and_then(|raw| Uuid::parse_str(raw).ok()) else {
+        return;
+    };
+    let Some(preset) = presets
+        .iter()
+        .find(|preset| preset.preset_id == id && preset.target_format == target)
+    else {
+        return;
+    };
+    request.quality = preset.quality;
+    request.width = preset.width;
+    request.dpi = preset.dpi;
+    request.color_mode.clone_from(&preset.color_mode);
+    request.video_crf = preset.video_crf;
+    request.video_preset.clone_from(&preset.video_preset);
+    request.audio_bitrate_kbps = preset.audio_bitrate_kbps;
+    request.preserve_all_streams = preset.preserve_all_streams;
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn ingest_shell_convert(
     store: &Mutex<SqliteJobStore>,
@@ -642,6 +678,8 @@ async fn ingest_shell_convert(
     window: Option<&tauri::WebviewWindow>,
     paths: Vec<PathBuf>,
     target: String,
+    presets: &[ConversionPreset],
+    preset_id: Option<&str>,
 ) -> Result<DesktopIngestResult, String> {
     let planned = plan_convert_outputs(&paths, &target);
     let skipped_conflict = planned.iter().filter(|item| item.skipped_conflict).count();
@@ -649,12 +687,13 @@ async fn ingest_shell_convert(
     let mut requests = Vec::new();
     let mut rejected = rejected_files;
     for item in surviving_convert_items(&planned) {
-        let plan_request = PlanRequest {
+        let mut plan_request = PlanRequest {
             target_format: target.clone(),
             output_path: Some(item.output.clone()),
             preserve_all_streams: true,
             ..PlanRequest::default()
         };
+        apply_shell_preset(&mut plan_request, presets, preset_id, &target);
         match prepare_conversion(&item.input, &plan_request).await {
             Ok((_probe, plan, _)) => requests.push(JobCreateRequest {
                 input_path: item.input.clone(),
@@ -774,7 +813,9 @@ async fn ingest_shell_convert_paths(
     state: tauri::State<'_, DesktopState>,
     paths: Vec<PathBuf>,
     target: String,
+    preset_id: Option<String>,
 ) -> Result<DesktopIngestResult, String> {
+    let presets = lock(&state.presets)?.presets.clone();
     ingest_shell_convert(
         &state.store,
         &state.job_database_path,
@@ -784,6 +825,8 @@ async fn ingest_shell_convert_paths(
         Some(&window),
         paths,
         target,
+        &presets,
+        preset_id.as_deref(),
     )
     .await
 }
@@ -812,6 +855,14 @@ async fn preview_desktop_folder_batch(
     request: DesktopFolderPreviewRequest,
 ) -> Result<DesktopFolderPreview, String> {
     let _operation = acquire_active_operation(&state.operation_gate)?;
+    build_desktop_folder_preview(&state, request).await
+}
+
+#[allow(clippy::too_many_lines)] // preview body moved verbatim from the command in E-05
+async fn build_desktop_folder_preview(
+    state: &DesktopState,
+    request: DesktopFolderPreviewRequest,
+) -> Result<DesktopFolderPreview, String> {
     let target = request.target_format.trim().to_ascii_lowercase();
     let mapping = tokio::task::spawn_blocking({
         let input_root = request.input_root.clone();
@@ -940,6 +991,14 @@ fn queue_desktop_folder_batch(
 ) -> Result<DesktopFolderQueueResult, String> {
     let _operation = acquire_active_operation(&state.operation_gate)?;
     let preview_id = Uuid::parse_str(&preview_id).map_err(|error| error.to_string())?;
+    queue_desktop_folder_preview(&state, preview_id, batch_name.as_deref())
+}
+
+fn queue_desktop_folder_preview(
+    state: &DesktopState,
+    preview_id: Uuid,
+    batch_name: Option<&str>,
+) -> Result<DesktopFolderQueueResult, String> {
     let cache = lock(&state.folder_previews)?
         .remove(&preview_id)
         .ok_or_else(|| "folder preview is missing, expired, or already queued".to_owned())?;
@@ -993,10 +1052,7 @@ fn queue_desktop_folder_batch(
         cache.preview.target_format
     );
     let result = lock(&state.store)?
-        .create_queued_batch(
-            batch_name.as_deref().unwrap_or(&default_name),
-            &cache.requests,
-        )
+        .create_queued_batch(batch_name.unwrap_or(&default_name), &cache.requests)
         .map_err(serialize_error);
     let batch = match result {
         Ok(batch) => batch,
@@ -1010,6 +1066,104 @@ fn queue_desktop_folder_batch(
     Ok(DesktopFolderQueueResult {
         batch,
         queued: cache.requests.len(),
+    })
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopFolderDirectoryIngestResult {
+    batch: BatchRecord,
+    queued: usize,
+    planned: usize,
+    skipped: usize,
+    output_root: PathBuf,
+}
+
+/// Creates a fresh, empty output root derived from the input folder name
+/// (`Photos` + `jpg` → `Photos-anole-jpg`, then `-2`, `-3`, ... when the
+/// derived name already exists). Existing folders are never reused so the
+/// folder-batch no-clobber guarantee starts from an empty root.
+fn create_unique_directory_output_root(input_root: &Path, target: &str) -> Result<PathBuf, String> {
+    let parent = input_root
+        .parent()
+        .ok_or_else(|| "the selected folder has no parent directory for its output".to_owned())?;
+    let name = input_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "the selected folder name is not valid Unicode".to_owned())?;
+    let base = format!("{name}-anole-{target}");
+    for suffix in ["", "-2", "-3", "-4", "-5", "-6", "-7", "-8", "-9"] {
+        let candidate = parent.join(format!("{base}{suffix}"));
+        // `create_dir` (not create_dir_all) fails when the name is taken, so
+        // only a genuinely fresh, empty directory can be returned here.
+        if std::fs::create_dir(&candidate).is_ok() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "could not reserve a fresh output folder next to {} (tried {base} through {base}-9)",
+        input_root.display()
+    ))
+}
+
+/// Folder Explorer verb (spec E-05): right-clicking a folder and choosing
+/// Convert folder to X is one approval. The mapping preview, per-file plan
+/// checks (unsupported files land in `skipped`), no-clobber guarantee, and
+/// disk budget all run before the batch is queued — identical to the manual
+/// folder-batch flow, minus the confirmation click.
+#[tauri::command]
+#[allow(clippy::too_many_lines)]
+async fn ingest_desktop_shell_directory(
+    state: tauri::State<'_, DesktopState>,
+    path: PathBuf,
+    target: String,
+    preset_id: Option<String>,
+) -> Result<DesktopFolderDirectoryIngestResult, String> {
+    let _operation = acquire_active_operation(&state.operation_gate)?;
+    let target = target.trim().to_ascii_lowercase();
+    if classify_local_absolute_path(&path).kind != "directory" {
+        return Err(serialize_error(formatwright_core::FormatWrightError::new(
+            formatwright_core::ErrorCode::InputInvalid,
+            formatwright_core::Stage::Inspect,
+            "Folder conversion needs a local folder path",
+            "Right-click a folder in Explorer, or drop one onto the convert page.",
+        )));
+    }
+    let output_root = create_unique_directory_output_root(&path, &target)?;
+    let library_presets = lock(&state.presets)?.presets.clone();
+    let mut folder_request = DesktopFolderPreviewRequest {
+        input_root: path,
+        output_root: output_root.clone(),
+        target_format: target.clone(),
+        quality: None,
+        width: None,
+        dpi: None,
+        color_mode: None,
+        preserve_all_streams: None,
+    };
+    // Fold a verb-bound preset into the folder request's shared parameters.
+    let mut preset_request = PlanRequest::default();
+    apply_shell_preset(
+        &mut preset_request,
+        &library_presets,
+        preset_id.as_deref(),
+        &target,
+    );
+    folder_request.quality = preset_request.quality;
+    folder_request.width = preset_request.width;
+    folder_request.dpi = preset_request.dpi;
+    folder_request.color_mode = preset_request.color_mode.clone();
+    folder_request.preserve_all_streams = Some(preset_request.preserve_all_streams);
+    let preview = build_desktop_folder_preview(&state, folder_request).await?;
+    let planned = preview.planned;
+    let skipped = preview.skipped;
+    let result = queue_desktop_folder_preview(&state, preview.preview_id, None)?;
+    Ok(DesktopFolderDirectoryIngestResult {
+        batch: result.batch,
+        queued: result.queued,
+        planned,
+        skipped,
+        output_root,
     })
 }
 
@@ -1605,10 +1759,38 @@ fn import_desktop_presets(
     let imported_count = imported.presets.len();
     let mut current = lock(&state.presets)?;
     let mut updated = current.clone();
-    updated.merge(imported).map_err(serialize_error)?;
+    updated.merge(imported.clone()).map_err(serialize_error)?;
+    // E-06: imported verb bindings override local ones per verb, so a library
+    // export restores the sender's Explorer menu configuration too.
+    for binding in imported.shell_verbs {
+        updated
+            .shell_verbs
+            .retain(|candidate| candidate.verb_id != binding.verb_id);
+        updated.shell_verbs.push(binding);
+    }
+    updated
+        .shell_verbs
+        .sort_by(|left, right| left.verb_id.cmp(&right.verb_id));
+    updated.validate().map_err(serialize_error)?;
     persist_preset_library(&state.presets_path, &updated)?;
     let total = updated.presets.len();
     *current = updated;
+    // Re-apply HKCU verbs in the background so the imported menu takes
+    // effect immediately; the import itself already succeeded.
+    {
+        let library = current.clone();
+        std::thread::spawn(move || {
+            let Some(executable) = std::env::current_exe().ok() else {
+                return;
+            };
+            let registrations = explorer_integration::resolve_registrations(&library);
+            if let Err(errors) =
+                explorer_integration::apply_registrations(&executable, &registrations)
+            {
+                eprintln!("explorer verb registration reported failures: {errors:?}");
+            }
+        });
+    }
     Ok(DesktopPresetImportResult {
         imported: imported_count,
         total,
@@ -1652,7 +1834,7 @@ fn normalize_shell_convert_target(value: &str) -> Option<String> {
         .then_some(normalized)
 }
 
-fn parse_shell_invocation<I, S>(arguments: I) -> Option<(PathBuf, Option<String>)>
+fn parse_shell_invocation<I, S>(arguments: I) -> Option<(PathBuf, Option<String>, Option<String>)>
 where
     I: IntoIterator<Item = S>,
     S: Into<std::ffi::OsString>,
@@ -1661,6 +1843,7 @@ where
     let _executable = arguments.next()?;
     let mut path = None;
     let mut convert_to = None;
+    let mut preset = None;
     let mut saw_open = false;
     let mut saw_convert = false;
     while let Some(argument) = arguments.next() {
@@ -1673,6 +1856,11 @@ where
             convert_to = arguments
                 .next()
                 .and_then(|value| normalize_shell_convert_target(&value.to_string_lossy()));
+        } else if argument == "--preset" {
+            // Verb-bound preset (spec E-06); validated at execution time.
+            preset = arguments
+                .next()
+                .map(|value| value.to_string_lossy().into_owned());
         } else if path.is_none()
             && (saw_open || saw_convert)
             && !argument.to_string_lossy().starts_with('-')
@@ -1682,10 +1870,10 @@ where
     }
     let path = path?;
     if saw_convert {
-        return Some((path, Some(convert_to?)));
+        return Some((path, Some(convert_to?), preset));
     }
     if saw_open {
-        return Some((path, None));
+        return Some((path, None, None));
     }
     None
 }
@@ -1696,7 +1884,7 @@ where
     I: IntoIterator<Item = S>,
     S: Into<std::ffi::OsString>,
 {
-    let (path, convert_to) = parse_shell_invocation(arguments)?;
+    let (path, convert_to, _) = parse_shell_invocation(arguments)?;
     convert_to.is_none().then_some(path)
 }
 
@@ -1777,18 +1965,22 @@ fn classify_local_absolute_path(requested: &Path) -> DesktopDropClassification {
 fn validated_shell_request(
     arguments: impl IntoIterator<Item = std::ffi::OsString>,
 ) -> Option<DesktopShellOpen> {
-    let (requested, convert_to) = parse_shell_invocation(arguments)?;
+    let (requested, convert_to, preset) = parse_shell_invocation(arguments)?;
     let classified = classify_local_absolute_path(&requested);
     match classified.kind.as_str() {
         "file" => Some(DesktopShellOpen {
             path: requested,
             directory: false,
             convert_to,
+            preset,
         }),
-        "directory" if convert_to.is_none() => Some(DesktopShellOpen {
+        // E-05: folder Explorer verbs convert through the same coordinator;
+        // the webview routes directory paths into the folder-batch lane.
+        "directory" => Some(DesktopShellOpen {
             path: requested,
             directory: true,
-            convert_to: None,
+            convert_to,
+            preset,
         }),
         _ => None,
     }
@@ -1831,6 +2023,7 @@ fn enqueue_shell_open_path(pending: &Mutex<VecDeque<DesktopShellOpen>>, path: Pa
             path,
             directory: false,
             convert_to: None,
+            preset: None,
         },
     );
 }
@@ -1858,11 +2051,12 @@ fn accept_desktop_shell_request(
     request: DesktopShellOpen,
 ) {
     if let Some(target) = request.convert_to.clone() {
+        let preset = request.preset.clone();
         let (outcome, generation) = {
             let Ok(mut coordinator) = convert_batches.lock() else {
                 return;
             };
-            let outcome = coordinator.push(target, request.path);
+            let outcome = coordinator.push(target, preset, request.path);
             (outcome, coordinator.generation)
         };
         if outcome.flushed_ready {
@@ -1903,6 +2097,153 @@ fn get_desktop_shell_open(state: tauri::State<'_, DesktopState>) -> Option<Deskt
         }
     }
     None
+}
+
+#[derive(serde::Serialize)]
+struct DesktopOutputPreview {
+    mime_type: String,
+    /// Base64 payload; the webview embeds it as a data URL.
+    data_base64: String,
+}
+
+/// Renders an in-app preview thumbnail for a finished output (spec E-09).
+/// Returns `Ok(None)` when the output has no preview lane or the engine is
+/// unavailable; the UI hides the block instead of showing an error.
+#[tauri::command]
+async fn generate_desktop_output_preview(
+    output_path: String,
+) -> Result<Option<DesktopOutputPreview>, String> {
+    use base64::Engine as _;
+
+    let preview = formatwright_core::generate_output_preview(std::path::Path::new(&output_path))
+        .await
+        .map_err(serialize_error)?;
+    Ok(preview.map(|preview| DesktopOutputPreview {
+        mime_type: preview.mime_type.to_owned(),
+        data_base64: base64::engine::general_purpose::STANDARD.encode(preview.bytes),
+    }))
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopShellVerbView {
+    verb_id: String,
+    assoc: String,
+    target: String,
+    label: String,
+    enabled: bool,
+    preset_id: Option<Uuid>,
+    preset_name: Option<String>,
+}
+
+fn shell_verb_views(library: &PresetLibrary) -> Vec<DesktopShellVerbView> {
+    explorer_integration::resolve_registrations(library)
+        .into_iter()
+        .map(|registration| DesktopShellVerbView {
+            verb_id: registration.definition.verb.clone(),
+            assoc: registration.definition.assoc.clone(),
+            target: registration.definition.target.clone(),
+            label: registration.definition.label.clone(),
+            enabled: registration.enabled,
+            preset_id: registration.preset.as_ref().map(|preset| preset.preset_id),
+            preset_name: registration
+                .preset
+                .as_ref()
+                .map(|preset| preset.name.clone()),
+        })
+        .collect()
+}
+
+/// Persists the library, re-applies HKCU registrations, and refreshes the
+/// managed state. Shared by the settings commands below.
+fn commit_shell_verb_library(
+    state: &DesktopState,
+    library: &PresetLibrary,
+) -> Result<Vec<DesktopShellVerbView>, String> {
+    library.validate().map_err(serialize_error)?;
+    persist_preset_library(&state.presets_path, library)?;
+    *lock(&state.presets)? = library.clone();
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let registrations = explorer_integration::resolve_registrations(library);
+    if let Err(errors) = explorer_integration::apply_registrations(&executable, &registrations) {
+        return Err(format!(
+            "Explorer menu update failed: {}",
+            errors
+                .iter()
+                .map(|error| error.verb_id.clone())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Ok(shell_verb_views(library))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn get_desktop_shell_verbs(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<DesktopShellVerbView>, String> {
+    let library = lock(&state.presets)?.clone();
+    Ok(shell_verb_views(&library))
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn set_desktop_shell_verb(
+    state: tauri::State<'_, DesktopState>,
+    verb_id: String,
+    enabled: bool,
+    preset_id: Option<String>,
+) -> Result<Vec<DesktopShellVerbView>, String> {
+    if !explorer_integration::baseline_verb_table()
+        .iter()
+        .any(|definition| definition.verb == verb_id)
+    {
+        return Err("unknown Explorer verb".to_owned());
+    }
+    let mut library = lock(&state.presets)?.clone();
+    let resolved_preset = preset_id
+        .as_deref()
+        .and_then(|raw| Uuid::parse_str(raw).ok());
+    if let Some(preset) = resolved_preset {
+        let matches_target = library.presets.iter().any(|candidate| {
+            candidate.preset_id == preset
+                && explorer_integration::baseline_verb_table()
+                    .iter()
+                    .any(|definition| {
+                        definition.verb == verb_id && definition.target == candidate.target_format
+                    })
+        });
+        if !matches_target {
+            return Err("the selected preset does not target this verb's format".to_owned());
+        }
+    }
+    let binding = ShellVerbBinding {
+        verb_id: verb_id.clone(),
+        enabled,
+        preset_id: resolved_preset,
+    };
+    library
+        .shell_verbs
+        .retain(|candidate| candidate.verb_id != verb_id);
+    // Only store bindings that differ from the default (enabled, no preset).
+    if !(binding.enabled && binding.preset_id.is_none()) {
+        library.shell_verbs.push(binding);
+    }
+    library
+        .shell_verbs
+        .sort_by(|left, right| left.verb_id.cmp(&right.verb_id));
+    commit_shell_verb_library(&state, &library)
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn reset_desktop_shell_verbs(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<DesktopShellVerbView>, String> {
+    let mut library = lock(&state.presets)?.clone();
+    library.shell_verbs.clear();
+    commit_shell_verb_library(&state, &library)
 }
 
 #[tauri::command]
@@ -2123,7 +2464,8 @@ fn read_preset_library(path: &Path) -> Result<PresetLibrary, String> {
     }
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
     let library = serde_json::from_slice::<PresetLibrary>(&bytes)
-        .map_err(|error| format!("invalid preset library: {error}"))?;
+        .map_err(|error| format!("invalid preset library: {error}"))?
+        .migrate_legacy();
     library.validate().map_err(serialize_error)?;
     Ok(library)
 }
@@ -2541,6 +2883,47 @@ fn recover_desktop_jobs(
     })
 }
 
+/// Applies the Explorer verb registrations for the current user and exits
+/// with a process code. Invoked by the NSIS bootstrap (`--register-shell`)
+/// so convert verbs exist right after installation without launching the
+/// GUI (spec E-06).
+pub fn register_shell_and_exit() -> ! {
+    let outcome = (|| -> Result<(), String> {
+        let data_directory = shell_bootstrap_data_dir()?;
+        let library = load_preset_library(&data_directory.join("presets.json"))?;
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let registrations = explorer_integration::resolve_registrations(&library);
+        explorer_integration::apply_registrations(&executable, &registrations)
+            .map(|report| {
+                eprintln!(
+                    "--register-shell wrote {} verbs, removed {}",
+                    report.written, report.removed
+                );
+            })
+            .map_err(|errors| {
+                errors
+                    .iter()
+                    .map(|error| format!("{}: {}", error.verb_id, error.message))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
+    })();
+    match outcome {
+        Ok(()) => std::process::exit(0),
+        Err(message) => {
+            eprintln!("--register-shell failed: {message}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Mirrors Tauri's `app_data_dir` for the fixed identifier (`tauri.conf.json`)
+/// without initializing the full application.
+fn shell_bootstrap_data_dir() -> Result<PathBuf, String> {
+    let base = std::env::var("APPDATA").map_err(|_| "APPDATA is not set".to_owned())?;
+    Ok(PathBuf::from(base).join("local.formatwright.desktop"))
+}
+
 fn setup_desktop(
     app: &mut tauri::App,
     shell_open_paths: Arc<Mutex<VecDeque<DesktopShellOpen>>>,
@@ -2596,6 +2979,23 @@ fn setup_desktop(
         .map_err(|error| Box::<dyn std::error::Error>::from(error.to_string()))?;
     if let Some(request) = validated_shell_request(std::env::args_os()) {
         accept_desktop_shell_request(app.handle(), &shell_open_paths, &convert_batches, request);
+    }
+    // E-06: the application owns HKCU convert verbs from first launch on.
+    // Registration is best-effort on a background thread: the installer-time
+    // registration (or an earlier run) stays in place if this ever fails.
+    {
+        let verb_library = presets.clone();
+        std::thread::spawn(move || {
+            let Some(executable) = std::env::current_exe().ok() else {
+                return;
+            };
+            let registrations = explorer_integration::resolve_registrations(&verb_library);
+            if let Err(errors) =
+                explorer_integration::apply_registrations(&executable, &registrations)
+            {
+                eprintln!("explorer verb registration reported failures: {errors:?}");
+            }
+        });
     }
     app.manage(DesktopState {
         store: Mutex::new(store),
@@ -2671,6 +3071,11 @@ pub fn run() {
             desktop_queue_window_busy,
             ingest_shell_convert_paths,
             show_desktop_toast,
+            generate_desktop_output_preview,
+            ingest_desktop_shell_directory,
+            get_desktop_shell_verbs,
+            set_desktop_shell_verb,
+            reset_desktop_shell_verbs,
             requeue_desktop_job,
             cleanup_desktop_job_staging,
             list_desktop_jobs,
@@ -2725,12 +3130,12 @@ mod tests {
         DESKTOP_JOB_PAGE_LIMIT, DesktopConversionRequest, DesktopOperationGate,
         MAX_PENDING_SHELL_OPEN_PATHS, acquire_active_operation, acquire_maintenance_operation,
         acquire_queue_window, apply_pending_restore, backup_path, bundled_manifest_paths,
-        classify_local_absolute_path, desktop_job_page_limit, enqueue_shell_open_path,
-        ingest_shell_convert, load_preset_library, parse_shell_invocation, pending_restore_path,
-        persist_preset_library, prepare_approved_desktop_conversion, recover_desktop_jobs,
-        report_for_export, requeue_job, run_queue_window_on_database, shell_open_path_from_args,
-        stage_pending_restore, validated_shell_open_path, validated_shell_request,
-        write_desktop_export_noclobber,
+        classify_local_absolute_path, create_unique_directory_output_root, desktop_job_page_limit,
+        enqueue_shell_open_path, ingest_shell_convert, load_preset_library, parse_shell_invocation,
+        pending_restore_path, persist_preset_library, prepare_approved_desktop_conversion,
+        recover_desktop_jobs, report_for_export, requeue_job, run_queue_window_on_database,
+        shell_open_path_from_args, stage_pending_restore, validated_shell_open_path,
+        validated_shell_request, write_desktop_export_noclobber,
     };
 
     fn plan(output_path: PathBuf) -> Plan {
@@ -2856,6 +3261,7 @@ mod tests {
             preserve_all_streams: Some(true),
             approved_plan_hash,
             idempotency_key: None,
+            password: None,
         }
     }
 
@@ -3212,7 +3618,7 @@ mod tests {
             "PNG",
             input.to_str().expect("utf8"),
         ]);
-        assert_eq!(parsed, Some((input.clone(), Some("png".to_owned()))));
+        assert_eq!(parsed, Some((input.clone(), Some("png".to_owned()), None)));
         assert_eq!(
             parse_shell_invocation([
                 "formatwright-desktop.exe",
@@ -3221,7 +3627,7 @@ mod tests {
                 "--to",
                 "jpeg",
             ]),
-            Some((input.clone(), Some("jpg".to_owned())))
+            Some((input.clone(), Some("jpg".to_owned()), None))
         );
         assert_eq!(
             parse_shell_invocation([
@@ -3243,15 +3649,94 @@ mod tests {
         .expect("valid convert request");
         assert_eq!(request.convert_to.as_deref(), Some("png"));
         assert!(!request.directory);
+        // E-05: folder verbs convert through the coordinator; the webview
+        // routes directory paths into the folder-batch lane.
+        let folder_request = validated_shell_request([
+            "formatwright-desktop.exe".into(),
+            "--shell-convert".into(),
+            "--to".into(),
+            "jpg".into(),
+            suite.path().as_os_str().to_os_string(),
+        ])
+        .expect("directory convert request is accepted");
+        assert!(folder_request.directory);
+        assert_eq!(folder_request.convert_to.as_deref(), Some("jpg"));
         assert_eq!(
             validated_shell_request([
                 "formatwright-desktop.exe".into(),
                 "--shell-convert".into(),
                 "--to".into(),
                 "png".into(),
-                suite.path().as_os_str().to_os_string(),
+                suite.path().join("missing").into_os_string(),
             ]),
             None
+        );
+    }
+
+    #[test]
+    fn directory_output_root_reservation_is_unique_and_never_reuses() {
+        let suite = tempdir().expect("suite");
+        let album = suite.path().join("album");
+        fs::create_dir(&album).expect("album");
+
+        let first = create_unique_directory_output_root(&album, "jpg").expect("first root");
+        assert_eq!(
+            first.file_name().and_then(|v| v.to_str()),
+            Some("album-anole-jpg")
+        );
+        // An existing derived name forces the -2 suffix instead of reuse.
+        fs::write(first.join("taken.txt"), b"x").expect("occupy first");
+        let second = create_unique_directory_output_root(&album, "jpg").expect("second root");
+        assert_eq!(
+            second.file_name().and_then(|v| v.to_str()),
+            Some("album-anole-jpg-2")
+        );
+        assert!(second.read_dir().expect("read second").next().is_none());
+    }
+
+    #[test]
+    fn parse_shell_invocation_carries_the_bound_preset() {
+        let suite = tempdir().expect("suite");
+        let input = suite.path().join("photo.png");
+        fs::write(&input, b"png").expect("file");
+        let preset_id = uuid::Uuid::new_v4();
+        let invocation = format!(
+            "--shell-convert --to webp --preset {preset_id} {}",
+            input.to_str().expect("utf8")
+        );
+        let parsed = parse_shell_invocation(
+            std::iter::once("formatwright-desktop.exe")
+                .chain(invocation.split(' '))
+                .map(std::ffi::OsString::from),
+        );
+        assert_eq!(
+            parsed,
+            Some((
+                input.clone(),
+                Some("webp".to_owned()),
+                Some(preset_id.to_string())
+            ))
+        );
+        // An unknown preset marker is carried verbatim; execution-time
+        // resolution decides what to do with it.
+        let unparsed = parse_shell_invocation(
+            std::iter::once("formatwright-desktop.exe")
+                .chain(
+                    format!(
+                        "--shell-convert --to webp --preset not-a-uuid {}",
+                        input.to_str().expect("utf8")
+                    )
+                    .split(' '),
+                )
+                .map(std::ffi::OsString::from),
+        );
+        assert_eq!(
+            unparsed,
+            Some((
+                input,
+                Some("webp".to_owned()),
+                Some("not-a-uuid".to_owned())
+            ))
         );
     }
 
@@ -3303,6 +3788,8 @@ mod tests {
                 None,
                 vec![input],
                 "yaml".to_owned(),
+                &[],
+                None,
             ))
             .expect("ingest");
         assert!(!result.ran_immediately);
@@ -3332,7 +3819,11 @@ mod tests {
         ]);
         assert_eq!(
             parsed,
-            Some((PathBuf::from(r"C:\in\manual.pdf"), Some("png".to_owned())))
+            Some((
+                PathBuf::from(r"C:\in\manual.pdf"),
+                Some("png".to_owned()),
+                None
+            ))
         );
         assert_eq!(
             parse_shell_invocation([
