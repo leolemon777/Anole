@@ -120,8 +120,8 @@ async fn inspect_pdf_inner(
         return Err(FormatWrightError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
-            "Encrypted PDFs are not accepted by the alpha renderer",
-            "Decrypt an authorized copy locally, then retry.",
+            "Encrypted PDF: a document password is required",
+            "Enter the PDF password in the convert form, or decrypt an authorized copy locally.",
         ));
     }
 
@@ -327,6 +327,19 @@ pub fn plan_pdf_render(
         ),
         ("page_prefix".to_owned(), "page".to_owned()),
     ]);
+    // E-07: an encrypted input renders through the same lane; the cleartext
+    // password lives in the execution-only secret store keyed by plan_id and
+    // the serialized Plan carries only a [redacted] marker, mirroring the
+    // qpdf encrypt/decrypt hand-off above.
+    let password = request
+        .password
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let mut arguments = arguments;
+    if password.is_some() {
+        arguments.insert("password".to_owned(), "[redacted]".to_owned());
+    }
     let constraints = BTreeMap::from([
         ("network".to_owned(), json!("deny")),
         ("output_kind".to_owned(), json!("page-directory")),
@@ -389,6 +402,9 @@ pub fn plan_pdf_render(
         output_path: Some(output_path),
         estimated_output_bytes: Some(raw_bytes),
     };
+    if let Some(password) = password.as_deref() {
+        register_pdf_secret(plan.plan_id, password);
+    }
     plan.plan_hash = deterministic_plan_hash(&plan)?;
     Ok(plan)
 }
@@ -606,8 +622,8 @@ async fn run_pdfinfo(
             return Err(FormatWrightError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Inspect,
-                "Encrypted PDFs are not accepted by the alpha renderer",
-                "Decrypt an authorized copy locally, then retry.",
+                "Encrypted PDF: a document password is required",
+                "Enter the PDF password in the convert form, or decrypt an authorized copy locally.",
             ));
         }
         return Err(input_pdf_error(
@@ -2253,6 +2269,68 @@ mod tests {
             build_configuration: None,
             certification: Certification::Experimental,
         }
+    }
+
+    #[test]
+    fn render_plan_with_password_keeps_secret_out_of_serialized_state() {
+        let request = PlanRequest {
+            target_format: "png".to_owned(),
+            output_path: Some(PathBuf::from("pages")),
+            dpi: Some(144),
+            password: Some("s3cret-hunter2".to_owned()),
+            ..PlanRequest::default()
+        };
+        let plan = plan_pdf_render(&probe(), &request, &engine()).expect("PDF Plan");
+        assert_eq!(
+            plan.steps[0].arguments.get("password").map(String::as_str),
+            Some("[redacted]"),
+            "the serialized Plan carries only the redaction marker"
+        );
+
+        // Negative sweep (spec E-07): the cleartext password must not appear
+        // anywhere in the Plan payload a surface would persist or print.
+        let serialized = serde_json::to_string(&plan).expect("plan serializes like the job store");
+        assert!(
+            !serialized.contains("s3cret-hunter2"),
+            "cleartext password leaked into the serialized Plan"
+        );
+
+        // The secret hand-off is single-use: the runner pops it once.
+        let secret = super::take_pdf_secret(plan.plan_id).expect("secret registered");
+        assert_eq!(secret, "s3cret-hunter2");
+        assert!(
+            super::take_pdf_secret(plan.plan_id).is_none(),
+            "a replayed queue plan cannot resurrect the password"
+        );
+    }
+
+    #[test]
+    fn render_plan_without_password_has_no_marker_and_distinct_hash() {
+        let request = PlanRequest {
+            target_format: "png".to_owned(),
+            output_path: Some(PathBuf::from("pages")),
+            dpi: Some(144),
+            ..PlanRequest::default()
+        };
+        let plain = plan_pdf_render(&probe(), &request, &engine()).expect("PDF Plan");
+        assert!(
+            !plain.steps[0].arguments.contains_key("password"),
+            "unprotected inputs must not carry a password marker"
+        );
+
+        let locked = plan_pdf_render(
+            &probe(),
+            &PlanRequest {
+                password: Some("another".to_owned()),
+                ..request.clone()
+            },
+            &engine(),
+        )
+        .expect("PDF Plan");
+        assert_ne!(
+            plain.plan_hash, locked.plan_hash,
+            "approval semantics distinguish protected from plain inputs"
+        );
     }
 
     #[test]

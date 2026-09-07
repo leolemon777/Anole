@@ -25,6 +25,7 @@ mod office;
 mod pdf;
 pub mod planner;
 pub mod preset;
+pub mod preview;
 pub mod runner;
 pub mod scheduler;
 pub mod structured;
@@ -77,9 +78,9 @@ pub use formatwright_engine_sdk::{
 };
 pub use inspect::inspect_media;
 pub use job_store::{
-    BatchRecord, BulkActionReport, BulkJobAction, IdempotentJobResult, JobCreateRequest,
-    JobDetails, JobEventRecord, JobProgress, JobQueryPage, JobRecord, JobSelectionQuery,
-    JobStateCount, RevalidationRecord, SelectionSnapshot, SqliteJobStore,
+    BatchRecord, BulkActionReport, BulkJobAction, EngineThroughputSample, IdempotentJobResult,
+    JobCreateRequest, JobDetails, JobEventRecord, JobProgress, JobQueryPage, JobRecord,
+    JobSelectionQuery, JobStateCount, RevalidationRecord, SelectionSnapshot, SqliteJobStore,
 };
 pub use maintenance::{
     BackupReport, CompactReport, IntegrityReport, MaintenanceService, MaintenanceStatus,
@@ -90,7 +91,8 @@ pub use office::{
 };
 pub use pdf::{inspect_pdf, pdf_format_hint, plan_pdf_extract, plan_pdf_merge, plan_pdf_render};
 pub use planner::{plan_conversion, plan_heic_conversion, plan_metadata_clean};
-pub use preset::{ConversionPreset, PRESET_SCHEMA_VERSION, PresetLibrary};
+pub use preset::{ConversionPreset, PRESET_SCHEMA_VERSION, PresetLibrary, ShellVerbBinding};
+pub use preview::{OutputPreview, PREVIEW_MAX_EDGE, generate_output_preview};
 pub use runner::{
     ExecutionMilestone, ExecutionResult, cleanup_staged_output, execute_plan,
     execute_plan_observed, resolve_output_path, staged_output_candidates, staged_output_path,

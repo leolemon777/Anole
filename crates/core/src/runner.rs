@@ -1673,11 +1673,35 @@ where
         .parent()
         .ok_or_else(|| invalid_plan_argument("output parent"))?;
     let page_prefix = partial_path.join("page");
+    // E-07: an encrypted input's password never travels in the serialized
+    // Plan; the planner parked it in the execution-only secret store and this
+    // is the single point it rejoins the engine argv. Popper engines read the
+    // password only from argv, so it lives there for the child's lifetime
+    // only (documented deviation from the env-channel wording in the spec).
+    let document_password = match step.arguments.get("password").map(String::as_str) {
+        Some("[redacted]") => Some(crate::pdf::take_pdf_secret(plan.plan_id).ok_or_else(|| {
+            FormatWrightError::new(
+                ErrorCode::PolicyBlocked,
+                Stage::Execute,
+                "The PDF password is unavailable for this queued plan",
+                "Rerun the conversion and re-enter the document password.",
+            )
+        })?),
+        Some(other) => {
+            return Err(invalid_plan_argument(&format!(
+                "PDF render password marker must be [redacted], got {other}"
+            )));
+        }
+        None => None,
+    };
     let mut command = Command::new(&step.engine.binary_path);
     command
         .current_dir(output_parent)
         .arg("-r")
         .arg(dpi.to_string());
+    if let Some(password) = document_password.as_deref() {
+        command.arg("-upw").arg(password);
+    }
     if color_mode == "gray" {
         command.arg("-gray");
     }

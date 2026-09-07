@@ -21,7 +21,7 @@ use crate::maintenance::{MaintenanceService, RestorePreflightReport};
 use crate::preset::PresetLibrary;
 
 pub const APPLICATION_STATE_BUNDLE_SCHEMA_VERSION: u16 = 1;
-pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u16 = 1;
+pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u16 = 2;
 
 const MANIFEST_ENTRY: &str = "manifest.json";
 const DATABASE_ENTRY: &str = "database/jobs.sqlite3";
@@ -97,14 +97,20 @@ pub struct ApplicationSettings {
     pub schema_version: u16,
     pub language: String,
     pub expert_mode: bool,
+    #[serde(default = "default_settings_theme")]
+    pub theme: String,
+}
+
+fn default_settings_theme() -> String {
+    "system".to_owned()
 }
 
 impl ApplicationSettings {
-    /// Validates the portable settings v1 contract.
+    /// Validates the portable settings v2 contract.
     ///
     /// # Errors
     ///
-    /// Returns `InputInvalid` for unsupported versions or languages.
+    /// Returns `InputInvalid` for unsupported versions, languages, or themes.
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != APPLICATION_SETTINGS_SCHEMA_VERSION {
             return Err(state_error(
@@ -113,6 +119,11 @@ impl ApplicationSettings {
         }
         if !matches!(self.language.as_str(), "en" | "zh-CN") {
             return Err(state_error("Application language must be en or zh-CN"));
+        }
+        if !matches!(self.theme.as_str(), "system" | "light" | "dark") {
+            return Err(state_error(
+                "Application theme must be system, light, or dark",
+            ));
         }
         Ok(())
     }
@@ -124,6 +135,7 @@ impl Default for ApplicationSettings {
             schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
             language: "en".to_owned(),
             expert_mode: false,
+            theme: default_settings_theme(),
         }
     }
 }
@@ -150,10 +162,17 @@ impl ApplicationSettingsService {
             return Ok(None);
         }
         let bytes = read_bounded(&self.path, MAX_SETTINGS_BYTES)?;
-        let settings = serde_json::from_slice::<ApplicationSettings>(&bytes).map_err(|error| {
-            state_error("Stored application settings are invalid")
-                .with_diagnostic(error.to_string())
-        })?;
+        let mut settings =
+            serde_json::from_slice::<ApplicationSettings>(&bytes).map_err(|error| {
+                state_error("Stored application settings are invalid")
+                    .with_diagnostic(error.to_string())
+            })?;
+        if settings.schema_version == 1 {
+            // v1 files predate the theme preference; migrate in memory so the
+            // next save persists v2. Older restore bundles hit this same path.
+            settings.schema_version = APPLICATION_SETTINGS_SCHEMA_VERSION;
+            settings.theme = default_settings_theme();
+        }
         settings.validate()?;
         Ok(Some(settings))
     }
@@ -1640,6 +1659,40 @@ mod tests {
     use crate::job_store::SqliteJobStore;
     use crate::preset::{ConversionPreset, PRESET_SCHEMA_VERSION};
 
+    #[test]
+    fn settings_v1_file_migrates_to_v2_with_system_theme() {
+        let root = tempdir().expect("tempdir");
+        let path = root.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"schema_version":1,"language":"zh-CN","expert_mode":false}"#,
+        )
+        .expect("seed v1 settings");
+
+        let settings = ApplicationSettingsService::new(&path)
+            .read()
+            .expect("v1 settings read")
+            .expect("settings present");
+        assert_eq!(settings.schema_version, APPLICATION_SETTINGS_SCHEMA_VERSION);
+        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.language, "zh-CN");
+    }
+
+    #[test]
+    fn settings_reject_unknown_theme_and_future_version() {
+        let sepia = ApplicationSettings {
+            theme: "sepia".to_owned(),
+            ..ApplicationSettings::default()
+        };
+        assert!(sepia.validate().is_err());
+
+        let future = ApplicationSettings {
+            schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION + 1,
+            ..ApplicationSettings::default()
+        };
+        assert!(future.validate().is_err());
+    }
+
     fn seed_layout(root: &Path) -> ApplicationStateLayout {
         let layout =
             ApplicationStateLayout::from_database(root.join("jobs.sqlite3")).expect("state layout");
@@ -1699,6 +1752,7 @@ mod tests {
         let library = PresetLibrary {
             schema_version: PRESET_SCHEMA_VERSION,
             presets: vec![preset],
+            shell_verbs: Vec::new(),
         };
         fs::write(
             &layout.presets_path,
@@ -1710,6 +1764,7 @@ mod tests {
                 schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
                 language: "zh-CN".to_owned(),
                 expert_mode: true,
+                theme: "dark".to_owned(),
             })
             .expect("settings");
         fs::write(

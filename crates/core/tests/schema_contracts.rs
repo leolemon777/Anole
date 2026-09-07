@@ -25,11 +25,11 @@ const VALIDATION_REPORT_SCHEMA: &str =
     include_str!("../../../schemas/validation-report/v1.schema.json");
 const ENGINE_MANIFEST_SCHEMA: &str =
     include_str!("../../../schemas/engine-manifest/v1.schema.json");
-const PRESET_LIBRARY_SCHEMA: &str = include_str!("../../../schemas/preset-library/v1.schema.json");
+const PRESET_LIBRARY_SCHEMA: &str = include_str!("../../../schemas/preset-library/v2.schema.json");
 const APPLICATION_STATE_MANIFEST_SCHEMA: &str =
     include_str!("../../../schemas/application-state-manifest/v1.schema.json");
 const APPLICATION_SETTINGS_SCHEMA: &str =
-    include_str!("../../../schemas/application-settings/v1.schema.json");
+    include_str!("../../../schemas/application-settings/v2.schema.json");
 
 fn engine() -> EngineIdentity {
     EngineIdentity {
@@ -241,6 +241,7 @@ fn preset_library() -> PresetLibrary {
             video_preset: None,
             audio_bitrate_kbps: None,
         }],
+        shell_verbs: Vec::new(),
     }
 }
 
@@ -339,9 +340,10 @@ fn rust_application_settings_match_public_schema() {
     assert_contract(
         APPLICATION_SETTINGS_SCHEMA,
         &ApplicationSettings {
-            schema_version: 1,
+            schema_version: 2,
             language: "zh-CN".to_owned(),
             expert_mode: true,
+            theme: "dark".to_owned(),
         },
     );
 }

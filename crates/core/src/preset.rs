@@ -3,7 +3,25 @@ use uuid::Uuid;
 
 use crate::{ErrorCode, FormatWrightError, Result, Stage};
 
-pub const PRESET_SCHEMA_VERSION: u16 = 1;
+pub const PRESET_SCHEMA_VERSION: u16 = 2;
+
+/// One Explorer convert-verb assignment (spec E-06). Verb IDs are the fixed
+/// baseline set from `explorer-verbs.json`; a binding only toggles the verb
+/// and optionally points it at a library preset so right-click conversions
+/// use the user's parameters. Bindings live inside the preset library so
+/// they travel with preset export/import.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ShellVerbBinding {
+    pub verb_id: String,
+    #[serde(default = "default_shell_verb_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub preset_id: Option<Uuid>,
+}
+
+const fn default_shell_verb_enabled() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -135,6 +153,10 @@ impl ConversionPreset {
 pub struct PresetLibrary {
     pub schema_version: u16,
     pub presets: Vec<ConversionPreset>,
+    /// Explorer verb assignments (E-06). Missing entries mean "enabled with
+    /// default parameters", which is also how v1 libraries read.
+    #[serde(default)]
+    pub shell_verbs: Vec<ShellVerbBinding>,
 }
 
 impl PresetLibrary {
@@ -143,6 +165,7 @@ impl PresetLibrary {
         Self {
             schema_version: PRESET_SCHEMA_VERSION,
             presets: Vec::new(),
+            shell_verbs: Vec::new(),
         }
     }
 
@@ -182,7 +205,57 @@ impl PresetLibrary {
                 ));
             }
         }
+        if self.shell_verbs.len() > 64 {
+            return Err(invalid_preset(
+                "Preset library cannot carry more than 64 shell-verb bindings",
+                "Remove unused Explorer menu bindings and import again.",
+            ));
+        }
+        let mut verb_ids = std::collections::BTreeSet::new();
+        for binding in &self.shell_verbs {
+            if binding.verb_id.is_empty()
+                || binding.verb_id.len() > 64
+                || binding
+                    .verb_id
+                    .chars()
+                    .any(|c| !c.is_ascii_alphanumeric() && c != '.' && c != '_')
+            {
+                return Err(invalid_preset(
+                    "Shell-verb binding has an invalid verb ID",
+                    "Reset the Explorer menu configuration and retry.",
+                ));
+            }
+            if !verb_ids.insert(binding.verb_id.as_str()) {
+                return Err(invalid_preset(
+                    "Shell-verb binding IDs must be unique",
+                    "Reset the Explorer menu configuration and retry.",
+                ));
+            }
+            if let Some(preset_id) = binding.preset_id
+                && !self
+                    .presets
+                    .iter()
+                    .any(|preset| preset.preset_id == preset_id)
+            {
+                return Err(invalid_preset(
+                    "Shell-verb binding points at a preset that is not in this library",
+                    "Import the preset first, then rebind the Explorer verb.",
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// Upgrades a freshly deserialized v1 library (no verb bindings) to the
+    /// current schema in memory; the next save persists v2. Libraries older
+    /// than v1 or newer than current stay rejected by `validate`.
+    #[must_use]
+    pub fn migrate_legacy(mut self) -> Self {
+        if self.schema_version == 1 {
+            self.schema_version = PRESET_SCHEMA_VERSION;
+            self.shell_verbs = Vec::new();
+        }
+        self
     }
 
     /// Inserts a new preset or updates the preset with the same stable ID.
@@ -279,6 +352,54 @@ mod tests {
             audio_bitrate_kbps: None,
             preserve_all_streams: true,
         }
+    }
+
+    #[test]
+    fn v1_library_migrates_to_v2_with_default_verb_bindings() {
+        let id = Uuid::new_v4();
+        let legacy = PresetLibrary {
+            schema_version: 1,
+            presets: vec![preset(id, "Web smaller")],
+            shell_verbs: Vec::new(),
+        };
+        let migrated = legacy.migrate_legacy();
+        assert_eq!(migrated.schema_version, PRESET_SCHEMA_VERSION);
+        assert!(migrated.shell_verbs.is_empty());
+        assert!(migrated.validate().is_ok());
+    }
+
+    #[test]
+    fn shell_verb_bindings_validate_references_and_uniqueness() {
+        let id = Uuid::new_v4();
+        let mut library = PresetLibrary::empty();
+        library.upsert(preset(id, "Web smaller")).expect("upsert");
+
+        library.shell_verbs = vec![ShellVerbBinding {
+            verb_id: "FormatWright.ToWebp".to_owned(),
+            enabled: false,
+            preset_id: Some(id),
+        }];
+        assert!(library.validate().is_ok());
+
+        library.shell_verbs.push(ShellVerbBinding {
+            verb_id: "FormatWright.ToWebp".to_owned(),
+            enabled: true,
+            preset_id: None,
+        });
+        assert!(
+            library.validate().is_err(),
+            "duplicate verb IDs are rejected"
+        );
+
+        library.shell_verbs = vec![ShellVerbBinding {
+            verb_id: "FormatWright.ToPng".to_owned(),
+            enabled: true,
+            preset_id: Some(Uuid::new_v4()),
+        }];
+        assert!(
+            library.validate().is_err(),
+            "bindings must reference presets inside the library"
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::document::inspect_document;
 use crate::domain::{JobState, Plan, Probe, ValidationReport, ValidationStatus};
 use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
 use crate::inspect::inspect_media;
-use crate::job_store::{JobDetails, JobRecord, SqliteJobStore};
+use crate::job_store::{EngineThroughputSample, JobDetails, JobRecord, SqliteJobStore};
 use crate::office::inspect_office;
 use crate::pdf::inspect_pdf;
 use crate::runner::{ExecutionMilestone, ExecutionResult, execute_plan_observed};
@@ -58,6 +58,10 @@ pub struct QueueProgressUpdate {
     pub wait_reason: Option<QueueWaitReason>,
     pub occurred_unix_ms: i64,
     pub eta_milliseconds: Option<u64>,
+    /// Measured output throughput for this job's primary hop, from completed
+    /// jobs on the same (engine, capability). Historical measurement only;
+    /// `None` while no sample exists. Never an estimate.
+    pub measured_throughput_bytes_per_sec: Option<u64>,
 }
 
 /// Controls admission and worker cancellation for one durable queue window.
@@ -241,6 +245,7 @@ impl JobExecutionService {
         let (milestone_sender, mut milestone_receiver) = tokio::sync::mpsc::unbounded_channel();
         let mut peak_active = 0_usize;
         let mut active_jobs = HashSet::new();
+        let mut active_telemetry: HashMap<Uuid, ActiveJobTelemetry> = HashMap::new();
         let mut last_wait_reasons = HashMap::new();
 
         let execution = async {
@@ -285,13 +290,38 @@ impl JobExecutionService {
                     };
                     let job_id = candidate.details.job.id;
                     active_jobs.insert(job_id);
+                    let primary_hop = primary_plan_hop(&candidate.details.plan);
+                    let measured_rate = primary_hop
+                        .and_then(|(engine_id, capability_id)| {
+                            store
+                                .measured_throughput_bytes_per_sec(engine_id, capability_id)
+                                .ok()
+                                .flatten()
+                        })
+                        .and_then(sanitize_measured_rate);
                     match prepare_queued_job(store, candidate.details, |job| {
-                        on_progress(queue_progress(job, None));
+                        let mut update = queue_progress(job, None);
+                        update.measured_throughput_bytes_per_sec = measured_rate;
+                        on_progress(update);
                     })
                     .await?
                     {
                         QueuePreparation::Ready(prepared) => {
                             let prepared = *prepared;
+                            let started_unix_ms = unix_now_ms();
+                            if let Some((engine_id, capability_id)) =
+                                primary_plan_hop(&prepared.plan)
+                            {
+                                active_telemetry.insert(
+                                    prepared.job_id,
+                                    ActiveJobTelemetry {
+                                        engine_id: engine_id.to_owned(),
+                                        capability_id: capability_id.to_owned(),
+                                        started_unix_ms,
+                                        input_bytes: Some(prepared.probe.artifact.size_bytes),
+                                    },
+                                );
+                            }
                             let worker_cancellation = control.worker_token();
                             let worker_milestones = milestone_sender.clone();
                             workers.spawn(async move {
@@ -389,6 +419,26 @@ impl JobExecutionService {
                 match outcome.result {
                     Ok(result) => {
                         on_report(outcome.job_id, &result.report)?;
+                        if let Some(telemetry) = active_telemetry.get(&outcome.job_id)
+                            && matches!(
+                                result.report.status,
+                                ValidationStatus::Pass | ValidationStatus::Warning
+                            )
+                        {
+                            let completed_unix_ms = unix_now_ms();
+                            store.record_engine_throughput_sample(&EngineThroughputSample {
+                                engine_id: telemetry.engine_id.clone(),
+                                capability_id: telemetry.capability_id.clone(),
+                                wall_millis: completed_unix_ms
+                                    .saturating_sub(telemetry.started_unix_ms)
+                                    .max(0)
+                                    .try_into()
+                                    .unwrap_or(u64::MAX),
+                                input_bytes: telemetry.input_bytes,
+                                output_bytes: Some(result.report.output.size_bytes),
+                                completed_unix_ms,
+                            })?;
+                        }
                         match result.report.status {
                             ValidationStatus::Pass => {
                                 if let Some(job) = mark_job_validating(store, outcome.job_id)? {
@@ -449,6 +499,7 @@ impl JobExecutionService {
                     }
                 }
                 active_jobs.remove(&outcome.job_id);
+                active_telemetry.remove(&outcome.job_id);
             }
             Ok(())
         }
@@ -667,6 +718,41 @@ fn emit_wait_reason<P>(
     on_progress(queue_progress(job, Some(reason)));
 }
 
+fn unix_now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or_default()
+}
+
+/// Converts a measured rate into the progress payload, dropping non-finite,
+/// negative, or beyond-2^53 measurements instead of casting them.
+fn sanitize_measured_rate(rate: f64) -> Option<u64> {
+    if !rate.is_finite() || !(0.0..=9_007_199_254_740_992.0).contains(&rate) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let whole = rate as u64;
+    Some(whole)
+}
+
+/// Wall-clock telemetry for one admitted job, captured so successful hops can
+/// feed the measured-throughput statistic.
+struct ActiveJobTelemetry {
+    engine_id: String,
+    capability_id: String,
+    started_unix_ms: i64,
+    input_bytes: Option<u64>,
+}
+
+/// Returns the primary (first) plan hop as `(engine_id, capability_id)`, if any.
+fn primary_plan_hop(plan: &Plan) -> Option<(&str, &str)> {
+    plan.steps
+        .first()
+        .map(|step| (step.engine.engine_id.as_str(), step.capability_id.as_str()))
+}
+
 fn queue_progress(job: &JobRecord, wait_reason: Option<QueueWaitReason>) -> QueueProgressUpdate {
     QueueProgressUpdate {
         schema_version: 1,
@@ -680,6 +766,7 @@ fn queue_progress(job: &JobRecord, wait_reason: Option<QueueWaitReason>) -> Queu
             .and_then(|duration| i64::try_from(duration.as_millis()).ok())
             .unwrap_or_default(),
         eta_milliseconds: None,
+        measured_throughput_bytes_per_sec: None,
     }
 }
 
@@ -872,6 +959,58 @@ mod tests {
             .await
             .expect_err("limit 257");
         assert_eq!(error.code, ErrorCode::InputInvalid);
+    }
+
+    #[tokio::test]
+    async fn completed_jobs_record_measured_throughput_for_later_runs() {
+        let suite = tempdir().expect("suite");
+        let mut store = SqliteJobStore::open(suite.path().join("jobs.sqlite3")).expect("store");
+        let input = suite.path().join("item.json");
+        let output = suite.path().join("item.yaml");
+        let first_id = queue_structured_job(&mut store, &input, &output).await;
+
+        JobExecutionService::run_window(&mut store, 16, 1, CancellationToken::new())
+            .await
+            .expect("first window");
+
+        let details = store
+            .get_job_details(first_id)
+            .expect("read details")
+            .expect("details exist");
+        let step = details
+            .plan
+            .steps
+            .first()
+            .expect("structured plan has a hop");
+        let engine_id = step.engine.engine_id.clone();
+        let capability_id = step.capability_id.clone();
+        let rate = store
+            .measured_throughput_bytes_per_sec(&engine_id, &capability_id)
+            .expect("read rate")
+            .expect("first completion recorded a sample");
+        assert!(rate > 0.0, "structured conversion yields a positive rate");
+
+        let second_input = suite.path().join("item-2.json");
+        let second_output = suite.path().join("item-2.yaml");
+        queue_structured_job(&mut store, &second_input, &second_output).await;
+        let mut updates = Vec::new();
+        JobExecutionService::run_window_observed_with_progress(
+            &mut store,
+            16,
+            1,
+            QueueWindowControl::new(),
+            |_, _| Ok(()),
+            |update| updates.push(update),
+        )
+        .await
+        .expect("second window");
+        assert!(
+            updates.iter().any(|update| {
+                update.state == JobState::Running
+                    && update.measured_throughput_bytes_per_sec.is_some()
+            }),
+            "a later identical hop surfaces the measured rate on its running update"
+        );
     }
 
     #[tokio::test]

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
 use crate::job_store::SqliteJobStore;
 
-pub(crate) const DATABASE_SCHEMA_VERSION: i64 = 5;
+pub(crate) const DATABASE_SCHEMA_VERSION: i64 = 6;
 const BACKUP_PAGES_PER_STEP: i32 = 128;
 const BACKUP_STEP_PAUSE: Duration = Duration::from_millis(5);
 const BACKUP_BUSY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -1429,7 +1429,8 @@ mod tests {
                  DROP TABLE batch_members;
                  DROP TABLE batches;
                  DROP TABLE job_revalidations;
-                 DELETE FROM schema_migrations WHERE version IN (4, 5);",
+                 DROP TABLE engine_throughput_samples;
+                 DELETE FROM schema_migrations WHERE version IN (4, 5, 6);",
             )
             .expect("downgrade fixture to schema v3");
         drop(connection);
@@ -1470,7 +1471,8 @@ mod tests {
             .execute_batch(
                 "PRAGMA foreign_keys = OFF;
                  DROP TABLE job_revalidations;
-                 DELETE FROM schema_migrations WHERE version = 5;",
+                 DROP TABLE engine_throughput_samples;
+                 DELETE FROM schema_migrations WHERE version IN (5, 6);",
             )
             .expect("downgrade fixture to schema v4");
         drop(connection);
@@ -1511,8 +1513,8 @@ mod tests {
         let connection = Connection::open(&newer).expect("newer connection");
         connection
             .execute(
-                "INSERT INTO schema_migrations(version, applied_unix_ms) VALUES (6, 0)",
-                [],
+                "INSERT INTO schema_migrations(version, applied_unix_ms) VALUES (?1, 0)",
+                [DATABASE_SCHEMA_VERSION + 1],
             )
             .expect("newer marker");
         drop(connection);

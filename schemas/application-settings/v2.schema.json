@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:formatwright:schema:application-settings:v2",
+  "title": "Anole Application Settings v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "language", "expert_mode", "theme"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "language": { "enum": ["en", "zh-CN"] },
+    "expert_mode": { "type": "boolean" },
+    "theme": { "enum": ["system", "light", "dark"] }
+  }
+}

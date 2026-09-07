@@ -15,6 +15,23 @@ use crate::domain::{JobState, Plan, SCHEMA_VERSION, ValidationStatus};
 use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
 use crate::maintenance::automatic_snapshot_before_migration;
 
+/// Retained samples per `(engine, capability)` for the rolling throughput window.
+const ENGINE_THROUGHPUT_SAMPLE_WINDOW: i64 = 64;
+/// Samples averaged into the reported measured throughput.
+const ENGINE_THROUGHPUT_RATE_WINDOW: u32 = 16;
+
+/// One completed-job wall-clock measurement feeding the measured-throughput
+/// statistic. Never persisted anywhere outside the local `SQLite` database.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EngineThroughputSample {
+    pub engine_id: String,
+    pub capability_id: String,
+    pub wall_millis: u64,
+    pub input_bytes: Option<u64>,
+    pub output_bytes: Option<u64>,
+    pub completed_unix_ms: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct JobRecord {
     pub id: Uuid,
@@ -259,7 +276,8 @@ impl SqliteJobStore {
             .map_err(storage_error)?;
         self.migrate_output_reservation_identity()?;
         self.migrate_batch_selection_schema()?;
-        self.migrate_revalidation_schema()
+        self.migrate_revalidation_schema()?;
+        self.migrate_engine_throughput_schema()
     }
 
     fn migrate_output_reservation_identity(&mut self) -> Result<()> {
@@ -441,6 +459,136 @@ impl SqliteJobStore {
             )
             .map_err(storage_error)?;
         transaction.commit().map_err(storage_error)
+    }
+
+    fn migrate_engine_throughput_schema(&mut self) -> Result<()> {
+        let already_applied = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 6)",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(storage_error)?;
+        if already_applied {
+            return Ok(());
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        transaction
+            .execute_batch(
+                "CREATE TABLE engine_throughput_samples (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     engine_id TEXT NOT NULL,
+                     capability_id TEXT NOT NULL,
+                     wall_millis INTEGER NOT NULL,
+                     input_bytes INTEGER,
+                     output_bytes INTEGER,
+                     completed_unix_ms INTEGER NOT NULL
+                 );
+                 CREATE INDEX idx_engine_throughput_lookup
+                     ON engine_throughput_samples(engine_id, capability_id, id DESC);",
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
+                "INSERT INTO schema_migrations(version, applied_unix_ms) VALUES (6, ?1)",
+                [now_unix_ms()],
+            )
+            .map_err(storage_error)?;
+        transaction.commit().map_err(storage_error)
+    }
+
+    /// Records one completed-job throughput sample, keeping a bounded rolling
+    /// window per (engine, capability) pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error when the sample cannot be committed.
+    pub fn record_engine_throughput_sample(
+        &mut self,
+        sample: &EngineThroughputSample,
+    ) -> Result<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        transaction
+            .execute(
+                "INSERT INTO engine_throughput_samples(
+                     engine_id, capability_id, wall_millis,
+                     input_bytes, output_bytes, completed_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    sample.engine_id,
+                    sample.capability_id,
+                    i64::try_from(sample.wall_millis).unwrap_or(i64::MAX),
+                    sample
+                        .input_bytes
+                        .map(|bytes| { i64::try_from(bytes).unwrap_or(i64::MAX) }),
+                    sample
+                        .output_bytes
+                        .map(|bytes| { i64::try_from(bytes).unwrap_or(i64::MAX) }),
+                    sample.completed_unix_ms,
+                ],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
+                "DELETE FROM engine_throughput_samples
+                 WHERE engine_id = ?1 AND capability_id = ?2
+                   AND id NOT IN (
+                       SELECT id FROM engine_throughput_samples
+                       WHERE engine_id = ?1 AND capability_id = ?2
+                       ORDER BY id DESC LIMIT ?3
+                   )",
+                rusqlite::params![
+                    sample.engine_id,
+                    sample.capability_id,
+                    ENGINE_THROUGHPUT_SAMPLE_WINDOW,
+                ],
+            )
+            .map_err(storage_error)?;
+        transaction.commit().map_err(storage_error)
+    }
+
+    /// Returns the measured output throughput in bytes per second for one
+    /// `(engine, capability)` pair over the most recent samples, or `None`
+    /// while no usable sample exists yet. This is historical measurement,
+    /// never a synthesized estimate.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error when the samples cannot be read.
+    #[allow(clippy::cast_precision_loss)] // byte totals fit f64 for any real disk
+    pub fn measured_throughput_bytes_per_sec(
+        &self,
+        engine_id: &str,
+        capability_id: &str,
+    ) -> Result<Option<f64>> {
+        let window = i64::from(ENGINE_THROUGHPUT_RATE_WINDOW);
+        let (output_bytes, wall_millis) = self
+            .connection
+            .query_row(
+                "SELECT COALESCE(SUM(output_bytes), 0), SUM(wall_millis) FROM (
+                     SELECT output_bytes, wall_millis FROM engine_throughput_samples
+                     WHERE engine_id = ?1 AND capability_id = ?2
+                       AND output_bytes IS NOT NULL AND wall_millis > 0
+                     ORDER BY id DESC LIMIT ?3
+                 )",
+                rusqlite::params![engine_id, capability_id, window],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .map_err(storage_error)?;
+        let Some(wall_millis) = wall_millis else {
+            return Ok(None);
+        };
+        if wall_millis <= 0 || output_bytes <= 0 {
+            return Ok(None);
+        }
+        Ok(Some(output_bytes as f64 / (wall_millis as f64 / 1_000.0)))
     }
 
     /// Creates a durable planned job and its initial event atomically.
@@ -2858,11 +3006,89 @@ mod tests {
 
     #[cfg(windows)]
     use super::reservation_key;
-    use super::{BulkJobAction, JobCreateRequest, JobSelectionQuery, SqliteJobStore};
+    use super::{
+        BulkJobAction, ENGINE_THROUGHPUT_SAMPLE_WINDOW, EngineThroughputSample, JobCreateRequest,
+        JobSelectionQuery, SqliteJobStore,
+    };
     use crate::domain::{
         ChangeSet, JobState, NetworkPolicy, Plan, SCHEMA_VERSION, ValidationStatus,
     };
     use crate::{BulkJobService, ErrorCode};
+
+    #[test]
+    fn throughput_samples_roll_and_measure_by_engine_capability() {
+        let mut store = SqliteJobStore::open_in_memory().expect("in-memory store");
+        for index in 0..(ENGINE_THROUGHPUT_SAMPLE_WINDOW + 8) {
+            store
+                .record_engine_throughput_sample(&EngineThroughputSample {
+                    engine_id: "ffmpeg".to_owned(),
+                    capability_id: "video.transcode".to_owned(),
+                    wall_millis: 1_000,
+                    input_bytes: Some(2_000),
+                    output_bytes: Some(1_000),
+                    completed_unix_ms: 1_700_000_000_000 + index,
+                })
+                .expect("sample commits");
+        }
+        // Another capability must not pollute the measurement.
+        store
+            .record_engine_throughput_sample(&EngineThroughputSample {
+                engine_id: "ffmpeg".to_owned(),
+                capability_id: "image.convert".to_owned(),
+                wall_millis: 1_000,
+                input_bytes: Some(9_000),
+                output_bytes: Some(9_000),
+                completed_unix_ms: 1_700_000_100_000,
+            })
+            .expect("sample commits");
+
+        let rate = store
+            .measured_throughput_bytes_per_sec("ffmpeg", "video.transcode")
+            .expect("read rate")
+            .expect("rate exists");
+        assert!(
+            (rate - 1_000.0).abs() < 1.0,
+            "1000 B over 1000 ms => ~1000 B/s, got {rate}"
+        );
+
+        let none = store
+            .measured_throughput_bytes_per_sec("ffmpeg", "audio.transcode")
+            .expect("read rate");
+        assert!(none.is_none(), "unsampled capability has no measurement");
+
+        let retained: i64 = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM engine_throughput_samples
+                 WHERE engine_id = 'ffmpeg' AND capability_id = 'video.transcode'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count samples");
+        assert_eq!(
+            retained, ENGINE_THROUGHPUT_SAMPLE_WINDOW,
+            "rolling window trims old samples"
+        );
+    }
+
+    #[test]
+    fn throughput_samples_without_output_bytes_yield_no_rate() {
+        let mut store = SqliteJobStore::open_in_memory().expect("in-memory store");
+        store
+            .record_engine_throughput_sample(&EngineThroughputSample {
+                engine_id: "qpdf".to_owned(),
+                capability_id: "pdf.encrypt".to_owned(),
+                wall_millis: 500,
+                input_bytes: Some(100),
+                output_bytes: None,
+                completed_unix_ms: 1_700_000_000_000,
+            })
+            .expect("sample commits");
+        let rate = store
+            .measured_throughput_bytes_per_sec("qpdf", "pdf.encrypt")
+            .expect("read rate");
+        assert!(rate.is_none(), "no output bytes means no honest rate");
+    }
 
     fn plan() -> Plan {
         Plan {

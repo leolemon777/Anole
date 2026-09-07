@@ -225,7 +225,15 @@ pub async fn prepare_conversion(
         let pdfinfo = inspect_engine("pdfinfo").await?;
         let pdftoppm = inspect_engine("pdftoppm").await?;
         let ffprobe = inspect_engine("ffprobe").await?;
-        let probe = inspect_pdf(input, &pdfinfo).await?;
+        // Encrypted inputs re-inspect with `-upw` when the surface supplied a
+        // password (spec E-07); without one, inspect reports the dedicated
+        // encrypted-PDF error so the UI can ask for it.
+        let probe = match request.password.as_deref() {
+            Some(password) if !password.is_empty() => {
+                inspect_pdf_unlocked(input, &pdfinfo, password).await?
+            }
+            _ => inspect_pdf(input, &pdfinfo).await?,
+        };
         let plan = plan_pdf_render(&probe, request, &pdftoppm)?;
         return Ok((probe, plan, ffprobe));
     }
