@@ -116,7 +116,9 @@ function axValue(node, property) {
 }
 
 async function waitFor(client, expression, description) {
-  const deadline = Date.now() + 15_000;
+  // A first launch on a pristine state directory unpacks both starter packs
+  // synchronously before the window mounts; allow for that cold start.
+  const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     if (await client.evaluate(expression)) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -139,14 +141,14 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   await waitFor(
     client,
-    "document.readyState === 'complete' && Boolean(document.querySelector('.shell'))",
+    "document.readyState === 'complete' && Boolean(document.querySelector('.fw-main-window'))",
     "FormatWright document",
   );
 
   const initial = await client.evaluate(`(() => ({
     lang: document.documentElement.lang,
-    navigationLabel: document.querySelector('header nav')?.getAttribute('aria-label'),
-    activeNavigation: document.querySelector('header nav [aria-current="page"]')?.textContent?.trim(),
+    navigationLabel: document.querySelector('nav.fw-tabs-nav')?.getAttribute('aria-label'),
+    activeNavigation: document.querySelector('nav.fw-tabs-nav [aria-current="page"]')?.textContent?.trim(),
     pressed: [...document.querySelectorAll('[aria-pressed="true"]')].map((node) => node.textContent?.trim()),
     inputPath: document.querySelector('#input-path')?.value,
     inputDirection: document.querySelector('#input-path')?.getAttribute('dir'),
@@ -229,7 +231,8 @@ try {
     pathClientWidth: document.querySelector('#input-path')?.clientWidth,
     pathScrollWidth: document.querySelector('#input-path')?.scrollWidth,
   }))()`);
-  assert(zoom.innerWidth === 590 && zoom.devicePixelRatio === 2, `unexpected 200% equivalent viewport ${JSON.stringify(zoom)}`);
+  // WebView2 reports devicePixelRatio 2.0000000596046448 rather than exactly 2.
+  assert(zoom.innerWidth === 590 && Math.abs(zoom.devicePixelRatio - 2) < 0.01, `unexpected 200% equivalent viewport ${JSON.stringify(zoom)}`);
   assert(zoom.scrollWidth <= zoom.clientWidth, `document has horizontal overflow at 200%: ${JSON.stringify(zoom)}`);
   assert(zoom.pathClientWidth > 0, "path input collapsed at 200% equivalent scaling");
 
@@ -257,7 +260,7 @@ try {
   const contrastShot = await client.command("Page.captureScreenshot", { format: "png", fromSurface: true });
   fs.writeFileSync(path.join(artifactDirectory, "desktop-forced-colors.png"), Buffer.from(contrastShot.data, "base64"));
 
-  await client.evaluate("document.querySelectorAll('header nav button').item(document.querySelectorAll('header nav button').length - 1).click()");
+  await client.evaluate("document.querySelectorAll(\"nav.fw-tabs-nav [role='tab']\").item(document.querySelectorAll(\"nav.fw-tabs-nav [role='tab']\").length - 1).click()");
   await waitFor(client, "Boolean(document.querySelector('.settings-grid select'))", "settings view");
   const nextLanguage = initial.lang === "zh-CN" ? "en" : "zh-CN";
   await client.evaluate(`(() => {
@@ -268,7 +271,7 @@ try {
   await waitFor(client, `document.documentElement.lang === ${JSON.stringify(nextLanguage)}`, "language update");
   const localized = await client.evaluate(`(() => ({
     lang: document.documentElement.lang,
-    navigationLabel: document.querySelector('header nav')?.getAttribute('aria-label'),
+    navigationLabel: document.querySelector('nav.fw-tabs-nav')?.getAttribute('aria-label'),
     skipText: document.querySelector('.skip-link')?.textContent?.trim(),
   }))()`);
   assert(localized.navigationLabel !== initial.navigationLabel, "navigation accessible name did not localize");

@@ -24,11 +24,14 @@ $verbs = @(
     @{ Assoc = '.avi'; Verb = 'FormatWright.ToMp4'; Target = 'mp4'; Label = 'Convert to MP4' },
     @{ Assoc = '.webm'; Verb = 'FormatWright.ToMp4'; Target = 'mp4'; Label = 'Convert to MP4' },
     @{ Assoc = '.mp3'; Verb = 'FormatWright.ToWav'; Target = 'wav'; Label = 'Convert to WAV' },
-    @{ Assoc = '.wav'; Verb = 'FormatWright.ToMp3'; Target = 'mp3'; Label = 'Convert to MP3' }
+    @{ Assoc = '.wav'; Verb = 'FormatWright.ToMp3'; Target = 'mp3'; Label = 'Convert to MP3' },
+    @{ Assoc = 'Directory'; Verb = 'FormatWright.FolderToJpg'; Target = 'jpg'; Label = 'Convert folder to JPG' },
+    @{ Assoc = 'Directory'; Verb = 'FormatWright.FolderToWebp'; Target = 'webp'; Label = 'Convert folder to WebP' }
 )
 
 foreach ($item in $verbs) {
-    $key = "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$($item.Assoc)\shell\$($item.Verb)"
+    $shellRoot = if ($item.Assoc -eq 'Directory') { "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell" } else { "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$($item.Assoc)\shell" }
+    $key = Join-Path $shellRoot $item.Verb
     if ($Remove) {
         if (Test-Path -LiteralPath $key) {
             Remove-Item -LiteralPath $key -Recurse -Force

@@ -123,7 +123,11 @@ finally {
             'HKCU:\Software\Classes\Directory\shell\FormatWright'
         ) + @(
             foreach ($item in $verbTable.convert) {
-                "HKCU:\Software\Classes\SystemFileAssociations\$($item.assoc)\shell\$($item.verb)"
+                if ($item.assoc -eq 'Directory') {
+                    "HKCU:\Software\Classes\Directory\shell\$($item.verb)"
+                } else {
+                    "HKCU:\Software\Classes\SystemFileAssociations\$($item.assoc)\shell\$($item.verb)"
+                }
             }
         )
         foreach ($key in $shellKeys) {

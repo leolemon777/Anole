@@ -158,11 +158,20 @@ function Get-ExplorerVerbTable {
     Get-Content -LiteralPath $tablePath -Raw -Encoding utf8 | ConvertFrom-Json
 }
 
+function Get-ConvertVerbKey {
+    param($Item)
+    if ($Item.assoc -eq 'Directory') {
+        "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\$($Item.verb)"
+    } else {
+        "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$($Item.assoc)\shell\$($Item.verb)"
+    }
+}
+
 function Get-OwnedConvertKeys {
     param($Table)
     @(
         foreach ($item in $Table.convert) {
-            "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$($item.assoc)\shell\$($item.verb)"
+            Get-ConvertVerbKey $item
         }
     )
 }
@@ -250,10 +259,10 @@ try {
     Assert-True ($directoryCommand -ceq $expectedCommand) "directory command quoting is invalid: $directoryCommand"
 
     $verbTable = Get-ExplorerVerbTable
-    Assert-True ($verbTable.convert.Count -eq 17) 'verb table does not contain 17 convert entries'
+    Assert-True ($verbTable.convert.Count -eq 19) 'verb table does not contain 19 convert entries'
     $convertKeys = @(Get-OwnedConvertKeys -Table $verbTable)
     foreach ($item in $verbTable.convert) {
-        $convertKey = "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\$($item.assoc)\shell\$($item.verb)"
+        $convertKey = Get-ConvertVerbKey $item
         Assert-True (Test-Path -LiteralPath $convertKey) "missing convert key: $convertKey"
         $convertCommand = Get-ItemPropertyValue -LiteralPath ($convertKey + '\command') -Name '(default)'
         $expectedConvert = '"' + $executable + '" --shell-convert --to ' + $item.target + ' "%1"'

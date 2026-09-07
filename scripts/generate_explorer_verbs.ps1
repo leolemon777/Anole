@@ -15,8 +15,8 @@ $ErrorActionPreference = 'Stop'
 
 $tablePath = (Resolve-Path -LiteralPath $Table).Path
 $spec = Get-Content -LiteralPath $tablePath -Raw -Encoding utf8 | ConvertFrom-Json
-if ($spec.convert.Count -ne 17) {
-    throw "explorer-verbs.json must declare exactly 17 convert verbs, found $($spec.convert.Count)"
+if ($spec.convert.Count -ne 19) {
+    throw "explorer-verbs.json must declare exactly 19 convert verbs, found $($spec.convert.Count)"
 }
 
 function New-Nsh {
@@ -31,20 +31,31 @@ function New-Nsh {
         '  DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\${ASSOC}\shell\${VERB}"',
         '!macroend',
         '',
+        '!macro FW_DIRECTORY_CONVERT_VERB VERB TARGET LABEL',
+        '  WriteRegStr SHCTX "Software\Classes\Directory\shell\${VERB}" "MUIVerb" "${LABEL}"',
+        '  WriteRegStr SHCTX "Software\Classes\Directory\shell\${VERB}" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"',
+        '  WriteRegStr SHCTX "Software\Classes\Directory\shell\${VERB}\command" "" ''"$INSTDIR\${MAINBINARYNAME}.exe" --shell-convert --to ${TARGET} "%1"''',
+        '!macroend',
+        '',
+        '!macro FW_DELETE_DIRECTORY_CONVERT_VERB VERB',
+        '  DeleteRegKey SHCTX "Software\Classes\Directory\shell\${VERB}"',
+        '!macroend',
+        '',
         '!macro NSIS_HOOK_POSTINSTALL',
-        '  WriteRegStr SHCTX "Software\Classes\*\shell\FormatWright" "MUIVerb" "Open in FormatWright"',
+        '  WriteRegStr SHCTX "Software\Classes\*\shell\FormatWright" "MUIVerb" "Open in Anole"',
         '  WriteRegStr SHCTX "Software\Classes\*\shell\FormatWright" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"',
         '  WriteRegStr SHCTX "Software\Classes\*\shell\FormatWright\command" "" ''"$INSTDIR\${MAINBINARYNAME}.exe" --shell-open "%1"''',
         '',
-        '  WriteRegStr SHCTX "Software\Classes\Directory\shell\FormatWright" "MUIVerb" "Open in FormatWright"',
+        '  WriteRegStr SHCTX "Software\Classes\Directory\shell\FormatWright" "MUIVerb" "Open in Anole"',
         '  WriteRegStr SHCTX "Software\Classes\Directory\shell\FormatWright" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"',
         '  WriteRegStr SHCTX "Software\Classes\Directory\shell\FormatWright\command" "" ''"$INSTDIR\${MAINBINARYNAME}.exe" --shell-open "%1"''',
         ''
     )
-    foreach ($item in $spec.convert) {
-        $lines += "  !insertmacro FW_CONVERT_VERB `"$($item.assoc)`" `"$($item.verb)`" `"$($item.target)`" `"$($item.label)`""
-    }
+    # E-06: convert verbs are registered at runtime by the application
+    # (HKCU, settings-editable); the installer only bootstraps them once and
+    # the uninstall hooks below stay as the cleanup backstop.
     $lines += @(
+        '  ExecWait ''"$INSTDIR\${MAINBINARYNAME}.exe" --register-shell''',
         '!macroend',
         '',
         '!macro NSIS_HOOK_PREUNINSTALL',
@@ -52,7 +63,11 @@ function New-Nsh {
         '  DeleteRegKey SHCTX "Software\Classes\Directory\shell\FormatWright"'
     )
     foreach ($item in $spec.convert) {
-        $lines += "  !insertmacro FW_DELETE_CONVERT_VERB `"$($item.assoc)`" `"$($item.verb)`""
+        if ($item.assoc -eq 'Directory') {
+            $lines += "  !insertmacro FW_DELETE_DIRECTORY_CONVERT_VERB `"$($item.verb)`""
+        } else {
+            $lines += "  !insertmacro FW_DELETE_CONVERT_VERB `"$($item.assoc)`" `"$($item.verb)`""
+        }
     }
     $lines += '!macroend'
     $lines += ''
@@ -79,7 +94,8 @@ $verbBlock
 )
 
 foreach (`$item in `$verbs) {
-    `$key = "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\`$(`$item.Assoc)\shell\`$(`$item.Verb)"
+    `$shellRoot = if (`$item.Assoc -eq 'Directory') { "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell" } else { "Registry::HKEY_CURRENT_USER\Software\Classes\SystemFileAssociations\`$(`$item.Assoc)\shell" }
+    `$key = Join-Path `$shellRoot `$item.Verb
     if (`$Remove) {
         if (Test-Path -LiteralPath `$key) {
             Remove-Item -LiteralPath `$key -Recurse -Force
