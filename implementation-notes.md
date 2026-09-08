@@ -947,3 +947,50 @@ Filled the remaining acceptance gaps for the shipped packs:
   `validation: Pass` with the exact source text recognized. Note for
   callers: plain `convert x.pdf --to txt` routes through the chain lane,
   not OCR — the OCR lane is the explicit `pdf-ocr` operation.
+
+## 2026-09-07 — Documentation-sync closing wave (spec checklist debt)
+
+Zero-code wave closing the remaining entries of the experience spec's
+test/documentation sync checklist. Nothing here assumes a pending product
+decision; all facts reference shipped work or recorded approvals.
+
+1. **`docs/VOC_BACKLOG.md`** — Wave-1 checkboxes were already ticked in
+   e9f1b10 (spot-checked the six items against `apps/desktop/src/i18n.ts`
+   and `App.tsx` before trusting them). Updated the wave-2 note to reflect
+   DECISION-5 (keep 2 folder verbs, approved 2026-09-07) and DECISION-1's
+   approved tier; added a wave-3 status note (3.3 shipped as E-04 Document
+   pack with pinned release-zip hash, 3.4 shipped as E-07 with the
+   disclosed argv deviation, 3.1/3.2 gated on E-03 list-A approval);
+   replaced the stale "next: 0.1 commit" tail line with the actual
+   owner-blocked set (CA purchase, clean-VM reboot, E-03 list A).
+2. **`docs/specs/FORMAT_SUPPORT_MATRIX.md`** — GW-08 now names the
+   optional Document pack (LibreOffice 26.2.6) as an engine source beside
+   host installs, with a new evidence paragraph (docx/xlsx→PDF real runs
+   through the pack's own soffice.com, config-tree isolation proven,
+   pptx text-layer limit is the synthetic fixture's, all rows still
+   non-Certified). HEIC/GW-01 untouched until E-03 lands. Updated date
+   bumped.
+3. **`docs/release/WINDOWS_PACKAGING.md`** — new "Code-signing status
+   (DECISION-1, 2026-09-07)" section recording the approved tier (OV +
+   CA cloud-signing KSP, EV rejected with the market-check reason), the
+   self-activating `release-candidate.yml` Authenticode step, the
+   cloud-KSP middleware comment marker, and the owner's remaining steps;
+   links to the decision brief (file existence verified).
+4. **`docs/release/RELEASE_CHECKLIST.md`** — the "Windows artifact built
+   and signed" line now carries the decided tier as a parenthetical so
+   the checklist no longer reads as undecided. E-02 sparse-package
+   steps deliberately not added (not started).
+5. **`docs/MASTER_EXECUTION_PLAN.md`** — §1.1 row 9 and the §Desktop
+   done/pending row drifted behind the E-wave: engine-measured
+   throughput (E-08) and accessibility were still listed as pending
+   while shipped; runtime HKCU verbs, dark mode, the encrypted-PDF
+   password field, and output previews were missing from the done side.
+   Both rows re-synced to the EXPERIENCE_SPEC_PLAN execution status
+   (2026-09-07); Win11 modern menu / Finder/Linux integration /
+   live screen-reader study stay pending.
+
+Verification: markdown-only diff (5 files, +18/−8); referenced files
+(`CODE_SIGNING_DECISION_BRIEF.md`, `release-candidate.yml`) exist;
+no CI job lints markdown, and no code is touched, so the standing
+core 276/4-baseline, clippy, fmt, and frontend results are unaffected.
+

@@ -40,7 +40,7 @@
 - [ ] Windows Starter Core/PDF/Media pack is staged from locked manifests and activated through the verified registry.
 - [ ] Production locator rejects ambient PATH, development cache, `.cmd`, and `.bat`; polluted-PATH negative tests pass.
 - [ ] UI recommendations, Planner and backend share the same identity-bound capability snapshot.
-- [ ] Windows artifact built and signed.
+- [ ] Windows artifact built and signed. (Tier decided 2026-09-07, DECISION-1: OV + CA cloud-signing KSP; EV rejected — no instant SmartScreen benefit. CI self-activates when the codesign secret exists; CA purchase is pending. See [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) § Code-signing status.)
 - [ ] Offline NSIS install/start/uninstall smoke passes and `SHA256SUMS` is generated.
 - [ ] macOS artifact signed and notarized.
 - [ ] Linux artifact and checksums built.

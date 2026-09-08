@@ -2,7 +2,7 @@
 
 - Status: Phase 0 baseline
 - Version: 0.1
-- Updated: 2026-08-18
+- Updated: 2026-09-07 (GW-08 Document pack evidence)
 
 ## 1. Support labels
 
@@ -51,7 +51,7 @@ Minimum exact OS releases must be frozen in ADR-0005 after Tauri, WebView, code-
 | GW-05 | Video containers with audio | MP3, M4A, WAV | FFmpeg | Experimental on Windows |
 | GW-06 | Supported video | GIF | FFmpeg | Experimental on Windows |
 | GW-07 | FLAC, WAV, MP3, AAC, M4A, OGG, Opus | Selected audio target | FFmpeg | Experimental on Windows |
-| GW-08 | DOCX, PPTX, XLSX | PDF | LibreOffice + Poppler validation | Experimental on Windows |
+| GW-08 | DOCX, PPTX, XLSX | PDF | LibreOffice (optional Document pack 26.2.6 or host install) + Poppler validation | Experimental on Windows |
 | GW-09 | PDF | PNG, JPG | Poppler pdfinfo/pdftoppm | Experimental on Windows |
 | GW-10 | Markdown, HTML, plain text, SVG | PDF, DOCX, EPUB | HTML/SVG→PDF: system-discovered Edge print + Poppler vector validation (preferred); Markdown/plain text keeps Pandoc + LibreOffice | Experimental on Windows (browser lane: formal sandbox evidence 2026-09-01, `scripts/test_browser_print_sandbox.ps1`) |
 | GW-11 | CSV, JSON, YAML, XML | CSV, JSON, YAML, XML | Rust native | Experimental on Windows |
@@ -60,6 +60,8 @@ Minimum exact OS releases must be frozen in ADR-0005 after Tauri, WebView, code-
 Windows Starter Media（FFmpeg）为本机 GW-04/05/06/07 切片提供 Experimental 证据（沙箱 remux、Explorer Convert to MP4 等）。全部行仍非 Certified：干净机 / 全 fixture / 签名包未关闭。
 
 GW-10 的浏览器打印 lane（ADR-0012）：HTML/HTM 与新增 SVG 输入在开发构建下经系统发现的 Edge 无头打印产出矢量 PDF，并用 pdfinfo/pdftoppm/pdftotext/pdffonts 验证（文字层可提取、字体全内嵌）；HTML 保留 Pandoc lane 作为回退，SVG 仅此 lane。Release 构建仍需激活已验证引擎包。
+
+GW-08 的引擎来源（2026-09-07，E-04）：可选 Document pack `formatwright-document` v26.2.6（官方 TDF MSI 在 Linux 解包组 pack，MPL-2.0，19,476 文件 SPDX SBOM）提供 pack 内 `soffice.com`，或继续使用宿主自装 LibreOffice。docx/xlsx→PDF 已由 pack 自有引擎真跑验证（`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染）；pptx 合成 fixture 无文字层属 fixture 限制（pack 与系统 LibreOffice 行为一致），真实 pptx 验证随 E-12 / 发布烟测。GW-08 全行仍非 Certified。
 
 ## 5. MP4 planning baseline
 

@@ -70,7 +70,7 @@
 | 6 | Desktop 恢复横幅、批量取消/重试、实时队列读取 | Gate 1 / 2 | 已完成：启动恢复摘要、精确 partial 清理、SQLite 路径/状态/批次筛选、100 条硬边界/离屏渲染列表、实时读取/入队与稳定筛选批量动作 |
 | 7 | 版本化 migration、备份/恢复/完整性检查，形成 Windows 长期自用稳定版 | Gate 1 / 4 | SQLite + 应用状态整包及 Desktop 维护中心完成；干净机升级/回滚待完成 |
 | 8 | batch/selection、10k 混合负载、公平性/延迟/RSS/WAL；拆分 `runner.rs` | Gate 1 | batch/selection/bulk、公平窗口、多进程原子认领/强退恢复、10k mixed small-file、no-clobber commit 完成；高分辨率/PDF/Office 扩展与拆分待完成 |
-| 9 | Desktop Beta 闭环（文件夹、筛选/列表、进度、导出、shell 集成、无障碍） | Gate 2 | 文件夹、筛选/有界列表、真实阶段/调度等待、安全导出、Windows 经典 Explorer 已安装冷/热入口、单实例转发和 WebView 自动无障碍基线完成；引擎专用速率、Windows 11 现代顶层菜单、macOS/Linux 集成、现场读屏与用户研究待完成 |
+| 9 | Desktop Beta 闭环（文件夹、筛选/列表、进度、导出、shell 集成、无障碍） | Gate 2 | 文件夹、筛选/有界列表、真实阶段/调度等待、安全导出、Windows 经典 Explorer 已安装冷/热入口、单实例转发和 WebView 自动无障碍基线（2026-09-07 R-011 修复后 chicago95 DOM 复跑绿）、运行时右键动词（HKCU）+ 目录 verb、加密 PDF 密码框、引擎专用实测吞吐、输出预览、暗色模式完成（见 EXPERIENCE_SPEC_PLAN 执行状态 2026-09-07）；Windows 11 现代顶层菜单（等 DECISION-1 证书）、macOS/Linux 集成、现场读屏与用户研究待完成 |
 | 10 | 引擎签名与格式认证、OS 强制隔离、跨平台、物理 10 GiB | Gate 3 | 未开始 / 部分 |
 | 11 | 正式签名包、升级回滚、干净机 | Gate 4 | 未开始 / 部分 |
 | 12 | Private/Public Beta 用户验证；之后才开始 API / MCP / 自托管 | Gate 5 / 6 | 未开始 |
@@ -770,7 +770,7 @@ API 不直接接受宿主任意路径。请求引用预先授权的 workspace/ro
 | Runner/Commit | 拆分进程边界、adapter、validator、commit；目的路径竞态 | 平台 containment、磁盘/设备变化处理 | 特殊路径、磁盘满、removable、强退、原子目录提交 |
 | Validation/Report | 统一报告原子落盘顺序、revalidate、redacted export | visual diff 校准、报告 migration/索引 | 所有成功任务 100% 有报告；Required Unknown 不作 Pass |
 | Engine Distribution | 关闭 R-008/R-009；Starter pack、版本化 store、精确 locator、能力门控、许可证/SBOM | 多版本并存、离线更新、回滚和安全公告 | 无系统工具干净机真实转换；污染 PATH、篡改、撤销、降级、半升级负向测试 |
-| Desktop | 恢复横幅、retry/resume、文件夹 mapping preview/磁盘预算/原子入队、SQLite 路径/状态/批次筛选和硬边界/离屏渲染列表、真实阶段/调度等待、Windows 经典 Explorer 入口/单实例转发已完成 | Windows 11 现代菜单、Finder/Linux integration、可访问性、稳定设置迁移、引擎专用速率 | 键盘/屏幕阅读器/高 DPI；右键冷/热启动；关闭重启不丢任务；不伪造百分比/ETA |
+| Desktop | 恢复横幅、retry/resume、文件夹 mapping preview/磁盘预算/原子入队、SQLite 路径/状态/批次筛选和硬边界/离屏渲染列表、真实阶段/调度等待、Windows 经典 Explorer 入口/单实例转发、WebView 自动可访问性基线（2026-09-07 复跑绿）、运行时右键动词（HKCU）、暗色模式、加密 PDF 密码框、输出预览、引擎专用实测吞吐已完成 | Windows 11 现代菜单、Finder/Linux integration、稳定设置迁移 | 键盘/屏幕阅读器/高 DPI；右键冷/热启动；关闭重启不丢任务；不伪造百分比/ETA |
 | Packaging/Update | Windows 干净机、签名、升级前备份、回滚 | macOS/Linux 包、差分更新（有证据后） | 安装/升级/回滚/卸载矩阵和 release evidence bundle |
 | Diagnostics/Privacy | 本地有界日志、脱敏诊断包、显式导出 | 可选本地统计；遥测仍默认关闭 | 自动扫描诊断包不含文件内容、秘密和 metadata value |
 | Server/MCP | Public Beta 后才开始 | 授权根、auth、SSE/Webhook、无特权 Worker、MCP confirmation | 负向授权、目录越权、覆盖和 shell 注入测试 |

@@ -54,7 +54,7 @@ VOC 最痛：两下做完、别迷路、别像坏了。
 
 ## 第 2 波：Windows 右键像装上了（约 1 周）
 
-> 2026-09-06 状态：2.2 已实现（E-05：Directory 右键 Convert folder to JPG/WebP，全链 folder-batch 安全语义；verb 清单为保守 2 条，待 DECISION-5 过目）。2.1（Win11 现代菜单）已先行交付过渡提示文案，完整实现等签名证书（DECISION-1/6）。2.3 已实现（E-06：右键动词改由应用运行时注册 HKCU，设置页可启停/绑预设/恢复默认，随预设导出导入，改完即时生效）。
+> 2026-09-06 状态：2.2 已实现（E-05：Directory 右键 Convert folder to JPG/WebP，全链 folder-batch 安全语义；DECISION-5 已于 2026-09-07 拍板维持 2 条目录动词）。2.1（Win11 现代菜单）已先行交付过渡提示文案，完整实现等签名证书到账（DECISION-1 已拍板 OV + CA 云签名 KSP，CA 采购为 Leo 动作；实现路线 DECISION-6 未拍）。2.3 已实现（E-06：右键动词改由应用运行时注册 HKCU，设置页可启停/绑预设/恢复默认，随预设导出导入，改完即时生效；已知偏差 reg.exe 注册见 SECURITY.md）。
 
 
 VOC 里 FileConverter 被骂最多的是「菜单没了」，不是格式少。
@@ -71,6 +71,8 @@ VOC 里 FileConverter 被骂最多的是「菜单没了」，不是格式少。
 ---
 
 ## 第 3 波：中文用户搜得最多的格式（约 1–2 周）
+
+> 2026-09-07 状态：3.3 已实现（E-04：可选 Document pack `formatwright-document` v26.2.6 —— 官方 TDF MSI 在 Linux 执行机 7-Zip 解包 + pymsi 重建目录树，MPL-2.0，19,476 文件 SPDX SBOM；docx/xlsx→PDF 经 pack 自有 soffice.com 真跑通过、`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染；发布 zip（sha256 `44126a49…325369`）已 staged 且哈希 pin 进 `optional_packs.rs`，下载按钮等 v0.1.1 release 挂上资产后激活）。3.4 已实现（E-07：Convert 页专用密码框 + CLI `--password-file`，`plan_hash` 只记 `has_password` 布尔，SQLite/日志/报告字符串扫描零命中；已知偏差：secret 通道走了引擎 argv 而非规格期望的 env，SECURITY.md 如实披露）。3.1/3.2 等 E-03：供应链调查完成（DECISION-2 已拍板 LGPL 自建 image pack + HEVC 专利风险披露），剩余动作（Linux 侧 libheif/libde265 下载、解包验证 import 表、组 pack）等清单 A 批复。
 
 | # | 项 | 验收 | VOC |
 |---|---|---|---|
@@ -122,4 +124,4 @@ VOC 里 FileConverter 被骂最多的是「菜单没了」，不是格式少。
 | 第 4–5 周 | 3.1 → 3.2（HEIC） |
 | 并行（等你拍板） | 4.1 决策；有 VM 就插 4.2 |
 
-下一件该动手的：**0.1 提交，然后 0.2 打安装包**。未点头之前不自动 commit、不自动跑安装器覆盖你现有环境。
+下一件该动手的（2026-09-07 收口后）：**全部工程可达项已落地**；剩余发布阻断项均为负责人动作 —— E-01 CA 采购（OV + 云签名 KSP，约 $130–300/年）、clean-VM 认证证据（沙箱已启用、等重启后跑无人值守证据链）、E-03 清单 A 批复（Linux 侧解包组 pack）。v0.1.1 发布排练在上述任一项到位后随时可插队。

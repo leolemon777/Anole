@@ -1,7 +1,7 @@
 # Windows Packaging Evidence
 
 - Status: unsigned self-contained release candidate; clean-machine certification pending
-- Updated: 2026-08-16
+- Updated: 2026-09-07 (code-signing status note)
 - Host: Windows x86-64
 
 ## Configuration
@@ -57,6 +57,12 @@ The current unpackaged Release candidate was then started with embedded resource
 The 2026-08-13 current-user installed harness found and prevented a false-positive build-only result: literal NSIS `$"` tokens were present in the first registry command. After correction and rebuild, exact native quoting, actual Windows Shell verb cold launch, hot-instance forwarding, UIA path observation, zero-job behavior, negative missing-path handling, owned-key cleanup, unrelated-key preservation and install-root removal all passed. Both authoritative application-state roots were isolated and restored byte-for-byte. A clean offline VM remains required for release certification.
 
 The enhanced smoke was rerun on 2026-08-15 against the current installer (evidence `.artifacts/windows-explorer-installed-smoke/suite-14dd1eebb65946968758aeb25ebba1b3`): both Starter packs installed from the embedded resources, all four supply-chain sidecar hashes re-verified with the real CLI verifier and `review_status=incomplete` asserted, installed Shell verbs and single-instance forwarding re-checked, and uninstall again left no owned keys or install-root remnants with application state restored byte-for-byte.
+
+## Code-signing status (DECISION-1, 2026-09-07)
+
+The signing tier is decided but not yet purchased or exercised: **OV certificate + CA cloud-signing KSP** (~$130–300/yr). EV was rejected because it no longer guarantees instant SmartScreen reputation (Microsoft/DigiCert confirm this as of 2026-09) and its only hard benefit — driver signing — does not apply to Anole. Modern compliant CAs no longer sell plain PFX files; both OV and EV require hardware or cloud key media.
+
+Engineering side is ready: the Authenticode step in `.github/workflows/release-candidate.yml` self-activates when the `WINDOWS_CODESIGN_PFX` secret exists (signtool SHA256 + RFC3161 timestamp + `verify /pa /all`, checksums ordered after signing, two-way signature-state assert); the cloud-KSP middleware installation point is marked in a comment for the DECISION-1 outcome. Remaining steps are the owner's: CA purchase, subject enrollment, and provisioning the CI secret. Full rationale and market check: [CODE_SIGNING_DECISION_BRIEF.md](CODE_SIGNING_DECISION_BRIEF.md).
 
 ## Release boundary
 
