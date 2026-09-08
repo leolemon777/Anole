@@ -78,7 +78,7 @@ function Get-WindowAutomation {
         )
         $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::NameProperty,
-            'FormatWright'
+            'Anole'
         )
         $condition = New-Object System.Windows.Automation.AndCondition(
             $processCondition,
@@ -310,7 +310,7 @@ try {
         Assert-True ($LASTEXITCODE -eq 0) "CLI rejected installed Starter pack: $($manifest.engine_id)"
     }
     $installedPackIds = @($installedPackIds | Sort-Object)
-    Assert-True (($installedPackIds -join ',') -ceq 'formatwright-media,formatwright-pdf') 'installed Starter pack identities differ'
+    Assert-True (($installedPackIds -join ',') -ceq 'formatwright-media,formatwright-ocr,formatwright-pdf') 'installed Starter pack identities differ'
 
     $second = Start-ExplorerVerb -Path $fixtureRoot
     $second.WaitForExit(30000) | Out-Null

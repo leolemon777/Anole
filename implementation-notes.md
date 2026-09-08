@@ -994,3 +994,61 @@ Verification: markdown-only diff (5 files, +18/−8); referenced files
 no CI job lints markdown, and no code is touched, so the standing
 core 276/4-baseline, clippy, fmt, and frontend results are unaffected.
 
+## 2026-09-08 — v0.1.1 release candidate built and smoke-tested locally
+
+Leo asked for delivery; the missing layer was installer-level evidence
+for the E-wave HEAD (all prior smoke evidence predates E-04/E-05/E-06/
+E-11). This wave produced it on the Windows host:
+
+- **Version bump 0.1.0 → 0.1.1** (workspace `Cargo.toml`,
+  `apps/desktop/package.json`, `tauri.conf.json`) plus the three
+  exact `=0.1.0` internal pins (`cli`→core, `core`→engine-sdk,
+  `desktop`→core) that cargo resolution requires to move together.
+- **NSIS build**: `Anole_0.1.1_x64-setup.exe` (396,448,308 B, sha256
+  `c67f01fd…f9fd8`) + updater signature (release keypair) at
+  `target/release/bundle/nsis/`; `dist/SHA256SUMS` regenerated
+  (installer + bare exe). Unsigned, as DECISION-1's CA purchase is
+  still pending.
+- **Build gotchas hit and worked around** (all three are repro-any-
+  time traps): (1) the Windows host no longer has a working `pnpm`
+  on PATH — built via local `node_modules\.bin` with a
+  `beforeBuildCommand: ""` override, front-end built manually first;
+  (2) `tauri build` reads the starter resource tree from
+  `dist/engine-packs/...` and fails deterministically with
+  `os error 32` on `media/bin/ffmpeg.exe` (some local process locks
+  that tree during builds; manual copy of the same bytes succeeds) —
+  worked around by building against a fresh copy at
+  `target/starter-build-src/` via a temporary
+  `tauri.windows.conf.json` resources swap (restored afterwards;
+  the swap must edit the platform file because `--config` merges
+  rather than replaces the resources map); (3) this tauri-cli only
+  honors `TAURI_SIGNING_PRIVATE_KEY` (content), not `…_PATH` —
+  multi-line key content must be injected from PowerShell.
+- **Explorer installed smoke GREEN** against the final installer
+  (suite `cd9bfbecc9ce453e984554d108a63a88`, installer sha256
+  matches SHA256SUMS): exact registry quoting, cold file-verb and
+  hot directory-verb paths visible in the real window (E-05), one
+  PID, Open-in created 0 durable jobs while a Convert verb created
+  exactly 1 job with `convert_report_status: pass` and unchanged
+  source hash, 19 owned convert keys (17 file + 2 directory), all
+  three Starter packs installed with supply-chain sidecar hashes
+  re-verified via the real CLI (E-11 OCR pack ships in the
+  installer), missing-path negative rejected, uninstall exit 0 with
+  owned keys removed / unrelated sibling preserved / app state
+  restored byte-for-byte.
+- **Smoke-script repairs surfaced by the run** (the script had not
+  been executed since the rebrand and the OCR pack): UIA window-name
+  assertion `'FormatWright'` → `'Anole'` (window title; the
+  `Registry` verb key name `FormatWright` is intentionally
+  unchanged as technical layer), and the installed-pack identity
+  list updated to include `formatwright-ocr`. Local dev-machine
+  HKCU verb keys left over from earlier dev-run registrations had
+  to be removed first (the smoke requires a verb-clean machine and
+  asserts pre-absence).
+
+Delivery state: the installer is Leo-usable now; attaching it to a
+public v0.1.1 release still waits on the CA decision artifacts
+(signing, then the release rehearsal that also exercises the
+Document-pack download button with the staged zip).
+
+

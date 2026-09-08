@@ -13,7 +13,7 @@ csv.workspace = true
 flate2.workspace = true
 sevenz-rust.workspace = true
 fs2.workspace = true
-formatwright-engine-sdk = { version = "=0.1.0", path = "../engine-sdk" }
+formatwright-engine-sdk = { version = "=0.1.1", path = "../engine-sdk" }
 image.workspace = true
 cfb.workspace = true
 mailparse.workspace = true
