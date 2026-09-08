@@ -324,7 +324,11 @@ fn remove_verb(key_path: &str) -> Result<(), String> {
     registry::delete_tree(key_path).map_err(|error| format!("remove verb key failed: {error}"))
 }
 
+// The stubs keep the cross-platform signatures so shared callers can use `?`
+// without cfg forking; clippy cannot see the Windows implementations from
+// the Linux/macOS lint pass.
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)]
 fn write_verb(
     _key_path: &str,
     _label: &str,
@@ -335,6 +339,7 @@ fn write_verb(
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)]
 fn remove_verb(_key_path: &str) -> Result<(), String> {
     Ok(())
 }
