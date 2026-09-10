@@ -586,7 +586,9 @@ label.wide,
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  /* shadow-md, not shadow-lg: a 64px blur repaints every resize frame
+     and was a major contributor to sticky window dragging. */
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 
@@ -674,14 +676,8 @@ label.wide,
 }
 
 /* Without flex-height constraints here the panel's overflow:auto never
-   engages (min-height:auto lets this wrapper grow past the window) and
-   the bottom controls get clipped by the frame's overflow:hidden. */
-.fw-tabs-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+   engages — the canonical .fw-tabs-main rule lives near the R-011
+   landmark rules at the bottom of this file (last declaration wins). */
 
 .c95-tabs__strip {
   display: flex;
@@ -2069,11 +2065,20 @@ label.wide,
   margin-left: var(--space-2xs);
 }
 
-/* Navigation/main landmarks wrapping the chicago95 tabs (R-011):
-   pure block wrappers so the landmark elements add semantics, not layout. */
-.fw-tabs-nav,
-.fw-tabs-main {
+/* Navigation/main landmarks wrapping the chicago95 tabs (R-011): the nav
+   stays a pure block wrapper, but main must carry the flex column — it is
+   the link that lets the panel's overflow:auto engage (otherwise the
+   statusbar is pushed out of the window and content clips). */
+.fw-tabs-nav {
   display: block;
+  min-width: 0;
+}
+
+.fw-tabs-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   min-width: 0;
 }
 
