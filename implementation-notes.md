@@ -1195,3 +1195,31 @@ what-local-loops-miss rule): the SSH executor cannot build
 from the remote rehearsal must be compensated by a **local**
 `cargo test -p formatwright-desktop --lib` before push — the TS
 vitest suite does not cover the Rust-side baseline assertions.
+
+## 2026-09-10 — Leo's hands-on GW-13 test: two UX fixes
+
+Leo tested the debug build (vite dev server on 1420 + engines via
+`target\launch-desktop-gw13.bat`; a `cargo build` debug exe loads the
+frontend from devUrl, unlike a `tauri build --debug` embed — trap
+recorded in memory). Two findings:
+
+1. **Clipped bottom controls (convert page)**: with a short window,
+   the action row (target dropdown / quality / Ready) was cut in half
+   with no scrollbar. Root cause: the scroll chain had a missing link
+   — `main.fw-tabs-main` carried no CSS at all, so `min-height:auto`
+   let it grow past the window and the panel's `overflow:auto` never
+   engaged (frame `overflow:hidden` did the clipping). Fixed with
+   `flex:1; min-height:0; display:flex; flex-direction:column` on that
+   wrapper (styles.css, with a why-comment). Verified live via HMR:
+   bottom row fully visible, panel scrolls.
+2. **Default theme now warm-light (Leo's call)**: E-10 shipped with
+   `system` as the default; Leo's reaction to the auto-dark start was
+   "颜色怎么不是之前的那种暖黄" — new/legacy users now default to
+   `light` (both the React initial state and the localStorage→settings
+   migration default in App.tsx). `system`/`dark` remain selectable
+   and persisted preferences are untouched (the light tokens are the
+   `:root` base; `[data-theme="dark"]` / `[data-theme="system"]`
+   branches unchanged).
+
+Verification: `tsc -b` clean, vitest 29/29. Desktop Rust side
+untouched (no explorer baseline / crate changes).

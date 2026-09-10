@@ -381,7 +381,7 @@ export default function App() {
     navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
   );
   const [expert, setExpert] = useState(false);
-  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("light");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("convert");
   const [inputPath, setInputPath] = useState("");
@@ -595,7 +595,7 @@ export default function App() {
                 ? "en"
                 : navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
             expert_mode: localStorage.getItem("fw-expert") === "true",
-            theme: "system",
+            theme: "light",
           };
           setLanguage(migrated.language);
           setExpert(migrated.expert_mode);
