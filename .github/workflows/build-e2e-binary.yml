@@ -63,7 +63,7 @@ jobs:
             throw 'e2e binary does not embed the remote-debugging-port overlay'
           }
           Write-Output "overlay verified: remote-debugging-port present in $exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: anole-desktop-e2e
           path: target/release/anole-desktop.exe
