@@ -1536,7 +1536,7 @@ export default function App() {
   const windowChrome = getCurrentWebviewWindow();
 
   return (
-    <div className="c95-desktop fw-app">
+    <div className="c95-desktop fw-app shell">
       <a className="skip-link" href="#main-content">{copy.skipToContent}</a>
       <article className="c95-window fw-main-window">
         <header className="c95-window__titlebar">
@@ -1554,21 +1554,22 @@ export default function App() {
           </span>
         </header>
         <div className="c95-tabs fw-tabs">
-          <div className="c95-tabs__strip" role="tablist" aria-label={copy.primaryNavigation}>
-            {tabs.map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                className="c95-tabs__tab"
-                aria-selected={tab === item}
-                onClick={() => setTab(item)}
-              >
-                {copy[item]}
-              </button>
-            ))}
-          </div>
-          <div className="c95-tabs__panel c95-scroll fw-tabs-panel" id="main-content" tabIndex={-1} role="tabpanel">
+          <header className="c95-tabs__bar">
+            <nav className="c95-tabs__strip" aria-label={copy.primaryNavigation}>
+              {tabs.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={tab === item ? "c95-tabs__tab is-active" : "c95-tabs__tab"}
+                  aria-current={tab === item ? "page" : undefined}
+                  onClick={() => setTab(item)}
+                >
+                  {copy[item]}
+                </button>
+              ))}
+            </nav>
+          </header>
+          <main className="c95-tabs__panel c95-scroll fw-tabs-panel" id="main-content" tabIndex={-1}>
       {error && (() => {
         const localized = localizeDesktopError(error, copy);
         return (
@@ -1828,7 +1829,7 @@ export default function App() {
           <p>{copy.privacy}</p><p>{copy.accessibility}</p>
         </section>
       )}
-          </div>
+          </main>
         </div>
         <footer className="c95-window__statusbar">
           <span className="c95-window__statusbar-cell">{copy.localOnly}</span>
