@@ -614,6 +614,16 @@ label.wide,
   flex-direction: column;
 }
 
+/* Without flex-height constraints here the panel's overflow:auto never
+   engages (min-height:auto lets this wrapper grow past the window) and
+   the bottom controls get clipped by the frame's overflow:hidden. */
+.fw-tabs-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .c95-tabs__strip {
   display: flex;
   flex-wrap: wrap;
