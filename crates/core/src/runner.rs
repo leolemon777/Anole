@@ -2498,10 +2498,11 @@ mod tests {
     #[cfg(unix)]
     use super::terminate_process_tree;
     #[cfg(windows)]
-    use super::{cleanup_partial, terminate_process_tree, wait_for_regular_file};
     use super::{
-        cleanup_staged_output, enforce_network_policy, resolve_output_path,
-        staged_output_candidates, staged_output_path,
+        cleanup_partial, resolve_output_path, terminate_process_tree, wait_for_regular_file,
+    };
+    use super::{
+        cleanup_staged_output, enforce_network_policy, staged_output_candidates, staged_output_path,
     };
     use crate::ErrorCode;
     use crate::domain::{ChangeSet, NetworkPolicy, Plan, SCHEMA_VERSION};
