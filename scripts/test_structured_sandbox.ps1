@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -21,12 +21,12 @@ function Write-Utf8Fixture {
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -48,15 +48,15 @@ Write-Utf8Fixture -Path $jsonInput -Content @'
 ]
 '@
 $jsonHash = (Get-FileHash -LiteralPath $jsonInput -Algorithm SHA256).Hash
-$jsonProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $jsonInput)
+$jsonProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $jsonInput)
 Assert-True ($jsonProbe.Data.format.id -eq 'json') 'JSON input was not detected'
 $yamlOutput = Join-Path $casePath 'typed records.yaml'
-$yaml = Invoke-FormatWrightJson -Arguments @(
+$yaml = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'json-yaml.sqlite3'),
     'convert', $jsonInput, '--to', 'yaml', '--output', $yamlOutput
 )
 Assert-True ($yaml.Data.status -eq 'pass') 'JSON to YAML did not validate'
-$yamlProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $yamlOutput)
+$yamlProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $yamlOutput)
 Assert-True (
     $jsonProbe.Data.streams[0].properties.semantic_digest -eq
         $yamlProbe.Data.streams[0].properties.semantic_digest
@@ -70,7 +70,7 @@ inside"""
 雪,,plain
 '@
 $csvOutput = Join-Path $casePath 'quoted source.json'
-$csv = Invoke-FormatWrightJson -Arguments @(
+$csv = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'csv-json.sqlite3'),
     'convert', $csvInput, '--to', 'json', '--output', $csvOutput
 )
@@ -87,13 +87,13 @@ Write-Utf8Fixture -Path $lossyInput -Content @'
 ]
 '@
 $lossyBlockedOutput = Join-Path $casePath 'must-not-exist.csv'
-$lossyBlocked = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$lossyBlocked = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'plan', $lossyInput, '--to', 'csv', '--output', $lossyBlockedOutput
 )
 Assert-True ($lossyBlocked.Data.code -eq 'POLICY_BLOCKED') 'lossy mapping was not blocked by default'
 Assert-True (-not (Test-Path -LiteralPath $lossyBlockedOutput)) 'blocked Plan created an output'
 $lossyOutput = Join-Path $casePath 'authorized lossy.csv'
-$lossy = Invoke-FormatWrightJson -Arguments @(
+$lossy = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'lossy.sqlite3'),
     'convert', $lossyInput, '--to', 'csv', '--allow-lossy-data', '--output', $lossyOutput
 )
@@ -104,14 +104,14 @@ Assert-True (
 
 $nestedInput = Join-Path $casePath 'nested.json'
 Write-Utf8Fixture -Path $nestedInput -Content '[{"id":1,"child":{"value":2}}]'
-$nested = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$nested = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'plan', $nestedInput, '--to', 'csv', '--allow-lossy-data'
 )
 Assert-True ($nested.Data.code -eq 'POLICY_BLOCKED') 'nested data was flattened implicitly'
 
 $duplicateInput = Join-Path $casePath 'duplicate.json'
 Write-Utf8Fixture -Path $duplicateInput -Content '[{"id":1,"id":2}]'
-$duplicate = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$duplicate = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'inspect', $duplicateInput
 )
 Assert-True ($duplicate.Data.code -eq 'INPUT_INVALID') 'duplicate JSON key was accepted'
@@ -125,7 +125,7 @@ Write-Utf8Fixture -Path $xmlInput -Content @'
 </records>
 '@
 $xmlOutput = Join-Path $casePath 'records.json'
-$xml = Invoke-FormatWrightJson -Arguments @(
+$xml = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'xml-json.sqlite3'),
     'convert', $xmlInput, '--to', 'json', '--output', $xmlOutput
 )
@@ -135,12 +135,12 @@ Assert-True ($xmlJson[0].name -eq 'alpha & beta') 'XML entity text changed'
 
 $dtdInput = Join-Path $casePath 'dtd.xml'
 Write-Utf8Fixture -Path $dtdInput -Content '<!DOCTYPE records [<!ENTITY x "unsafe">]><records><record><id>&x;</id></record></records>'
-$dtd = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', $dtdInput)
+$dtd = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', $dtdInput)
 Assert-True ($dtd.Data.code -eq 'POLICY_BLOCKED') 'XML DTD was not blocked'
 
 $disguised = Join-Path $casePath 'actually-json.bin'
 Copy-Item -LiteralPath $jsonInput -Destination $disguised
-$disguisedProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $disguised)
+$disguisedProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $disguised)
 Assert-True ($disguisedProbe.Data.format.id -eq 'json') 'header-first detection missed disguised JSON'
 Assert-True ($disguisedProbe.Data.format.extension_matches -eq $false) 'extension mismatch was missed'
 
@@ -148,17 +148,17 @@ $bomInput = Join-Path $casePath 'bom.json'
 $bomEncoding = [System.Text.UTF8Encoding]::new($true)
 $bomPayload = $bomEncoding.GetPreamble() + $bomEncoding.GetBytes('[{"id":1,"name":"BOM"}]')
 [System.IO.File]::WriteAllBytes($bomInput, $bomPayload)
-$bomProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $bomInput)
+$bomProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $bomInput)
 Assert-True ($bomProbe.Data.format.id -eq 'json') 'UTF-8 BOM JSON was not parsed'
 
 $attributeInput = Join-Path $casePath 'attributes.xml'
 Write-Utf8Fixture -Path $attributeInput -Content '<records version="1"><record><id>1</id></record></records>'
-$attributes = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$attributes = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'inspect', $attributeInput
 )
 Assert-True ($attributes.Data.code -eq 'POLICY_BLOCKED') 'unmapped XML attributes were silently dropped'
 
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $jsonInput, '--to', 'yaml', '--output', $yamlOutput
 )
@@ -167,7 +167,7 @@ Assert-True (
     $jsonHash -eq (Get-FileHash -LiteralPath $jsonInput -Algorithm SHA256).Hash
 ) 'conversion modified the JSON input'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'structured suite left staged output files'
 
 $summary = [ordered]@{

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::{JobState, Plan, SCHEMA_VERSION, ValidationStatus};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::maintenance::automatic_snapshot_before_migration;
 
 /// Retained samples per `(engine, capability)` for the rolling throughput window.
@@ -610,7 +610,7 @@ impl SqliteJobStore {
         self.create_jobs(std::slice::from_ref(&request))?
             .pop()
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::Internal,
                     Stage::Store,
                     "Bulk job creation returned no job",
@@ -676,7 +676,7 @@ impl SqliteJobStore {
     ) -> Result<BatchRecord> {
         let name = validate_batch_name(name)?;
         if requests.is_empty() || requests.len() > 100_000 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Store,
                 "A batch must contain between 1 and 100,000 jobs",
@@ -812,7 +812,7 @@ impl SqliteJobStore {
                 && row.4 == request.plan.plan_hash
                 && reservation_key(Path::new(&row.3))? == reservation_key(&request.output_path)?;
             if !same_intent {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::PolicyBlocked,
                     Stage::Store,
                     "The idempotency key is already bound to a different job intent",
@@ -828,7 +828,7 @@ impl SqliteJobStore {
         }
         let mut jobs = insert_jobs(&transaction, std::slice::from_ref(request), now)?;
         let mut job = jobs.pop().ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Store,
                 "Idempotent job creation produced no job",
@@ -905,7 +905,7 @@ impl SqliteJobStore {
                 .optional()
                 .map_err(storage_error)?
                 .ok_or_else(|| {
-                    FormatWrightError::new(
+                    AnoleError::new(
                         ErrorCode::StorageFailed,
                         Stage::Store,
                         format!("Job does not exist: {job_id}"),
@@ -914,7 +914,7 @@ impl SqliteJobStore {
                 })?;
             let current = parse_state(&row.0)?;
             if !current.can_transition_to(next) {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Invalid job transition: {current:?} -> {next:?}"),
@@ -939,7 +939,7 @@ impl SqliteJobStore {
                 )
                 .map_err(storage_error)?;
             if updated != 1 {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     "Job state changed concurrently",
@@ -1010,7 +1010,7 @@ impl SqliteJobStore {
             .optional()
             .map_err(storage_error)?
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Job does not exist: {job_id}"),
@@ -1019,7 +1019,7 @@ impl SqliteJobStore {
             })?;
         let current = parse_state(&row.0)?;
         if !current.can_transition_to(next) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 format!("Invalid job transition: {current:?} -> {next:?}"),
@@ -1050,7 +1050,7 @@ impl SqliteJobStore {
                 if updated == 1 {
                     Ok(())
                 } else {
-                    Err(FormatWrightError::new(
+                    Err(AnoleError::new(
                         ErrorCode::StorageFailed,
                         Stage::Store,
                         "Job state changed concurrently",
@@ -1108,7 +1108,7 @@ impl SqliteJobStore {
         report: &crate::domain::ValidationReport,
     ) -> Result<RevalidationRecord> {
         if report.job_id != job_id {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Validate,
                 "Revalidation report belongs to another job",
@@ -1116,7 +1116,7 @@ impl SqliteJobStore {
             ));
         }
         let report_json = serde_json::to_string(report).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Validate,
                 "Revalidation report could not be serialized",
@@ -1125,7 +1125,7 @@ impl SqliteJobStore {
             .with_diagnostic(error.to_string())
         })?;
         if report_json.len() > 16 * 1024 * 1024 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ResourceExhausted,
                 Stage::Validate,
                 "Revalidation report exceeds the 16 MiB limit",
@@ -1146,7 +1146,7 @@ impl SqliteJobStore {
             .optional()
             .map_err(storage_error)?
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Job does not exist: {job_id}"),
@@ -1158,7 +1158,7 @@ impl SqliteJobStore {
             state,
             JobState::Completed | JobState::Warning | JobState::Failed
         ) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Validate,
                 "Only terminal jobs with an output can record revalidation evidence",
@@ -1166,7 +1166,7 @@ impl SqliteJobStore {
             ));
         }
         if report.plan_hash != row.1 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputChanged,
                 Stage::Validate,
                 "Revalidation report does not match the stored immutable Plan",
@@ -1224,7 +1224,7 @@ impl SqliteJobStore {
             .map_err(storage_error)?
             .map(|row| {
                 let report = serde_json::from_str(&row.2).map_err(|error| {
-                    FormatWrightError::new(
+                    AnoleError::new(
                         ErrorCode::StorageFailed,
                         Stage::Validate,
                         "Stored revalidation report is invalid",
@@ -1559,7 +1559,7 @@ impl SqliteJobStore {
             .optional()
             .map_err(storage_error)?
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Job does not exist: {job_id}"),
@@ -1718,7 +1718,7 @@ impl SqliteJobStore {
             .map_err(storage_error)?;
         let member_ids = selection_member_ids(&transaction, &query)?;
         if member_ids.len() > 100_000 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ResourceExhausted,
                 Stage::Store,
                 "Selection exceeds the 100,000-job snapshot limit",
@@ -1726,7 +1726,7 @@ impl SqliteJobStore {
             ));
         }
         let query_json = serde_json::to_string(&query).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Store,
                 "Unable to serialize the stable selection query",
@@ -1855,7 +1855,7 @@ impl SqliteJobStore {
             .optional()
             .map_err(storage_error)?
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Job does not exist: {job_id}"),
@@ -1867,7 +1867,7 @@ impl SqliteJobStore {
             job.state,
             JobState::Blocked | JobState::Failed | JobState::Cancelled | JobState::Interrupted
         ) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Commit,
                 format!(
@@ -1894,7 +1894,7 @@ impl SqliteJobStore {
             )
             .map_err(storage_error)?;
         if updated != 1 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 "Job changed while staging cleanup was being recorded",
@@ -1937,7 +1937,7 @@ impl SqliteJobStore {
     /// and a storage error when the job or reservation cannot be read.
     pub fn validate_output_reservation(&self, job_id: Uuid) -> Result<()> {
         let job = self.get_job(job_id)?.ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 format!("Job does not exist: {job_id}"),
@@ -1954,7 +1954,7 @@ impl SqliteJobStore {
             .optional()
             .map_err(storage_error)?
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     "Active job has no durable output reservation",
@@ -1963,7 +1963,7 @@ impl SqliteJobStore {
             })?;
         let current_key = reservation_key(&job.output_path)?;
         if current_key != stored_key {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::OutputConflict,
                 Stage::Store,
                 "Output path identity changed after the job was queued",
@@ -1993,7 +1993,7 @@ impl SqliteJobStore {
             )
             .map_err(storage_error)?;
         let plan = serde_json::from_str::<Plan>(&plan_json).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 "Stored job Plan is invalid",
@@ -2116,7 +2116,7 @@ fn normalize_selection_query(query: &JobSelectionQuery) -> Result<JobSelectionQu
         .as_ref()
         .is_some_and(|value| value.chars().count() > 200 || value.chars().any(char::is_control))
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Store,
             "Selection search must contain at most 200 visible characters",
@@ -2169,7 +2169,7 @@ fn job_query_from_where(query: &JobSelectionQuery, values: &mut Vec<Value>) -> R
             .collect::<Vec<_>>()
             .join(", ");
         write!(sql, " AND jobs.state IN ({placeholders})").map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Store,
                 "Unable to build the bounded selection query",
@@ -2221,7 +2221,7 @@ where
         )
         .map_err(storage_error)?;
     if !selection_exists {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Store,
             format!("Selection snapshot does not exist: {selection_id}"),
@@ -2494,7 +2494,7 @@ fn job_record_from_row(row: StoredJobRow) -> Result<JobRecord> {
 fn validate_batch_name(name: &str) -> Result<String> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 120 || name.chars().any(char::is_control) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Store,
             "Batch name must contain 1–120 visible characters",
@@ -2507,7 +2507,7 @@ fn validate_batch_name(name: &str) -> Result<String> {
 fn validate_idempotency_key(key: &str) -> Result<String> {
     let key = key.trim();
     if key.is_empty() || key.chars().count() > 200 || key.chars().any(char::is_control) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Store,
             "Idempotency key must contain 1–200 visible characters",
@@ -2519,7 +2519,7 @@ fn validate_idempotency_key(key: &str) -> Result<String> {
 
 fn serialize_plan(plan: &Plan) -> Result<String> {
     serde_json::to_string(plan).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Store,
             "Unable to serialize job Plan",
@@ -2599,7 +2599,7 @@ fn posix_output_identity(path: &Path) -> Result<std::path::PathBuf> {
     } else {
         std::env::current_dir()
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     "Unable to resolve the current directory for output reservation",
@@ -2610,7 +2610,7 @@ fn posix_output_identity(path: &Path) -> Result<std::path::PathBuf> {
             .join(path)
     };
     let file_name = absolute.file_name().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Store,
             "Output reservation path has no filename",
@@ -2628,7 +2628,7 @@ fn posix_output_identity(path: &Path) -> Result<std::path::PathBuf> {
 fn windows_output_identity(path: &Path) -> Result<std::path::PathBuf> {
     validate_windows_source_components(path)?;
     let absolute = std::path::absolute(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             "Unable to resolve the absolute Windows output path",
@@ -2658,7 +2658,7 @@ fn windows_output_identity(path: &Path) -> Result<std::path::PathBuf> {
                 }
             }
             Err(error) => {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     "Unable to inspect the Windows output path",
@@ -2670,7 +2670,7 @@ fn windows_output_identity(path: &Path) -> Result<std::path::PathBuf> {
     }
 
     let canonical_ancestor = existing_ancestor.canonicalize().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             "Unable to resolve the final Windows output location",
@@ -2844,8 +2844,8 @@ fn is_reserved_windows_device_name(stem: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn invalid_windows_output_path(message: &str, path: &Path) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_windows_output_path(message: &str, path: &Path) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Store,
         message,
@@ -2861,13 +2861,13 @@ const fn is_terminal(state: JobState) -> bool {
     )
 }
 
-fn output_reservation_error(error: rusqlite::Error) -> FormatWrightError {
+fn output_reservation_error(error: rusqlite::Error) -> AnoleError {
     if matches!(
         error,
         rusqlite::Error::SqliteFailure(ref sqlite, _)
             if sqlite.code == SqliteErrorCode::ConstraintViolation
     ) {
-        return FormatWrightError::new(
+        return AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Store,
             "Another active job already reserves this output path",
@@ -2880,7 +2880,7 @@ fn output_reservation_error(error: rusqlite::Error) -> FormatWrightError {
 
 fn parse_job_id(value: &str) -> Result<Uuid> {
     Uuid::parse_str(value).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             "Stored job ID is invalid",
@@ -2925,7 +2925,7 @@ fn parse_validation_status(value: &str) -> Result<ValidationStatus> {
         "warning" => Ok(ValidationStatus::Warning),
         "fail" => Ok(ValidationStatus::Fail),
         "unknown" => Ok(ValidationStatus::Unknown),
-        _ => Err(FormatWrightError::new(
+        _ => Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Validate,
             format!("Unknown stored validation status: {value}"),
@@ -2947,7 +2947,7 @@ fn parse_state(value: &str) -> Result<JobState> {
         "failed" => Ok(JobState::Failed),
         "cancelled" => Ok(JobState::Cancelled),
         "interrupted" => Ok(JobState::Interrupted),
-        _ => Err(FormatWrightError::new(
+        _ => Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!("Unknown stored job state: {value}"),
@@ -2966,7 +2966,7 @@ fn now_unix_ms() -> i64 {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn storage_error(error: rusqlite::Error) -> FormatWrightError {
+fn storage_error(error: rusqlite::Error) -> AnoleError {
     if matches!(
         error,
         rusqlite::Error::SqliteFailure(ref sqlite, _)
@@ -2975,7 +2975,7 @@ fn storage_error(error: rusqlite::Error) -> FormatWrightError {
                 SqliteErrorCode::DatabaseBusy | SqliteErrorCode::DatabaseLocked
             )
     ) {
-        return FormatWrightError::new(
+        return AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             "The state database is busy with another writer",
@@ -2984,7 +2984,7 @@ fn storage_error(error: rusqlite::Error) -> FormatWrightError {
         .retryable(true)
         .with_diagnostic(error.to_string());
     }
-    FormatWrightError::new(
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Store,
         "SQLite operation failed",
@@ -4200,7 +4200,7 @@ mod tests {
         }
         assert_eq!(observed.len(), 10_000);
         eprintln!(
-            "FORMATWRIGHT_QUEUE_BENCHMARK jobs=10000 create_ms={} page_size=137 paging_ms={}",
+            "ANOLE_QUEUE_BENCHMARK jobs=10000 create_ms={} page_size=137 paging_ms={}",
             creation_elapsed.as_millis(),
             paging_started.elapsed().as_millis()
         );

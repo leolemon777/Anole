@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [string]$Python = '',
     [string]$HeifConvert = '',
@@ -31,12 +31,12 @@ function Resolve-ToolPath {
     return $command.Source
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -44,11 +44,11 @@ function Invoke-FormatWrightJson {
 }
 
 $script:BinaryPath = (Resolve-Path -LiteralPath $Binary).Path
-$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'FORMATWRIGHT_TEST_PYTHON' -CommandName 'python'
-$heifConvertPath = Resolve-ToolPath -Explicit $HeifConvert -EnvironmentName 'FORMATWRIGHT_ENGINE_HEIF_CONVERT' -CommandName 'heif-convert'
-$ffprobePath = Resolve-ToolPath -Explicit $Ffprobe -EnvironmentName 'FORMATWRIGHT_ENGINE_FFPROBE' -CommandName 'ffprobe'
-$env:FORMATWRIGHT_ENGINE_HEIF_CONVERT = $heifConvertPath
-$env:FORMATWRIGHT_ENGINE_FFPROBE = $ffprobePath
+$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'ANOLE_TEST_PYTHON' -CommandName 'python'
+$heifConvertPath = Resolve-ToolPath -Explicit $HeifConvert -EnvironmentName 'ANOLE_ENGINE_HEIF_CONVERT' -CommandName 'heif-convert'
+$ffprobePath = Resolve-ToolPath -Explicit $Ffprobe -EnvironmentName 'ANOLE_ENGINE_FFPROBE' -CommandName 'ffprobe'
+$env:ANOLE_ENGINE_HEIF_CONVERT = $heifConvertPath
+$env:ANOLE_ENGINE_FFPROBE = $ffprobePath
 
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
 $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) (
@@ -67,26 +67,26 @@ $sourceHash = (Get-FileHash -LiteralPath $heic -Algorithm SHA256).Hash
 Copy-Item -LiteralPath $heic -Destination (Join-Path $casePath 'disguised.bin')
 [IO.File]::WriteAllBytes((Join-Path $casePath 'truncated.heic'), [IO.File]::ReadAllBytes($heic)[0..63])
 
-$probe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $heic)
+$probe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $heic)
 Assert-True ($probe.Data.format.id -eq 'heic') 'HEIC content detection failed'
 Assert-True ($probe.Data.streams[0].width -eq 64 -and $probe.Data.streams[0].height -eq 64) 'HEIC dimensions mismatch'
-$disguised = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
+$disguised = Invoke-AnoleJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
 Assert-True ($disguised.Data.format.id -eq 'heic') 'wrong-extension HEIC detection failed'
 Assert-True ($disguised.Data.format.extension_matches -eq $false) 'HEIC extension mismatch missing'
 
 $jpeg = Join-Path $casePath '颜色 output.jpg'
-$jpegPlan = Invoke-FormatWrightJson -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--quality', '82', '--output', $jpeg)
+$jpegPlan = Invoke-AnoleJson -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--quality', '82', '--output', $jpeg)
 Assert-True ($jpegPlan.Data.steps[0].engine.engine_id -eq 'heif-convert') 'libheif fallback was not selected'
 Assert-True ($jpegPlan.Data.steps[0].arguments.quality -eq '82') 'JPEG quality missing from Plan'
 Assert-True ($jpegPlan.Data.steps[0].arguments.metadata -eq 'drop') 'metadata policy missing from Plan'
-$jpegResult = Invoke-FormatWrightJson -Arguments @(
+$jpegResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'jpeg.sqlite3'),
     'convert', $heic, '--to', 'jpg', '--quality', '82', '--output', $jpeg
 )
 Assert-True ($jpegResult.Data.status -eq 'pass') 'HEIC to JPEG did not validate'
 
 $png = Join-Path $casePath '颜色 output.png'
-$pngResult = Invoke-FormatWrightJson -Arguments @(
+$pngResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'png.sqlite3'),
     'convert', $heic, '--to', 'png', '--output', $png
 )
@@ -111,15 +111,15 @@ foreach ($output in @($jpeg, $png)) {
     Assert-True ($probeJson.streams[0].width -eq 64 -and $probeJson.streams[0].height -eq 64) 'independent ffprobe dimensions mismatch'
 }
 
-$qualityError = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--quality', '0')
+$qualityError = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--quality', '0')
 Assert-True ($qualityError.Data.code -eq 'INPUT_INVALID') 'invalid HEIC JPEG quality was accepted'
-$pngQuality = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @('--json', 'plan', $heic, '--to', 'png', '--quality', '80')
+$pngQuality = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @('--json', 'plan', $heic, '--to', 'png', '--quality', '80')
 Assert-True ($pngQuality.Data.code -eq 'INPUT_INVALID') 'PNG quality was accepted'
-$resize = Invoke-FormatWrightJson -ExpectedExitCodes @(3) -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--width', '32')
+$resize = Invoke-AnoleJson -ExpectedExitCodes @(3) -Arguments @('--json', 'plan', $heic, '--to', 'jpg', '--width', '32')
 Assert-True ($resize.Data.code -eq 'UNSUPPORTED') 'unsupported HEIC resize was not explicit'
-$truncated = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @('--json', 'inspect', (Join-Path $casePath 'truncated.heic'))
+$truncated = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @('--json', 'inspect', (Join-Path $casePath 'truncated.heic'))
 Assert-True ($truncated.Data.code -eq 'INPUT_INVALID') 'truncated HEIC was not rejected'
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $heic, '--to', 'jpg', '--output', $jpeg
 )
@@ -127,22 +127,22 @@ Assert-True ($conflict.Data.code -eq 'OUTPUT_CONFLICT') 'existing HEIC output wa
 
 $resumeDatabase = Join-Path $casePath 'resume.sqlite3'
 $resumeOutput = Join-Path $casePath 'resumed HEIC.png'
-$cancelled = Invoke-FormatWrightJson -ExpectedExitCodes @(130) -Arguments @(
+$cancelled = Invoke-AnoleJson -ExpectedExitCodes @(130) -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'convert', $heic,
     '--to', 'png', '--output', $resumeOutput, '--timeout-seconds', '0'
 )
 Assert-True ($cancelled.Data.code -eq 'CANCELLED') 'HEIC cancellation failed'
 Assert-True (-not (Test-Path -LiteralPath $resumeOutput)) 'cancelled HEIC output was committed'
-$jobs = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
+$jobs = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
 $cancelledJob = @($jobs.Data | Where-Object state -eq 'cancelled')[0]
 Assert-True ($null -ne $cancelledJob) 'cancelled HEIC job was not durable'
-$null = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
-$resumed = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
+$null = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
+$resumed = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
 Assert-True ($resumed.Data.completed -eq 1) 'queued HEIC Plan did not resume to Pass'
 Assert-True ((Test-Path -LiteralPath $resumeOutput -PathType Leaf)) 'resumed HEIC output missing'
 
 Assert-True ($sourceHash -eq (Get-FileHash -LiteralPath $heic -Algorithm SHA256).Hash) 'HEIC source changed'
-Assert-True (@(Get-ChildItem -LiteralPath $casePath -Force | Where-Object { $_.Name -like '.formatwright-partial-*' }).Count -eq 0) 'staged HEIC workspace remains'
+Assert-True (@(Get-ChildItem -LiteralPath $casePath -Force | Where-Object { $_.Name -like '.anole-partial-*' }).Count -eq 0) 'staged HEIC workspace remains'
 
 $summary = [ordered]@{
     schema_version = 1

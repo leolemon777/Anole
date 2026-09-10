@@ -15,7 +15,7 @@ Poppler's `pdftotext` and `pdffonts` utilities join `pdfinfo`/`pdftoppm` as vali
 
 ## Decision
 
-1. The browser print engine is identified by engine id `msedge` and is resolved only through (a) a registered verified pack, (b) the `FORMATWRIGHT_ENGINE_MSEDGE` development override, (c) PATH, or (d) the canonical vendor install locations (`%ProgramFiles(x86)%`/`%ProgramFiles%` on Windows, `/Applications/...` on macOS, `/usr/bin/microsoft-edge*` on Linux) — the last three only under `EngineDiscoveryPolicy::Development`. It is never bundled or redistributed by Anole.
+1. The browser print engine is identified by engine id `msedge` and is resolved only through (a) a registered verified pack, (b) the `ANOLE_ENGINE_MSEDGE` development override, (c) PATH, or (d) the canonical vendor install locations (`%ProgramFiles(x86)%`/`%ProgramFiles%` on Windows, `/Applications/...` on macOS, `/usr/bin/microsoft-edge*` on Linux) — the last three only under `EngineDiscoveryPolicy::Development`. It is never bundled or redistributed by Anole.
 2. Doctor never launches the browser to probe it. Identity is the executable hash plus the version derived from the versioned install directory (Windows) or `unknown`.
 3. The engine is executed headless with an isolated staged `--user-data-dir`, `--host-resolver-rules=MAP * ~NOTFOUND` as a network-deny reinforcement, a bounded print timeout, process-tree termination on cancel/timeout, and `LossClass::None` on the print step because vector printing rasterizes nothing.
 4. HTML→PDF keeps the Pandoc lane as an explicit fallback lane; route availability is per-lane, so a machine with only one lane still converts. SVG→PDF is browser-lane only.
@@ -31,7 +31,7 @@ Poppler's `pdftotext` and `pdffonts` utilities join `pdfinfo`/`pdftoppm` as vali
 ## Verification
 
 - `crates/core` unit tests: lane routing (`route_engine_lanes`), SVG inspection (`document.rs`), plan shape and engine guards (`edge_pdf.rs`), `pdffonts` table parsing from the right, and report aggregation.
-- `cargo check -p formatwright-core`, `cargo clippy -p formatwright-core --all-targets` (zero warnings), `cargo test -p formatwright-core --lib`, and the schema contract suite pass on Windows.
+- `cargo check -p anole-core`, `cargo clippy -p anole-core --all-targets` (zero warnings), `cargo test -p anole-core --lib`, and the schema contract suite pass on Windows.
 - An end-to-end sandbox script for a real HTML fixture (browser lane with validation report) is the remaining evidence item before the lane can be marked Experimental in the support matrix.
 
 ## Revisit when

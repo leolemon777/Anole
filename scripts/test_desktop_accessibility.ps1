@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$DesktopBinary = (Join-Path $PSScriptRoot '..\target\debug\formatwright-desktop.exe'),
+    [string]$DesktopBinary = (Join-Path $PSScriptRoot '..\target\debug\anole-desktop.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts\desktop-accessibility')
 )
 
@@ -49,7 +49,7 @@ function Remove-CheckedTree {
 
 $binaryPath = (Resolve-Path -LiteralPath $DesktopBinary).Path
 $nodeAudit = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot 'cdp_accessibility_audit.mjs')).Path
-Assert-True (@(Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue).Count -eq 0) 'FormatWright is already running'
+Assert-True (@(Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue).Count -eq 0) 'Anole is already running'
 Assert-True (@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue).Count -eq 0) "port $Port is already in use"
 
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
@@ -57,11 +57,11 @@ $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) ('suite-
 $fixtureRoot = Join-Path $casePath 'fixtures RTL 空格'
 New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 $fixture = Join-Path $fixtureRoot 'مرحبا שלום 名字.json'
-Set-Content -LiteralPath $fixture -Value '{"formatwright":true}' -Encoding utf8
+Set-Content -LiteralPath $fixture -Value '{"anole":true}' -Encoding utf8
 
 $stateRoots = @(
-    (Join-Path $env:APPDATA 'local.formatwright.desktop'),
-    (Join-Path $env:LOCALAPPDATA 'local.formatwright.desktop')
+    (Join-Path $env:APPDATA 'local.anole.desktop'),
+    (Join-Path $env:LOCALAPPDATA 'local.anole.desktop')
 )
 $stateBefore = @{}
 $isolatedState = @{}
@@ -73,7 +73,7 @@ try {
     $stateIsolated = $true
     foreach ($root in $stateRoots) {
         if (Test-Path -LiteralPath $root) {
-            $isolated = "$root.formatwright-accessibility-audit-$([Guid]::NewGuid().ToString('N'))"
+            $isolated = "$root.anole-accessibility-audit-$([Guid]::NewGuid().ToString('N'))"
             Move-Item -LiteralPath $root -Destination $isolated
             $isolatedState[$root] = $isolated
         }
@@ -86,7 +86,7 @@ try {
     $start.ArgumentList.Add('--shell-open')
     $start.ArgumentList.Add($fixture)
     $app = [Diagnostics.Process]::Start($start)
-    Assert-True ($null -ne $app) 'failed to launch FormatWright'
+    Assert-True ($null -ne $app) 'failed to launch Anole'
 
     & node $nodeAudit $Port $casePath
     Assert-True ($LASTEXITCODE -eq 0) "DevTools accessibility audit exited $LASTEXITCODE"
@@ -96,7 +96,7 @@ try {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
         $app.WaitForExit(10000) | Out-Null
     }
-    Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue |
+    Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 
     if ($stateIsolated) {
@@ -117,5 +117,5 @@ try {
     schema_version = 1
     artifact_directory = $casePath
     state_isolated = $true
-    process_exit_clean = @(Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue).Count -eq 0
+    process_exit_clean = @(Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue).Count -eq 0
 } | ConvertTo-Json -Depth 3

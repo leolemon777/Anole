@@ -4,7 +4,7 @@ fn main() {
     // Installer bootstrap (spec E-06): register Explorer verbs and exit
     // without initializing the window or the single-instance plugin.
     if std::env::args().any(|argument| argument == "--register-shell") {
-        formatwright_desktop_lib::register_shell_and_exit();
+        anole_desktop_lib::register_shell_and_exit();
     }
-    formatwright_desktop_lib::run();
+    anole_desktop_lib::run();
 }

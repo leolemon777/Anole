@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use mailparse::parse_mail;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -19,11 +19,11 @@ use crate::domain::{
     ArtifactSummary, ChangeSet, NetworkPolicy, Plan, PlanStep, Probe, ReportRedaction,
     SCHEMA_VERSION, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::planner::deterministic_plan_hash;
 
-/// 内置（进程内）EML 导出引擎标识，与 `formatwright.structured` 同款模式。
-pub const EML_ENGINE_ID: &str = "formatwright.eml";
+/// 内置（进程内）EML 导出引擎标识，与 `anole.structured` 同款模式。
+pub const EML_ENGINE_ID: &str = "anole.eml";
 
 const MAX_EML_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -61,7 +61,7 @@ impl ParsedEmail {
 /// 输入超限或不符合 RFC 822 结构时返回 `InputInvalid`。
 pub fn parse_eml_bytes(bytes: &[u8]) -> Result<ParsedEmail> {
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_EML_BYTES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "EML input exceeds the 16 MiB alpha limit",
@@ -69,7 +69,7 @@ pub fn parse_eml_bytes(bytes: &[u8]) -> Result<ParsedEmail> {
         ));
     }
     let parsed = parse_mail(bytes).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "The file is not a parseable RFC 822/MIME message",
@@ -94,7 +94,7 @@ pub fn parse_eml_bytes(bytes: &[u8]) -> Result<ParsedEmail> {
 /// 读取失败或解析失败时返回类型化错误。
 pub fn parse_eml_file(path: &Path) -> Result<ParsedEmail> {
     let bytes = fs::read(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "Unable to read the EML file",
@@ -292,7 +292,7 @@ fn try_sanitize_html(source: &str) -> Result<String> {
             Ok(Event::Eof) => break,
             Ok(_) => {}
             Err(error) => {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Inspect,
                     "The email HTML body is not tokenizable",
@@ -434,15 +434,15 @@ pub fn plan_eml_export(
         return Err(unsupported("EML export target must be txt, html, or md"));
     }
     if engine.engine_id != EML_ENGINE_ID {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The EML export Plan was given the wrong engine",
-            "Use the built-in formatwright.eml adapter.",
+            "Use the built-in anole.eml adapter.",
         ));
     }
     if property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "The email HTML body references an external resource under deny-all policy",
@@ -451,7 +451,7 @@ pub fn plan_eml_export(
     }
     let step = PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: format!("formatwright.eml.eml-to-{target}.builtin"),
+        capability_id: format!("anole.eml.eml-to-{target}.builtin"),
         engine: engine.clone(),
         operation: Operation::Transform,
         loss_class: LossClass::Unknown,
@@ -506,7 +506,7 @@ pub fn plan_eml_export(
 /// 写出、解析或必检失败时返回类型化错误；必检失败会删除已写输出。
 pub async fn execute_eml_export(probe: &Probe, plan: &Plan) -> Result<(PathBuf, ValidationReport)> {
     let output = plan.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "EML export Plan has no output path",
@@ -514,7 +514,7 @@ pub async fn execute_eml_export(probe: &Probe, plan: &Plan) -> Result<(PathBuf, 
         )
     })?;
     if output.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Execute,
             "The EML export destination already exists",
@@ -528,7 +528,7 @@ pub async fn execute_eml_export(probe: &Probe, plan: &Plan) -> Result<(PathBuf, 
         _ => render_txt(&email),
     };
     fs::write(&output, rendered.as_str()).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Unable to write the EML export output",
@@ -546,7 +546,7 @@ pub async fn execute_eml_export(probe: &Probe, plan: &Plan) -> Result<(PathBuf, 
     let report = validate_eml_export_output(probe, &output_probe, plan, Uuid::new_v4(), &rendered);
     if report.status == ValidationStatus::Fail {
         let _ = fs::remove_file(&output);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "EML export output failed required validation checks",
@@ -680,8 +680,8 @@ fn validation_check(
     }
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message,
@@ -894,15 +894,15 @@ mod tests {
         );
     }
 
-    fn builtin_engine() -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn builtin_engine() -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: EML_ENGINE_ID.to_owned(),
             version: "0.1.0".to_owned(),
-            binary_path: std::path::PathBuf::from("formatwright.exe"),
+            binary_path: std::path::PathBuf::from("anole.exe"),
             binary_sha256: "0".repeat(64),
             manifest_sha256: None,
             build_configuration: None,
-            certification: formatwright_engine_sdk::Certification::Experimental,
+            certification: anole_engine_sdk::Certification::Experimental,
         }
     }
 

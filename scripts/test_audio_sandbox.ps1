@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -16,12 +16,12 @@ function Assert-True {
     }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -65,21 +65,21 @@ Invoke-Ffmpeg @(
 )
 $inputHash = (Get-FileHash -LiteralPath $multiTrack -Algorithm SHA256).Hash
 
-$blocked = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$blocked = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'plan', $multiTrack, '--to', 'mp3', '--audio-stream', '2'
 )
 Assert-True ($blocked.Data.code -eq 'POLICY_BLOCKED') 'multiple tracks were silently reduced'
 
 $mp3Output = Join-Path $casePath 'selected 中文 track.mp3'
 $mp3Db = Join-Path $casePath 'mp3.sqlite3'
-$mp3Plan = Invoke-FormatWrightJson -Arguments @(
+$mp3Plan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $multiTrack, '--to', 'mp3', '--audio-stream', '2',
     '--allow-stream-drop', '--output', $mp3Output
 )
 Assert-True ($mp3Plan.Data.steps[0].operation -eq 'transcode') 'AAC to MP3 must transcode'
 Assert-True ($mp3Plan.Data.steps[0].arguments.audio_stream_index -eq '2') 'wrong audio stream planned'
 Assert-True ($mp3Plan.Data.steps[0].arguments.audio_mode -eq 'libmp3lame') 'wrong MP3 encoder planned'
-$mp3 = Invoke-FormatWrightJson -Arguments @(
+$mp3 = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $mp3Db, 'convert', $multiTrack, '--to', 'mp3',
     '--audio-stream', '2', '--allow-stream-drop', '--output', $mp3Output
 )
@@ -87,13 +87,13 @@ Assert-True ($mp3.Data.status -eq 'pass') 'selected MP3 conversion did not valid
 Assert-True ((Get-AudioCodec -Path $mp3Output) -eq 'mp3') 'independent probe did not detect MP3 audio'
 
 $m4aOutput = Join-Path $casePath 'remuxed.m4a'
-$m4aPlan = Invoke-FormatWrightJson -Arguments @(
+$m4aPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $multiTrack, '--to', 'm4a', '--audio-stream', '1',
     '--allow-stream-drop', '--output', $m4aOutput
 )
 Assert-True ($m4aPlan.Data.steps[0].operation -eq 'remux') 'AAC to M4A should remux'
 Assert-True ($m4aPlan.Data.steps[0].arguments.audio_mode -eq 'copy') 'AAC remux should copy audio'
-$m4a = Invoke-FormatWrightJson -Arguments @(
+$m4a = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'm4a.sqlite3'), 'convert', $multiTrack,
     '--to', 'm4a', '--audio-stream', '1', '--allow-stream-drop', '--output', $m4aOutput
 )
@@ -103,14 +103,14 @@ Assert-True ((Get-AudioCodec -Path $m4aOutput) -eq 'aac') 'independent probe did
 $flacInput = Join-Path $casePath 'lossless input.flac'
 Invoke-Ffmpeg @(
     '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=523:sample_rate=48000',
-    '-t', '2', '-c:a', 'flac', '-metadata', 'title=FormatWright fixture', $flacInput
+    '-t', '2', '-c:a', 'flac', '-metadata', 'title=Anole fixture', $flacInput
 )
 $wavOutput = Join-Path $casePath 'lossless-output.wav'
-$wavPlan = Invoke-FormatWrightJson -Arguments @(
+$wavPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $flacInput, '--to', 'wav', '--output', $wavOutput
 )
 Assert-True ($wavPlan.Data.steps[0].loss_class -eq 'lossless') 'FLAC to WAV must be lossless'
-$wav = Invoke-FormatWrightJson -Arguments @(
+$wav = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'wav.sqlite3'), 'convert', $flacInput,
     '--to', 'wav', '--output', $wavOutput
 )
@@ -119,7 +119,7 @@ Assert-True ((Get-AudioCodec -Path $wavOutput) -eq 'pcm_s16le') 'WAV codec was n
 
 $disguised = Join-Path $casePath 'actually-flac.bin'
 Copy-Item -LiteralPath $flacInput -Destination $disguised
-$wrongExtension = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $disguised)
+$wrongExtension = Invoke-AnoleJson -Arguments @('--json', 'inspect', $disguised)
 Assert-True ($wrongExtension.Data.format.id -eq 'flac') 'header-first probe missed disguised FLAC'
 Assert-True ($wrongExtension.Data.format.extension_matches -eq $false) 'FLAC extension mismatch was missed'
 
@@ -128,7 +128,7 @@ Invoke-Ffmpeg @(
     '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=10',
     '-t', '1', '-an', '-c:v', 'libx264', '-preset', 'ultrafast', $videoOnly
 )
-$noAudio = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$noAudio = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $videoOnly, '--to', 'mp3'
 )
 Assert-True ($noAudio.Data.code -eq 'INPUT_INVALID') 'video without audio was not rejected in planning'
@@ -137,7 +137,7 @@ Assert-True (
     $inputHash -eq (Get-FileHash -LiteralPath $multiTrack -Algorithm SHA256).Hash
 ) 'conversion modified the multi-track input'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'audio suite left staged output files'
 
 $summary = [ordered]@{

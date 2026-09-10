@@ -51,11 +51,11 @@ jobs:
           }
           Write-Output "starter pack verified: $($entries.Count) files, bundle.json present"
       - name: Build e2e-overlay binary (no bundle)
-        run: pnpm --filter @formatwright/desktop tauri build --no-bundle --config src-tauri/tauri.release-e2e.conf.json
+        run: pnpm --filter @anole/desktop tauri build --no-bundle --config src-tauri/tauri.release-e2e.conf.json
       - name: Assert the DevTools overlay landed
         shell: pwsh
         run: |
-          $exe = 'target/release/formatwright-desktop.exe'
+          $exe = 'target/release/anole-desktop.exe'
           if (-not (Test-Path -LiteralPath $exe)) { throw "missing $exe" }
           $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exe))
           $text = [System.Text.Encoding]::ASCII.GetString($bytes)
@@ -65,7 +65,7 @@ jobs:
           Write-Output "overlay verified: remote-debugging-port present in $exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: formatwright-desktop-e2e
-          path: target/release/formatwright-desktop.exe
+          name: anole-desktop-e2e
+          path: target/release/anole-desktop.exe
           retention-days: 14
           if-no-files-found: error

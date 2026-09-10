@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use formatwright_engine_sdk::EngineIdentity;
+use anole_engine_sdk::EngineIdentity;
 
 use crate::doctor::{inspect_builtin_engine, inspect_engine};
 use crate::document::{
@@ -9,7 +9,7 @@ use crate::document::{
 };
 use crate::domain::{Plan, PlanRequest, Probe};
 use crate::edge_pdf::plan_edge_print_to_pdf;
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::inspect::inspect_media;
 use crate::office::{
     inspect_office, office_format_hint, plan_office_document_exchange, plan_office_to_pdf,
@@ -40,13 +40,13 @@ pub async fn prepare_conversion(
     .await?;
     if is_structured_target(&request.target_format) {
         let probe = inspect_structured(input).await?;
-        let engine = inspect_builtin_engine("formatwright.structured").await?;
+        let engine = inspect_builtin_engine("anole.structured").await?;
         let plan = plan_structured_conversion(&probe, request, &engine)?;
         return Ok((probe, plan, engine));
     }
     if is_archive_target(&request.target_format) {
         let probe = crate::archive::inspect_archive(input).await?;
-        let engine = inspect_builtin_engine("formatwright.archive").await?;
+        let engine = inspect_builtin_engine("anole.archive").await?;
         let plan = crate::archive::plan_archive_conversion(&probe, request, &engine)?;
         return Ok((probe, plan, engine));
     }
@@ -102,7 +102,7 @@ pub async fn prepare_conversion(
         let plan = crate::mbox::plan_mbox_export(&probe, output, &engine, &qpdf, &target)?;
         return Ok((probe, plan, engine));
     }
-    // MSG（Outlook）导出到 txt/html/md：内置 formatwright.msg 适配器
+    // MSG（Outlook）导出到 txt/html/md：内置 anole.msg 适配器
     // （CFB→EML→EML 管线复用），无外部引擎；pdf/docx/epub 经链组合。
     if matches!(target.as_str(), "txt" | "html" | "md")
         && input
@@ -217,7 +217,7 @@ pub async fn prepare_conversion(
                 return Ok((probe, plan, pdfinfo));
             }
             if probe.format.id == "svg" {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::EngineMissing,
                     Stage::Plan,
                     "SVG-to-PDF requires the browser print engine lane",
@@ -288,7 +288,7 @@ pub async fn prepare_conversion(
 /// changed after preview.
 pub fn ensure_plan_approved(plan: &Plan, approved_plan_hash: Option<&str>) -> Result<()> {
     let Some(approved) = approved_plan_hash.filter(|value| !value.trim().is_empty()) else {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Conversion requires an approved preview Plan",
@@ -296,7 +296,7 @@ pub fn ensure_plan_approved(plan: &Plan, approved_plan_hash: Option<&str>) -> Re
         ));
     };
     if approved != plan.plan_hash {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputChanged,
             Stage::Plan,
             "The conversion Plan changed after preview",
@@ -312,7 +312,7 @@ pub fn ensure_plan_approved(plan: &Plan, approved_plan_hash: Option<&str>) -> Re
 
 fn required_output(request: &PlanRequest, operation: &str) -> Result<std::path::PathBuf> {
     request.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("{operation} requires an output path"),
@@ -381,7 +381,7 @@ async fn prepare_pdf_operation(
         "pdf-extract" => {
             let probe = inspect_pdf(input, &pdfinfo).await?;
             let page_range = request.page_range.as_deref().ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Plan,
                     "PDF extraction needs a page range",
@@ -395,7 +395,7 @@ async fn prepare_pdf_operation(
         "pdf-rotate" => {
             let probe = inspect_pdf(input, &pdfinfo).await?;
             let angle = request.rotate_angle.ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Plan,
                     "PDF rotation needs an angle",
@@ -422,7 +422,7 @@ async fn prepare_pdf_operation(
             // An encrypted decrypt-input only opens with `-upw`, so the probe
             // needs the password; encryption inputs are probed normally.
             let password = request.password.as_deref().ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Plan,
                     format!("PDF {operation} needs a password"),
@@ -445,7 +445,7 @@ async fn prepare_pdf_operation(
         "pdf-watermark" => {
             let probe = inspect_pdf(input, &pdfinfo).await?;
             let text = request.watermark_text.as_deref().ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Plan,
                     "PDF watermark needs text",
@@ -489,7 +489,7 @@ async fn prepare_pdf_operation(
             )?;
             Ok((probe, plan, qpdf))
         }
-        other => Err(FormatWrightError::new(
+        other => Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("Unknown operation: {other}"),
@@ -528,8 +528,8 @@ mod tests {
             .expect("shared Plan preparation");
         assert_eq!(probe.format.id, "json");
         assert_eq!(plan.target_format, "yaml");
-        assert_eq!(plan.steps[0].engine.engine_id, "formatwright.structured");
-        assert_eq!(validation_engine.engine_id, "formatwright.structured");
+        assert_eq!(plan.steps[0].engine.engine_id, "anole.structured");
+        assert_eq!(validation_engine.engine_id, "anole.structured");
     }
 
     #[tokio::test]

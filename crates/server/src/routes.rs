@@ -2,17 +2,17 @@
 
 use std::path::{Path, PathBuf};
 
+use anole_core::domain::PlanRequest;
+use anole_core::error::AnoleError;
+use anole_core::{
+    ApplicationStateService, ConversionService, ErrorCode, Plan, Probe, ReportService,
+    SqliteJobStore, capability_snapshot_for_input, prepare_conversion,
+};
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Query, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use formatwright_core::domain::PlanRequest;
-use formatwright_core::error::FormatWrightError;
-use formatwright_core::{
-    ApplicationStateService, ConversionService, ErrorCode, Plan, Probe, ReportService,
-    SqliteJobStore, capability_snapshot_for_input, prepare_conversion,
-};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -36,7 +36,7 @@ impl AppState {
     }
 }
 
-/// Structured API error body: the wire form of `FormatWrightError`.
+/// Structured API error body: the wire form of `AnoleError`.
 #[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
@@ -48,8 +48,8 @@ pub struct ApiError {
     diagnostic: Option<String>,
 }
 
-impl From<FormatWrightError> for ApiError {
-    fn from(error: FormatWrightError) -> Self {
+impl From<AnoleError> for ApiError {
+    fn from(error: AnoleError) -> Self {
         let status = match error.code {
             ErrorCode::InputInvalid => StatusCode::BAD_REQUEST,
             ErrorCode::OutputConflict => StatusCode::CONFLICT,
@@ -168,9 +168,9 @@ pub struct CapabilitiesQuery {
 }
 
 fn internal(message: impl Into<String>) -> ApiError {
-    FormatWrightError::new(
+    AnoleError::new(
         ErrorCode::Internal,
-        formatwright_core::Stage::Plan,
+        anole_core::Stage::Plan,
         message,
         "This is a server bug; please report it with the request body.",
     )
@@ -178,9 +178,9 @@ fn internal(message: impl Into<String>) -> ApiError {
 }
 
 fn invalid_input(message: impl Into<String>, action: impl Into<String>) -> ApiError {
-    FormatWrightError::new(
+    AnoleError::new(
         ErrorCode::InputInvalid,
-        formatwright_core::Stage::Inspect,
+        anole_core::Stage::Inspect,
         message,
         action,
     )
@@ -329,7 +329,7 @@ async fn capabilities(
     require_absolute_input(&query.input)?;
     let snapshot = capability_snapshot_for_input(
         &query.input,
-        formatwright_core::EngineDiscoveryPolicy::for_current_build(),
+        anole_core::EngineDiscoveryPolicy::for_current_build(),
     )
     .await;
     Ok(Json(
@@ -350,9 +350,9 @@ fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, ApiError> {
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
-                formatwright_core::Stage::Store,
+                anole_core::Stage::Store,
                 format!("cannot create state directory: {}", parent.display()),
                 "Choose a writable state database path.",
             )

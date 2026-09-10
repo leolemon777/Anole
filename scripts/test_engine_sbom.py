@@ -35,7 +35,7 @@ def run(*arguments: str, success: bool = True) -> subprocess.CompletedProcess[st
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="formatwright-engine-sbom-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="anole-engine-sbom-") as temporary:
         pack = Path(temporary)
         (pack / "bin").mkdir()
         (pack / "runtime").mkdir()
@@ -52,7 +52,7 @@ def main() -> int:
             "platform": "linux",
             "architecture": "x86_64",
             "protocol_version": 1,
-            "formatwright_compatibility": {"minimum": "0.1.0", "maximum_exclusive": "0.2.0"},
+            "anole_compatibility": {"minimum": "0.1.0", "maximum_exclusive": "0.2.0"},
             "executables": [
                 {"name": "fixture", "relative_path": "bin/fixture.bin", "sha256": sha256(executable)}
             ],

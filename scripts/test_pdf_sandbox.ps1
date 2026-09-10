@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [string]$Python = '',
     [string]$PdfInfo = '',
@@ -32,12 +32,12 @@ function Resolve-ToolPath {
     return $command.Source
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -45,13 +45,13 @@ function Invoke-FormatWrightJson {
 }
 
 $script:BinaryPath = (Resolve-Path -LiteralPath $Binary).Path
-$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'FORMATWRIGHT_TEST_PYTHON' -CommandName 'python'
-$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFINFO' -CommandName 'pdfinfo'
-$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
-$ffprobePath = Resolve-ToolPath -Explicit $Ffprobe -EnvironmentName 'FORMATWRIGHT_ENGINE_FFPROBE' -CommandName 'ffprobe'
-$env:FORMATWRIGHT_ENGINE_PDFINFO = $pdfInfoPath
-$env:FORMATWRIGHT_ENGINE_PDFTOPPM = $pdfToPpmPath
-$env:FORMATWRIGHT_ENGINE_FFPROBE = $ffprobePath
+$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'ANOLE_TEST_PYTHON' -CommandName 'python'
+$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'ANOLE_ENGINE_PDFINFO' -CommandName 'pdfinfo'
+$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'ANOLE_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
+$ffprobePath = Resolve-ToolPath -Explicit $Ffprobe -EnvironmentName 'ANOLE_ENGINE_FFPROBE' -CommandName 'ffprobe'
+$env:ANOLE_ENGINE_PDFINFO = $pdfInfoPath
+$env:ANOLE_ENGINE_PDFTOPPM = $pdfToPpmPath
+$env:ANOLE_ENGINE_FFPROBE = $ffprobePath
 
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
 $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) (
@@ -71,21 +71,21 @@ root = Path(sys.argv[1])
 source = root / "three-pages.pdf"
 c = Canvas(str(source), pagesize=letter)
 c.setFillColor(red); c.rect(72, 600, 180, 90, fill=1, stroke=0)
-c.setFillColorRGB(0, 0, 0); c.drawString(72, 720, "FormatWright PDF page 1")
+c.setFillColorRGB(0, 0, 0); c.drawString(72, 720, "Anole PDF page 1")
 c.showPage()
 c.setPageSize(A4)
 c.setFillColor(green); c.circle(180, 620, 70, fill=1, stroke=0)
-c.setFillColorRGB(0, 0, 0); c.drawString(72, 780, "FormatWright PDF page 2")
+c.setFillColorRGB(0, 0, 0); c.drawString(72, 780, "Anole PDF page 2")
 c.showPage()
 c.setPageSize(landscape(letter))
 c.setFillColor(blue); c.rect(72, 380, 240, 100, fill=1, stroke=0)
-c.setFillColorRGB(0, 0, 0); c.drawString(72, 540, "FormatWright PDF page 3")
+c.setFillColorRGB(0, 0, 0); c.drawString(72, 540, "Anole PDF page 3")
 c.save()
 
 reader = PdfReader(str(source))
 writer = PdfWriter()
 writer.append_pages_from_reader(reader)
-writer.encrypt("formatwright-secret")
+writer.encrypt("anole-secret")
 with (root / "encrypted.pdf").open("wb") as stream:
     writer.write(stream)
 
@@ -97,18 +97,18 @@ Assert-True ($LASTEXITCODE -eq 0) 'Python could not generate PDF fixtures'
 
 $source = Join-Path $casePath 'three-pages.pdf'
 $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-$probe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $source)
+$probe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $source)
 Assert-True ($probe.Data.format.id -eq 'pdf') 'PDF was not detected'
 Assert-True (@($probe.Data.streams).Count -eq 3) 'pdfinfo page count was not preserved'
 Assert-True (@($probe.Data.streams | Where-Object kind -eq 'page').Count -eq 3) 'page probes missing'
 Assert-True ($probe.Data.evidence.engine_id -eq 'pdfinfo') 'pdfinfo evidence missing'
 
-$disguised = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
+$disguised = Invoke-AnoleJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
 Assert-True ($disguised.Data.format.id -eq 'pdf') 'header-first PDF detection failed'
 Assert-True ($disguised.Data.format.extension_matches -eq $false) 'extension mismatch was not reported'
 
 $pngDirectory = Join-Path $casePath 'PNG 页面'
-$pngPlan = Invoke-FormatWrightJson -Arguments @(
+$pngPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $source, '--to', 'png', '--dpi', '144', '--color-mode', 'rgb',
     '--output', $pngDirectory
 )
@@ -118,7 +118,7 @@ Assert-True ($pngPlan.Data.constraints.output_kind -eq 'page-directory') 'output
 Assert-True ($pngPlan.Data.constraints.page_count -eq 3) 'Plan page count mismatch'
 Assert-True ($pngPlan.Data.constraints.dpi -eq 144) 'Plan DPI mismatch'
 Assert-True ($pngPlan.Data.network_policy -eq 'deny') 'network policy was not deny'
-$pngResult = Invoke-FormatWrightJson -Arguments @(
+$pngResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'png.sqlite3'),
     'convert', $source, '--to', 'png', '--dpi', '144', '--color-mode', 'rgb',
     '--output', $pngDirectory
@@ -130,7 +130,7 @@ $pngNames = (Get-ChildItem -LiteralPath $pngDirectory -File | Select-Object -Exp
 Assert-True ($pngNames -eq 'page-000001.png,page-000002.png,page-000003.png') 'PNG names are not deterministic'
 
 $jpegDirectory = Join-Path $casePath 'jpeg-gray-pages'
-$jpegResult = Invoke-FormatWrightJson -Arguments @(
+$jpegResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'jpeg.sqlite3'),
     'convert', $source, '--to', 'jpg', '--dpi', '96', '--color-mode', 'gray',
     '--quality', '77', '--output', $jpegDirectory
@@ -167,23 +167,23 @@ for index, expected in enumerate(expected_jpg, 1):
 $independentCheck | & $pythonPath - $pngDirectory $jpegDirectory
 Assert-True ($LASTEXITCODE -eq 0) 'independent Pillow dimension/color/alpha check failed'
 
-$encrypted = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$encrypted = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'inspect', (Join-Path $casePath 'encrypted.pdf')
 )
 Assert-True ($encrypted.Data.code -eq 'POLICY_BLOCKED') 'encrypted PDF was not blocked'
-$truncated = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$truncated = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'inspect', (Join-Path $casePath 'truncated.pdf')
 )
 Assert-True ($truncated.Data.code -eq 'INPUT_INVALID') 'truncated PDF was not rejected'
-$badDpi = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$badDpi = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $source, '--to', 'png', '--dpi', '601'
 )
 Assert-True ($badDpi.Data.code -eq 'INPUT_INVALID') 'invalid DPI was not rejected'
-$pngQuality = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$pngQuality = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $source, '--to', 'png', '--quality', '80'
 )
 Assert-True ($pngQuality.Data.code -eq 'INPUT_INVALID') 'PNG quality was not rejected'
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $source, '--to', 'png', '--output', $pngDirectory
 )
@@ -191,29 +191,29 @@ Assert-True ($conflict.Data.code -eq 'OUTPUT_CONFLICT') 'existing page directory
 
 $resumeDatabase = Join-Path $casePath 'resume.sqlite3'
 $resumeDirectory = Join-Path $casePath 'resumed-pages'
-$cancelled = Invoke-FormatWrightJson -ExpectedExitCodes @(130) -Arguments @(
+$cancelled = Invoke-AnoleJson -ExpectedExitCodes @(130) -Arguments @(
     '--json', '--state-db', $resumeDatabase,
     'convert', $source, '--to', 'png', '--dpi', '600', '--output', $resumeDirectory,
     '--timeout-seconds', '0'
 )
 Assert-True ($cancelled.Data.code -eq 'CANCELLED') 'PDF render did not cancel through the process-tree path'
 Assert-True (-not (Test-Path -LiteralPath $resumeDirectory)) 'cancelled PDF render committed an output'
-$cancelledJobs = Invoke-FormatWrightJson -Arguments @(
+$cancelledJobs = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10'
 )
 $cancelledJob = @($cancelledJobs.Data | Where-Object state -eq 'cancelled')[0]
 Assert-True ($null -ne $cancelledJob) 'cancelled PDF job was not durable'
-$null = Invoke-FormatWrightJson -Arguments @(
+$null = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id
 )
-$resumed = Invoke-FormatWrightJson -Arguments @(
+$resumed = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1'
 )
 Assert-True ($resumed.Data.completed -eq 1) 'queued PDF Plan did not resume to completion'
 Assert-True ((Test-Path -LiteralPath $resumeDirectory -PathType Container)) 'resumed page directory missing'
 Assert-True (@(Get-ChildItem -LiteralPath $resumeDirectory -File).Count -eq 3) 'resumed page set is incomplete'
 Assert-True ($sourceHash -eq (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash) 'source changed'
-Assert-True (@(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -Directory).Count -eq 0) 'staged page directory remains'
+Assert-True (@(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -Directory).Count -eq 0) 'staged page directory remains'
 
 $summary = [ordered]@{
     schema_version = 1

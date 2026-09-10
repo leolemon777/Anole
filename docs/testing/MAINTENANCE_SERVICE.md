@@ -6,15 +6,15 @@
 
 ## Contract under test
 
-`formatwright_core::MaintenanceService` is the shared SQLite maintenance boundary for future Desktop and service surfaces. The CLI exposes the same operations:
+`anole_core::MaintenanceService` is the shared SQLite maintenance boundary for future Desktop and service surfaces. The CLI exposes the same operations:
 
 ~~~text
-formatwright --state-db PATH maintenance status
-formatwright --state-db PATH maintenance backup OUTPUT
-formatwright --state-db PATH maintenance integrity-check
-formatwright --state-db PATH maintenance restore BACKUP
-formatwright --state-db PATH maintenance restore BACKUP --yes
-formatwright --state-db PATH maintenance compact
+anole --state-db PATH maintenance status
+anole --state-db PATH maintenance backup OUTPUT
+anole --state-db PATH maintenance integrity-check
+anole --state-db PATH maintenance restore BACKUP
+anole --state-db PATH maintenance restore BACKUP --yes
+anole --state-db PATH maintenance compact
 ~~~
 
 Restore without `--yes` is preflight-only and does not change live data. Confirmed restore should be run only after queue execution is stopped and other Anole processes are closed.

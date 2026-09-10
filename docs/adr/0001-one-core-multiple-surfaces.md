@@ -11,7 +11,7 @@ Anole plans a desktop application, CLI, local REST API, self-hosted worker, and 
 
 ## Decision
 
-All domain behavior lives in formatwright-core. Surfaces translate input and render events but do not implement conversion rules. The CLI, desktop commands, server handlers, and MCP adapter call the same typed APIs.
+All domain behavior lives in anole-core. Surfaces translate input and render events but do not implement conversion rules. The CLI, desktop commands, server handlers, and MCP adapter call the same typed APIs.
 
 The core must not depend on Tauri, HTTP, React, or terminal presentation.
 

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [string]$Python = '',
     [string]$Soffice = '',
@@ -32,12 +32,12 @@ function Resolve-ToolPath {
     return $command.Source
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -45,13 +45,13 @@ function Invoke-FormatWrightJson {
 }
 
 $script:BinaryPath = (Resolve-Path -LiteralPath $Binary).Path
-$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'FORMATWRIGHT_TEST_PYTHON' -CommandName 'python'
-$sofficePath = Resolve-ToolPath -Explicit $Soffice -EnvironmentName 'FORMATWRIGHT_ENGINE_SOFFICE' -CommandName 'soffice'
-$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFINFO' -CommandName 'pdfinfo'
-$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
-$env:FORMATWRIGHT_ENGINE_SOFFICE = $sofficePath
-$env:FORMATWRIGHT_ENGINE_PDFINFO = $pdfInfoPath
-$env:FORMATWRIGHT_ENGINE_PDFTOPPM = $pdfToPpmPath
+$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'ANOLE_TEST_PYTHON' -CommandName 'python'
+$sofficePath = Resolve-ToolPath -Explicit $Soffice -EnvironmentName 'ANOLE_ENGINE_SOFFICE' -CommandName 'soffice'
+$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'ANOLE_ENGINE_PDFINFO' -CommandName 'pdfinfo'
+$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'ANOLE_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
+$env:ANOLE_ENGINE_SOFFICE = $sofficePath
+$env:ANOLE_ENGINE_PDFINFO = $pdfInfoPath
+$env:ANOLE_ENGINE_PDFTOPPM = $pdfToPpmPath
 
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
 $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) (
@@ -75,7 +75,7 @@ root = Path(sys.argv[1])
 
 docx = root / "Writer 文档.docx"
 document = Document()
-document.add_heading("FormatWright Writer", 0)
+document.add_heading("Anole Writer", 0)
 document.add_paragraph("First page - local text, table, and deterministic pagination.")
 table = document.add_table(rows=2, cols=2)
 table.cell(0, 0).text = "Key"; table.cell(0, 1).text = "Value"
@@ -92,7 +92,7 @@ for index, color in enumerate(((220, 40, 40), (40, 80, 220)), 1):
     slide.shapes.title.text = f"Slide {index}"
     shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(2), Inches(5), Inches(2))
     shape.fill.solid(); shape.fill.fore_color.rgb = RGBColor(*color)
-    shape.text = f"FormatWright presentation page {index}"
+    shape.text = f"Anole presentation page {index}"
 presentation.save(pptx)
 
 xlsx = root / "Sheet 数据.xlsx"
@@ -137,21 +137,21 @@ $sourceHashes = @{}
 $outputs = @()
 foreach ($fixture in $fixtures) {
     $sourceHashes[$fixture.Name] = (Get-FileHash -LiteralPath $fixture.Input -Algorithm SHA256).Hash
-    $probe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $fixture.Input)
+    $probe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $fixture.Input)
     Assert-True ($probe.Data.format.id -eq $fixture.Name) "$($fixture.Name) content detection failed"
-    Assert-True ($probe.Data.evidence.engine_id -eq 'formatwright.office-inspector') 'native Office evidence missing'
+    Assert-True ($probe.Data.evidence.engine_id -eq 'anole.office-inspector') 'native Office evidence missing'
     Assert-True (-not $probe.Data.streams[0].properties.has_macros) 'macro-free fixture marked macro-bearing'
     Assert-True (-not $probe.Data.streams[0].properties.has_external_relationships) 'local fixture marked external'
 
     $output = Join-Path $casePath "$($fixture.Name) output.pdf"
-    $plan = Invoke-FormatWrightJson -Arguments @('--json', 'plan', $fixture.Input, '--to', 'pdf', '--output', $output)
+    $plan = Invoke-AnoleJson -Arguments @('--json', 'plan', $fixture.Input, '--to', 'pdf', '--output', $output)
     Assert-True ($plan.Data.steps[0].engine.engine_id -eq 'soffice') 'LibreOffice step missing'
     Assert-True ($plan.Data.steps[1].engine.engine_id -eq 'pdfinfo') 'structural-validation step missing'
     Assert-True ($plan.Data.steps[2].engine.engine_id -eq 'pdftoppm') 'render-validation step missing'
     Assert-True ($plan.Data.constraints.isolated_user_profile) 'isolated profile not explicit'
     Assert-True ($plan.Data.constraints.macros -eq 'disabled') 'macro policy not explicit'
     Assert-True ($plan.Data.network_policy -eq 'deny') 'network policy was not deny'
-    $result = Invoke-FormatWrightJson -Arguments @(
+    $result = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', (Join-Path $casePath "$($fixture.Name).sqlite3"),
         'convert', $fixture.Input, '--to', 'pdf', '--output', $output
     )
@@ -163,14 +163,14 @@ foreach ($fixture in $fixtures) {
     $outputs += [pscustomobject]@{ Name = $fixture.Name; Pdf = $output; Pages = $fixture.Pages }
 }
 
-$disguised = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
+$disguised = Invoke-AnoleJson -Arguments @('--json', 'inspect', (Join-Path $casePath 'disguised.bin'))
 Assert-True ($disguised.Data.format.id -eq 'docx') 'wrong-extension OOXML detection failed'
 Assert-True ($disguised.Data.format.extension_matches -eq $false) 'OOXML extension mismatch not reported'
-$external = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', (Join-Path $casePath 'external.docx'))
+$external = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', (Join-Path $casePath 'external.docx'))
 Assert-True ($external.Data.code -eq 'POLICY_BLOCKED') 'external Office relationship was not blocked'
-$macro = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', (Join-Path $casePath 'macro.docx'))
+$macro = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @('--json', 'inspect', (Join-Path $casePath 'macro.docx'))
 Assert-True ($macro.Data.code -eq 'POLICY_BLOCKED') 'macro-bearing Office package was not blocked'
-$truncated = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @('--json', 'inspect', (Join-Path $casePath 'truncated.docx'))
+$truncated = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @('--json', 'inspect', (Join-Path $casePath 'truncated.docx'))
 Assert-True ($truncated.Data.code -eq 'INPUT_INVALID') 'truncated Office package was not rejected'
 
 $renderRoot = Join-Path $casePath 'independent-renders'
@@ -200,7 +200,7 @@ $pixelVerifier | & $pythonPath - $renderRoot
 Assert-True ($LASTEXITCODE -eq 0) 'independent Pillow render validation failed'
 
 $existingOutput = $outputs[0].Pdf
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $fixtures[0].Input, '--to', 'pdf', '--output', $existingOutput
 )
@@ -208,24 +208,24 @@ Assert-True ($conflict.Data.code -eq 'OUTPUT_CONFLICT') 'existing Office PDF was
 
 $resumeDatabase = Join-Path $casePath 'resume.sqlite3'
 $resumeOutput = Join-Path $casePath 'resumed Office.pdf'
-$cancelled = Invoke-FormatWrightJson -ExpectedExitCodes @(130) -Arguments @(
+$cancelled = Invoke-AnoleJson -ExpectedExitCodes @(130) -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'convert', $fixtures[1].Input,
     '--to', 'pdf', '--output', $resumeOutput, '--timeout-seconds', '0'
 )
 Assert-True ($cancelled.Data.code -eq 'CANCELLED') 'Office process-tree cancellation failed'
 Assert-True (-not (Test-Path -LiteralPath $resumeOutput)) 'cancelled Office PDF was committed'
-$jobs = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
+$jobs = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
 $cancelledJob = @($jobs.Data | Where-Object state -eq 'cancelled')[0]
 Assert-True ($null -ne $cancelledJob) 'cancelled Office job was not durable'
-$null = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
-$resumed = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
+$null = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
+$resumed = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
 Assert-True ($resumed.Data.warning -eq 1) 'queued Office Plan did not resume to validated Warning'
 Assert-True ((Test-Path -LiteralPath $resumeOutput -PathType Leaf)) 'resumed Office PDF missing'
 
 foreach ($fixture in $fixtures) {
     Assert-True ($sourceHashes[$fixture.Name] -eq (Get-FileHash -LiteralPath $fixture.Input -Algorithm SHA256).Hash) "$($fixture.Name) source changed"
 }
-Assert-True (@(Get-ChildItem -LiteralPath $casePath -Force -Directory | Where-Object { $_.Name -like '.formatwright-partial-*' -or $_.Name -like '.fw-*' }).Count -eq 0) 'staged Office workspace remains'
+Assert-True (@(Get-ChildItem -LiteralPath $casePath -Force -Directory | Where-Object { $_.Name -like '.anole-partial-*' -or $_.Name -like '.fw-*' }).Count -eq 0) 'staged Office workspace remains'
 
 $summary = [ordered]@{
     schema_version = 1

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [int64]$PeakControlPlaneBytes = 167772160,
     [int64]$MaximumGrowthBytes = 33554432
@@ -56,7 +56,7 @@ function Invoke-MeasuredJson {
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    Assert-True $process.Start() 'unable to start FormatWright'
+    Assert-True $process.Start() 'unable to start Anole'
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
     $peak = [int64]0
@@ -143,7 +143,7 @@ Assert-True ($LASTEXITCODE -eq 0) 'jobs list failed after 10 GiB conversion'
 $jobs = @(($jobsLines -join "`n") | ConvertFrom-Json)
 Assert-True ($jobs.Count -eq 1 -and $jobs[0].state -eq 'completed') '10 GiB job is not completed'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) '10 GiB conversion left a staged output'
 
 $summary = [ordered]@{

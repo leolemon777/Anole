@@ -54,7 +54,7 @@
 ## 批次 B — v0.1 发布收口（预估 1–2 个工作日，含等待）
 
 ### B1 10,000 混合长跑（R-008 部分）
-- **范围**：在 Linux 执行机跑 `cargo test -p formatwright-core --test ten_thousand_conversions --release -- --ignored --nocapture` 与 mixed 十千测试（引擎用 conda 环境）。修复暴露的问题，记录 P50/P95/RSS 到证据文档。
+- **范围**：在 Linux 执行机跑 `cargo test -p anole-core --test ten_thousand_conversions --release -- --ignored --nocapture` 与 mixed 十千测试（引擎用 conda 环境）。修复暴露的问题，记录 P50/P95/RSS 到证据文档。
 - **环境**：Linux（长跑不占 Windows）。
 - **验收**：两个 10k 测试全绿；`docs/testing/TEN_THOUSAND_LINUX.md` 记录证据。
 

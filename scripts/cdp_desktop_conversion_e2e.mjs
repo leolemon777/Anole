@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Drives one real FormatWright Release UI conversion over CDP.
+// Drives one real Anole Release UI conversion over CDP.
 // The caller launches one isolated application process per invocation
 // (scripts/test_desktop_release_conversion.ps1), so this script performs a
 // single conversion from a fresh React state and never navigates between
@@ -149,7 +149,7 @@ async function setReactInput(client, selector, value) {
 try {
   await client.command("Runtime.enable");
   await client.command("Page.enable");
-  await waitFor(client, "document.readyState === 'complete' && Boolean(document.querySelector('#input-path'))", "FormatWright UI");
+  await waitFor(client, "document.readyState === 'complete' && Boolean(document.querySelector('#input-path'))", "Anole UI");
 
   await setReactInput(client, "#input-path", inputValue);
   try {

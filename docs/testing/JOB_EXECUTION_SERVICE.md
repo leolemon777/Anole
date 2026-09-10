@@ -6,7 +6,7 @@
 
 ## Claim under test
 
-The durable queue scheduling loop that previously lived only in the CLI now executes through `formatwright_core::JobExecutionService`. CLI `jobs run` retains argument parsing, Ctrl+C wiring, and JSON/text printing; it passes `ReportService::save` to `run_window_observed`, so reports precede terminal states. Core does not depend on Clap, Tauri, React, or Axum.
+The durable queue scheduling loop that previously lived only in the CLI now executes through `anole_core::JobExecutionService`. CLI `jobs run` retains argument parsing, Ctrl+C wiring, and JSON/text printing; it passes `ReportService::save` to `run_window_observed`, so reports precede terminal states. Core does not depend on Clap, Tauri, React, or Axum.
 
 ## Contract preserved
 

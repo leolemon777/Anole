@@ -17,13 +17,13 @@ On first startup, the Release backend verifies each embedded manifest, executabl
 Build from the repository root:
 
 ```text
-pnpm --filter @formatwright/desktop tauri build --bundles nsis
+pnpm --filter @anole/desktop tauri build --bundles nsis
 ```
 
 Generate release checksums from an explicit artifact list:
 
 ```text
-python scripts/generate_checksums.py target/release/formatwright-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
+python scripts/generate_checksums.py target/release/anole-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
 ```
 
 The checksum generator hashes files in 1 MiB chunks, rejects missing/non-file inputs, duplicate basenames, and attempts to include the manifest itself.
@@ -35,7 +35,7 @@ The final 2026-08-16 standard-configuration rebuild — including the trusted-si
 | Artifact | Bytes | SHA-256 | Signature |
 |---|---:|---|---|
 | `Anole_0.1.0_x64-setup.exe` | 282,479,337 | `016c7cc657839560ae1b41a99c800bae865990041c71154b839cfe1ce55233be` | NotSigned |
-| `formatwright-desktop.exe` (standard config) | 15,787,008 | `3af8702b0c975db109001cf8c163d39556dcc954b381d2842ed9d86a88faf1b8` | NotSigned |
+| `anole-desktop.exe` (standard config) | 15,787,008 | `3af8702b0c975db109001cf8c163d39556dcc954b381d2842ed9d86a88faf1b8` | NotSigned |
 
 The enhanced current-user install smoke passed against this installer (evidence `.artifacts/windows-explorer-installed-smoke/suite-ba4135da354340c798bbf511f94a66b3`).
 
@@ -52,7 +52,7 @@ The earlier application-shell installer was run silently with `/S` and an explic
 
 The installed `uninstall.exe /S` returned exit code 0. After two seconds, the explicit install root did not exist and contained zero remnants.
 
-The current unpackaged Release candidate was then started with embedded resources. Startup installed both `formatwright-pdf` and `formatwright-media` into the versioned application-data store and wrote active registry records. Exact-pack local E2E passed PDF→PNG, PDF→JPEG, GIF, and built-in structured conversion. See `docs/testing/WINDOWS_STARTER.md`.
+The current unpackaged Release candidate was then started with embedded resources. Startup installed both `anole-pdf` and `anole-media` into the versioned application-data store and wrote active registry records. Exact-pack local E2E passed PDF→PNG, PDF→JPEG, GIF, and built-in structured conversion. See `docs/testing/WINDOWS_STARTER.md`.
 
 The 2026-08-13 current-user installed harness found and prevented a false-positive build-only result: literal NSIS `$"` tokens were present in the first registry command. After correction and rebuild, exact native quoting, actual Windows Shell verb cold launch, hot-instance forwarding, UIA path observation, zero-job behavior, negative missing-path handling, owned-key cleanup, unrelated-key preservation and install-root removal all passed. Both authoritative application-state roots were isolated and restored byte-for-byte. A clean offline VM remains required for release certification.
 

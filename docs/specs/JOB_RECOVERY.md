@@ -82,8 +82,8 @@ Case-insensitive collision checks apply on case-insensitive filesystems. Windows
 The preferred partial path is a hidden or clearly marked sibling of the destination file or output directory:
 
 ~~~text
-destination-parent/.formatwright-partial-JOBID-FILENAME.ext
-destination-parent/.formatwright-partial-JOBID-PAGE-DIRECTORY/
+destination-parent/.anole-partial-JOBID-FILENAME.ext
+destination-parent/.anole-partial-JOBID-PAGE-DIRECTORY/
 ~~~
 
 This preserves same-filesystem rename semantics. A multi-file workflow must validate the complete staged directory and commit it with one same-parent rename; it must not expose pages incrementally at the final path. If the destination parent cannot host staging, execution is blocked or uses a documented non-atomic fallback that requires explicit policy.

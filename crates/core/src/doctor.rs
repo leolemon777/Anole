@@ -5,14 +5,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
-use formatwright_engine_sdk::{
+use anole_engine_sdk::{
     Certification, DoctorReport, EngineHealth, EngineIdentity, SignatureTrust,
     SupplyChainReviewStatus,
 };
 use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 /// Controls which engine locations may participate in runtime discovery.
 ///
@@ -130,7 +130,7 @@ pub async fn inspect_engine_with_policy(
         } else {
             format!("Engine executable was not found: {executable}")
         };
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineMissing,
             Stage::Doctor,
             message,
@@ -154,7 +154,7 @@ pub async fn inspect_engine_with_policy(
             .output()
             .await
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::EngineIncompatible,
                     Stage::Doctor,
                     format!("Unable to start engine: {}", path.display()),
@@ -163,7 +163,7 @@ pub async fn inspect_engine_with_policy(
                 .with_diagnostic(error.to_string())
             })?;
         if !output.status.success() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Doctor,
                 format!("Engine version check failed: {}", path.display()),
@@ -187,7 +187,7 @@ pub async fn inspect_engine_with_policy(
     let binary_sha256 = tokio::task::spawn_blocking(move || sha256_file(&path_for_hash))
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Doctor,
                 "Engine hash worker failed",
@@ -327,7 +327,7 @@ async fn installed_browser_version(path: &Path) -> Result<String> {
     let owned = path.to_owned();
     let version = tokio::task::spawn_blocking(move || {
         let Some(parent) = owned.parent() else {
-            return Ok::<Option<String>, FormatWrightError>(None);
+            return Ok::<Option<String>, AnoleError>(None);
         };
         let best = std::fs::read_dir(parent)
             .ok()
@@ -338,11 +338,11 @@ async fn installed_browser_version(path: &Path) -> Result<String> {
             .filter_map(|name| version_directory_key(&name).map(|key| (key, name)))
             .max_by(|(left, _), (right, _)| left.cmp(right))
             .map(|(_, name)| name);
-        Ok::<Option<String>, FormatWrightError>(best)
+        Ok::<Option<String>, AnoleError>(best)
     })
     .await
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Doctor,
             "Browser version worker failed",
@@ -390,7 +390,7 @@ pub(crate) fn register_engine_pack_paths_with_provenance(
         .get_or_init(|| RwLock::new(BTreeMap::new()))
         .write()
         .map_err(|_| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Doctor,
                 "Engine registry lock was poisoned",
@@ -399,7 +399,7 @@ pub(crate) fn register_engine_pack_paths_with_provenance(
         })?;
     for (name, path) in executables {
         if !is_executable_file(path) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Doctor,
                 format!(
@@ -412,7 +412,7 @@ pub(crate) fn register_engine_pack_paths_with_provenance(
         if let Some(existing) = paths.get(&name.to_ascii_lowercase())
             && existing.pack_id != pack_id
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Doctor,
                 format!("Engine executable name is already claimed: {name}"),
@@ -470,7 +470,7 @@ pub(crate) fn registered_engine_provenance(
 
 fn configured_engine_path(executable: &str) -> Option<PathBuf> {
     let key = format!(
-        "FORMATWRIGHT_ENGINE_{}",
+        "ANOLE_ENGINE_{}",
         executable
             .chars()
             .map(|character| {
@@ -496,7 +496,7 @@ fn configured_engine_path(executable: &str) -> Option<PathBuf> {
 /// hashed.
 pub async fn inspect_builtin_engine(engine_id: &str) -> Result<EngineIdentity> {
     let path = std::env::current_exe().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Doctor,
             "Unable to locate the Anole executable",
@@ -508,7 +508,7 @@ pub async fn inspect_builtin_engine(engine_id: &str) -> Result<EngineIdentity> {
     let binary_sha256 = tokio::task::spawn_blocking(move || sha256_file(&path_for_hash))
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Doctor,
                 "Built-in engine hash worker failed",
@@ -585,7 +585,7 @@ async fn read_build_configuration(path: &Path) -> Result<String> {
         .output()
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Doctor,
                 "Unable to read engine build configuration",
@@ -594,7 +594,7 @@ async fn read_build_configuration(path: &Path) -> Result<String> {
             .with_diagnostic(error.to_string())
         })?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Doctor,
             "Engine did not expose its build configuration",
@@ -606,7 +606,7 @@ async fn read_build_configuration(path: &Path) -> Result<String> {
 
 pub(crate) fn sha256_file(path: &Path) -> Result<String> {
     let mut file = File::open(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Doctor,
             format!("Cannot open engine binary: {}", path.display()),
@@ -618,7 +618,7 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String> {
     let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Doctor,
                 format!("Cannot hash engine binary: {}", path.display()),
@@ -651,7 +651,7 @@ mod tests {
         inspect_engine_with_policy, known_install_location, macos_browser_bundle_paths,
         resolve_engine_path, version_directory_key,
     };
-    use formatwright_engine_sdk::SupplyChainReviewStatus;
+    use anole_engine_sdk::SupplyChainReviewStatus;
 
     #[test]
     fn known_install_locations_cover_only_the_browser_engine() {
@@ -717,7 +717,7 @@ mod tests {
             "first-pack",
             crate::Certification::Unverified,
             None,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Missing,
+            anole_engine_sdk::SupplyChainReviewStatus::Missing,
         )
         .expect("first registration");
 
@@ -729,7 +729,7 @@ mod tests {
             "second-pack",
             crate::Certification::Unverified,
             None,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Missing,
+            anole_engine_sdk::SupplyChainReviewStatus::Missing,
         )
         .expect_err("a second manifest must not replace the first");
         assert!(error.message.contains("already claimed"));
@@ -761,7 +761,7 @@ mod tests {
             "strict-pack",
             crate::Certification::Unverified,
             None,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Missing,
+            anole_engine_sdk::SupplyChainReviewStatus::Missing,
         )
         .expect("register exact pack path");
 
@@ -774,7 +774,7 @@ mod tests {
 
     #[test]
     fn registered_provenance_is_visible_to_doctor_without_promoting_hashes() {
-        use formatwright_engine_sdk::{Certification, SignatureTrust, SupplyChainReviewStatus};
+        use anole_engine_sdk::{Certification, SignatureTrust, SupplyChainReviewStatus};
 
         let current = std::env::current_exe().expect("current test executable");
         let mut paths = BTreeMap::new();
@@ -845,7 +845,7 @@ mod tests {
                 Some(hostile)
             )
             .is_none(),
-            "Release must ignore PATH and FORMATWRIGHT_ENGINE_* candidates"
+            "Release must ignore PATH and ANOLE_ENGINE_* candidates"
         );
     }
 }

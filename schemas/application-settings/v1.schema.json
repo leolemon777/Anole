@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:formatwright:schema:application-settings:v1",
+  "$id": "urn:anole:schema:application-settings:v1",
   "title": "Anole Application Settings v1",
   "type": "object",
   "additionalProperties": false,

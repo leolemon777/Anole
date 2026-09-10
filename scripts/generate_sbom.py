@@ -180,7 +180,7 @@ def main() -> int:
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": "Anole-application-SBOM",
-        "documentNamespace": f"https://formatwright.local/spdx/{lock_digest}",
+        "documentNamespace": f"https://anole.local/spdx/{lock_digest}",
         "creationInfo": {
             "created": creation_time(),
             "creators": ["Tool: Anole scripts/generate_sbom.py"],

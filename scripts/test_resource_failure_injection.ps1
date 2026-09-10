@@ -10,7 +10,7 @@
 # selected - so the script cannot touch a real volume.
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts\resource-failure-injection'),
     [switch]$SkipVhd # run only the permission-loss scenario (no elevation needed)
 )
@@ -36,7 +36,7 @@ function Invoke-Cli {
     }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
-    Assert-True $process.Start() 'unable to start FormatWright'
+    Assert-True $process.Start() 'unable to start Anole'
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
@@ -62,7 +62,7 @@ function Assert-FailureContract {
         "$Scenario produced unclassified exit code $($Result.ExitCode): $($Result.Stderr)"
     )
     Assert-True (-not (Test-Path -LiteralPath $OutputPath)) "$Scenario committed an output file"
-    $staged = @(Get-ChildItem -LiteralPath $StagingParent -Filter '.formatwright-partial-*' -Force -ErrorAction SilentlyContinue)
+    $staged = @(Get-ChildItem -LiteralPath $StagingParent -Filter '.anole-partial-*' -Force -ErrorAction SilentlyContinue)
     Assert-True ($staged.Count -eq 0) "$Scenario left a staged partial behind"
     if ($null -ne $DatabasePath) {
         $jobs = Invoke-Cli @('--json', '--state-db', $DatabasePath, 'jobs', 'list')

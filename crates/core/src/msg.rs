@@ -1,12 +1,12 @@
 //! MSG (Outlook) 输入：CFB 复合文档解析 + MSG→EML 合成，随后复用 EML
-//! 导出管线（净化、渲染、验收）。内置 `formatwright.msg` 引擎，无外部
+//! 导出管线（净化、渲染、验收）。内置 `anole.msg` 引擎，无外部
 //! 进程；无法安全解析的输入一律 fail-closed。
 
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -15,11 +15,11 @@ use crate::domain::{
     SCHEMA_VERSION, StreamKind, StreamProbe,
 };
 use crate::eml::{self, ParsedEmail};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
-pub const MSG_ENGINE_ID: &str = "formatwright.msg";
+pub const MSG_ENGINE_ID: &str = "anole.msg";
 
 const MAX_MSG_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -37,7 +37,7 @@ pub fn msg_to_eml_bytes(path: &Path) -> Result<Vec<u8>> {
     if let Ok(metadata) = std::fs::metadata(path)
         && metadata.len() > MAX_MSG_BYTES
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "MSG input exceeds the 64 MiB built-in adapter limit",
@@ -45,7 +45,7 @@ pub fn msg_to_eml_bytes(path: &Path) -> Result<Vec<u8>> {
         ));
     }
     let mut compound = cfb::open(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "The file is not a readable Outlook MSG (compound document)",
@@ -67,7 +67,7 @@ pub fn msg_to_eml_bytes(path: &Path) -> Result<Vec<u8>> {
             filetime_to_rfc2822(u64::from_le_bytes(little_endian))
         });
     if transport_headers.is_none() && plain_body.is_none() && html_body.is_none() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "The MSG container carries no message headers or body",
@@ -236,7 +236,7 @@ fn stream_property(probe: &Probe, name: &str) -> Value {
 }
 
 /// Builds the export Plan for `msg -> txt|html` through the built-in
-/// `formatwright.msg` adapter (mirror of the EML export plan).
+/// `anole.msg` adapter (mirror of the EML export plan).
 ///
 /// # Errors
 ///
@@ -250,7 +250,7 @@ pub fn plan_msg_export(
 ) -> Result<Plan> {
     let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
     if probe.format.id != "msg" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MSG export input must be an Outlook .msg message",
@@ -258,7 +258,7 @@ pub fn plan_msg_export(
         ));
     }
     if !matches!(target.as_str(), "txt" | "html" | "md") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MSG export target must be txt, html, or md",
@@ -266,15 +266,15 @@ pub fn plan_msg_export(
         ));
     }
     if engine.engine_id != MSG_ENGINE_ID {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The MSG export Plan was given the wrong engine",
-            "Use the built-in formatwright.msg adapter.",
+            "Use the built-in anole.msg adapter.",
         ));
     }
     if stream_property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "The MSG HTML body references an external resource under deny-all policy",
@@ -283,7 +283,7 @@ pub fn plan_msg_export(
     }
     let step = PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: format!("formatwright.msg.msg-to-{target}.builtin"),
+        capability_id: format!("anole.msg.msg-to-{target}.builtin"),
         engine: engine.clone(),
         operation: Operation::Transform,
         loss_class: LossClass::Unknown,
@@ -346,7 +346,7 @@ pub async fn execute_msg_export(
     plan: &Plan,
 ) -> Result<(PathBuf, crate::domain::ValidationReport)> {
     let output = plan.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "MSG export Plan has no output path",
@@ -354,7 +354,7 @@ pub async fn execute_msg_export(
         )
     })?;
     if output.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Execute,
             "The MSG export destination already exists",
@@ -372,7 +372,7 @@ pub async fn execute_msg_export(
     tokio::task::spawn_blocking(move || std::fs::write(&write_output, rendered_for_write))
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Execute,
                 "MSG export writer task failed",
@@ -381,7 +381,7 @@ pub async fn execute_msg_export(
             .with_diagnostic(error.to_string())
         })?
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to write the MSG export output",
@@ -511,15 +511,15 @@ mod tests {
             .collect()
     }
 
-    fn builtin_engine() -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn builtin_engine() -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: MSG_ENGINE_ID.to_owned(),
             version: "0.1.0".to_owned(),
-            binary_path: std::path::PathBuf::from("formatwright.exe"),
+            binary_path: std::path::PathBuf::from("anole.exe"),
             binary_sha256: "0".repeat(64),
             manifest_sha256: None,
             build_configuration: None,
-            certification: formatwright_engine_sdk::Certification::Experimental,
+            certification: anole_engine_sdk::Certification::Experimental,
         }
     }
 

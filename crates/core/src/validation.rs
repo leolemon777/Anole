@@ -1,4 +1,4 @@
-use formatwright_engine_sdk::Operation;
+use anole_engine_sdk::Operation;
 use serde_json::json;
 use std::time::Duration;
 use uuid::Uuid;
@@ -545,7 +545,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity, LossClass, Operation};
+    use anole_engine_sdk::{Certification, EngineIdentity, LossClass, Operation};
     use uuid::Uuid;
 
     use super::validate_media_output;

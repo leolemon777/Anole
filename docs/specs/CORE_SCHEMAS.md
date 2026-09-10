@@ -10,14 +10,14 @@ Anole publishes these machine contracts:
 
 | Contract | Schema ID | Producer | Main consumers |
 |---|---|---|---|
-| Probe | urn:formatwright:schema:probe:v1 | Inspector | Planner, UI, CLI |
-| Plan | urn:formatwright:schema:plan:v1 | Planner | Runner, UI, reports |
-| Job Event | urn:formatwright:schema:job-event:v1 | Queue/Runner | UI, CLI, API |
-| Validation Report | urn:formatwright:schema:validation-report:v1 | Validators | UI, CLI, audit |
-| Engine Manifest | urn:formatwright:schema:engine-manifest:v1 | Pack builder/plugin | Registry, Doctor |
-| Preset Library | urn:formatwright:schema:preset-library:v1 | Desktop/editor | Desktop, CLI/API later |
-| Application State Manifest | urn:formatwright:schema:application-state-manifest:v1 | MaintenanceService | CLI/Desktop restore, migration tools |
-| Application Settings | urn:formatwright:schema:application-settings:v1 | Desktop settings | Desktop, application-state bundle |
+| Probe | urn:anole:schema:probe:v1 | Inspector | Planner, UI, CLI |
+| Plan | urn:anole:schema:plan:v1 | Planner | Runner, UI, reports |
+| Job Event | urn:anole:schema:job-event:v1 | Queue/Runner | UI, CLI, API |
+| Validation Report | urn:anole:schema:validation-report:v1 | Validators | UI, CLI, audit |
+| Engine Manifest | urn:anole:schema:engine-manifest:v1 | Pack builder/plugin | Registry, Doctor |
+| Preset Library | urn:anole:schema:preset-library:v1 | Desktop/editor | Desktop, CLI/API later |
+| Application State Manifest | urn:anole:schema:application-state-manifest:v1 | MaintenanceService | CLI/Desktop restore, migration tools |
+| Application Settings | urn:anole:schema:application-settings:v1 | Desktop settings | Desktop, application-state bundle |
 
 Canonical JSON Schemas live under schemas/. Rust types and examples must validate against them in CI.
 

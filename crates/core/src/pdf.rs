@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use image::{GenericImageView, ImageReader};
 use serde_json::{Value, json};
 use tokio::process::Command;
@@ -15,7 +15,7 @@ use crate::domain::{
     Plan, PlanRequest, PlanStep, Probe, ProbeEvidence, ReportRedaction, SCHEMA_VERSION, StreamKind,
     StreamProbe, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::inspect::inspect_media;
 use crate::planner::deterministic_plan_hash;
@@ -72,7 +72,7 @@ async fn inspect_pdf_inner(
     password: Option<&str>,
 ) -> Result<Probe> {
     if pdfinfo.engine_id != "pdfinfo" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Inspect,
             "PDF inspection was given the wrong engine",
@@ -80,7 +80,7 @@ async fn inspect_pdf_inner(
         ));
     }
     if !pdf_format_hint(path)? {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "Input does not contain a PDF header",
@@ -106,7 +106,7 @@ async fn inspect_pdf_inner(
         return Err(input_pdf_error("PDF contains no pages", &summary));
     }
     if page_count > MAX_PDF_PAGES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             format!("PDF has {page_count} pages; the alpha limit is {MAX_PDF_PAGES}"),
@@ -117,7 +117,7 @@ async fn inspect_pdf_inner(
         && parse_field(&summary, "Encrypted")
             .is_some_and(|value| value.to_ascii_lowercase().starts_with("yes"))
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
             "Encrypted PDF: a document password is required",
@@ -219,7 +219,7 @@ pub fn plan_pdf_text_export(
         return Err(unsupported("PDF text export supports only md"));
     }
     if pdftotext.engine_id != "pdftotext" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "PDF text export was given the wrong engine",
@@ -227,7 +227,7 @@ pub fn plan_pdf_text_export(
         ));
     }
     let page_count = u32::try_from(probe.streams.len()).map_err(|_| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Plan,
             "PDF page count cannot be represented",
@@ -296,7 +296,7 @@ pub fn plan_pdf_render(
         return Err(unsupported("PDF rendering requires a PDF input"));
     }
     if pdftoppm.engine_id != "pdftoppm" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "PDF rendering was given the wrong engine",
@@ -316,7 +316,7 @@ pub fn plan_pdf_render(
     };
     let dpi = request.dpi.unwrap_or(144);
     if !(36..=600).contains(&dpi) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "PDF render DPI must be between 36 and 600",
@@ -330,7 +330,7 @@ pub fn plan_pdf_render(
         .trim()
         .to_ascii_lowercase();
     if !matches!(color_mode.as_str(), "rgb" | "gray") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "PDF color mode must be rgb or gray",
@@ -340,7 +340,7 @@ pub fn plan_pdf_render(
     let quality = if target == "jpeg" {
         let value = request.quality.unwrap_or(85);
         if !(1..=100).contains(&value) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "JPEG quality must be between 1 and 100",
@@ -350,7 +350,7 @@ pub fn plan_pdf_render(
         Some(value)
     } else {
         if request.quality.is_some() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "PNG rendering is lossless and does not accept --quality",
@@ -360,7 +360,7 @@ pub fn plan_pdf_render(
         None
     };
     let output_path = request.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "PDF rendering requires an output directory path",
@@ -368,7 +368,7 @@ pub fn plan_pdf_render(
         )
     })?;
     let page_count = u32::try_from(probe.streams.len()).map_err(|_| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Plan,
             "PDF page count cannot be represented",
@@ -391,7 +391,7 @@ pub fn plan_pdf_render(
         .iter()
         .any(|[width, height]| u64::from(*width).saturating_mul(u64::from(*height)) > 100_000_000)
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Plan,
             "A rendered PDF page would exceed the 100-megapixel alpha limit",
@@ -547,7 +547,7 @@ pub(crate) async fn validate_pdf_render(
             tokio::task::spawn_blocking(move || decode_page_pixels(&path))
                 .await
                 .map_err(|error| {
-                    FormatWrightError::new(
+                    AnoleError::new(
                         ErrorCode::Internal,
                         Stage::Validate,
                         "Rendered-page pixel audit worker failed",
@@ -619,7 +619,7 @@ pub(crate) async fn validate_pdf_render(
         .map(|probe| probe.artifact.size_bytes)
         .fold(0_u64, u64::saturating_add);
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"formatwright-pdf-page-set-v1");
+    hasher.update(b"anole-pdf-page-set-v1");
     hasher.update(target.as_bytes());
     for probe in &probes {
         hasher.update(probe.artifact.fast_fingerprint.as_bytes());
@@ -669,7 +669,7 @@ async fn run_pdfinfo(
     let output = tokio::time::timeout(PDFINFO_TIMEOUT, command.output())
         .await
         .map_err(|_| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Inspect,
                 "PDF inspection timed out",
@@ -678,7 +678,7 @@ async fn run_pdfinfo(
             .retryable(true)
         })?
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Inspect,
                 "Unable to start pdfinfo",
@@ -694,14 +694,14 @@ async fn run_pdfinfo(
             if password_attempt {
                 // The caller supplied `-upw`: the password is simply wrong for
                 // this document (pdf-decrypt planning path).
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Inspect,
                     "The password did not unlock the document",
                     "Check the password and retry.",
                 ));
             }
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Inspect,
                 "Encrypted PDF: a document password is required",
@@ -814,7 +814,7 @@ fn expected_dimensions(probe: &Probe, dpi: u16) -> Result<Vec<[u32; 2]>> {
 
 fn poppler_raster_dimension(value: f64) -> Result<u32> {
     if !value.is_finite() || !(1.0..=16_384.0).contains(&value) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Plan,
             "Rendered PDF page dimension is outside the alpha limit",
@@ -822,7 +822,7 @@ fn poppler_raster_dimension(value: f64) -> Result<u32> {
         ));
     }
     value.ceil().to_string().parse::<u32>().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Plan,
             "Unable to represent a validated rendered page dimension",
@@ -845,7 +845,7 @@ fn estimated_raster_bytes(dimensions: &[[u32; 2]], gray: bool) -> u64 {
 
 fn exact_page_paths(directory: &Path, page_count: u32, extension: &str) -> Result<Vec<PathBuf>> {
     if !directory.is_dir() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Validate,
             "PDF renderer did not produce a page directory",
@@ -862,7 +862,7 @@ fn exact_page_paths(directory: &Path, page_count: u32, extension: &str) -> Resul
         .map(|page| directory.join(format!("page-{page:06}.{extension}")))
         .collect::<Vec<_>>();
     if observed != expected || expected.iter().any(|path| !path.is_file()) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Rendered page directory is incomplete or contains unexpected entries",
@@ -919,8 +919,8 @@ fn decode_page_pixels(path: &Path) -> Result<PixelAudit> {
     })
 }
 
-fn pixel_decode_error(path: &Path, diagnostic: String) -> FormatWrightError {
-    FormatWrightError::new(
+fn pixel_decode_error(path: &Path, diagnostic: String) -> AnoleError {
+    AnoleError::new(
         ErrorCode::ValidationFailed,
         Stage::Validate,
         format!("Unable to decode rendered page pixels: {}", path.display()),
@@ -998,8 +998,8 @@ fn bounded_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[start..]).into_owned()
 }
 
-fn input_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_error(path: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Unable to read PDF header: {}", path.display()),
@@ -1008,8 +1008,8 @@ fn input_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn input_pdf_error(message: &str, diagnostic: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_pdf_error(message: &str, diagnostic: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         message,
@@ -1018,8 +1018,8 @@ fn input_pdf_error(message: &str, diagnostic: &str) -> FormatWrightError {
     .with_diagnostic(diagnostic.to_owned())
 }
 
-fn incompatible_pdfinfo(message: &str, diagnostic: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn incompatible_pdfinfo(message: &str, diagnostic: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::EngineIncompatible,
         Stage::Inspect,
         message,
@@ -1028,8 +1028,8 @@ fn incompatible_pdfinfo(message: &str, diagnostic: &str) -> FormatWrightError {
     .with_diagnostic(diagnostic.to_owned())
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message,
@@ -1037,8 +1037,8 @@ fn unsupported(message: &str) -> FormatWrightError {
     )
 }
 
-fn invalid_plan(name: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_plan(name: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::PolicyBlocked,
         Stage::Validate,
         format!("PDF Plan contains an invalid or missing {name}"),
@@ -1046,8 +1046,8 @@ fn invalid_plan(name: &str) -> FormatWrightError {
     )
 }
 
-fn storage_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn storage_error(path: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Validate,
         format!("Unable to read rendered page directory: {}", path.display()),
@@ -1094,7 +1094,7 @@ pub(crate) fn parse_page_range(range: &str, page_count: u32) -> Result<(Vec<u32>
     if let Some(&maximum) = selected.iter().max()
         && (maximum > page_count || selected.iter().min() == Some(&0))
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Page range reaches page {maximum} but the PDF has {page_count} pages"),
@@ -1105,8 +1105,8 @@ pub(crate) fn parse_page_range(range: &str, page_count: u32) -> Result<(Vec<u32>
     Ok((selected, total))
 }
 
-fn invalid_page_range() -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_page_range() -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Plan,
         "Page range must look like 1-3,7 within the document",
@@ -1135,7 +1135,7 @@ pub fn plan_pdf_merge(
     qpdf: &EngineIdentity,
 ) -> Result<Plan> {
     if probes.len() < 2 {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "PDF merge needs at least two inputs",
@@ -1146,7 +1146,7 @@ pub fn plan_pdf_merge(
         .iter()
         .any(|probe| probe.format.id != "pdf" || probe.streams.is_empty())
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "PDF merge inputs must all be inspected PDFs",
@@ -1154,7 +1154,7 @@ pub fn plan_pdf_merge(
         ));
     }
     if qpdf.engine_id != "qpdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The merge Plan was given the wrong engine",
@@ -1166,7 +1166,7 @@ pub fn plan_pdf_merge(
         .map(|probe| u64::try_from(probe.streams.len()).unwrap_or(u64::MAX))
         .sum();
     if expected_pages > u64::from(MAX_PDF_PAGES) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Plan,
             format!(
@@ -1249,7 +1249,7 @@ pub fn plan_pdf_extract(
     qpdf: &EngineIdentity,
 ) -> Result<Plan> {
     if probe.format.id != "pdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "PDF extraction needs a PDF input",
@@ -1257,7 +1257,7 @@ pub fn plan_pdf_extract(
         ));
     }
     if qpdf.engine_id != "qpdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The extraction Plan was given the wrong engine",
@@ -1468,7 +1468,7 @@ fn pdf_operation_plan(
 
 fn ensure_pdf_probe(probe: &Probe, operation: &str) -> Result<()> {
     if probe.format.id != "pdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("PDF {operation} needs a PDF input"),
@@ -1480,7 +1480,7 @@ fn ensure_pdf_probe(probe: &Probe, operation: &str) -> Result<()> {
 
 fn ensure_qpdf(qpdf: &EngineIdentity, operation: &str) -> Result<()> {
     if qpdf.engine_id != "qpdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             format!("The {operation} Plan was given the wrong engine"),
@@ -1506,7 +1506,7 @@ pub fn plan_pdf_rotate(
     ensure_pdf_probe(probe, "rotation")?;
     ensure_qpdf(qpdf, "rotation")?;
     if !matches!(angle, 90 | 180 | 270) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Rotation angle must be 90, 180, or 270; got {angle}"),
@@ -1603,7 +1603,7 @@ fn plan_pdf_secret_operation(
     ensure_qpdf(qpdf, operation)?;
     let password = password.unwrap_or("").trim();
     if password.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("PDF {operation} needs a non-empty password"),
@@ -1710,7 +1710,7 @@ pub fn plan_pdf_metadata(
     let title = title.map(str::trim).filter(|value| !value.is_empty());
     let author = author.map(str::trim).filter(|value| !value.is_empty());
     if title.is_none() && author.is_none() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "PDF metadata needs a title or an author",
@@ -1721,7 +1721,7 @@ pub fn plan_pdf_metadata(
         if let Some(value) = value
             && (value.len() > MAX_METADATA_TEXT_BYTES || value.chars().any(char::is_control))
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 format!(
@@ -1787,7 +1787,7 @@ pub(crate) fn apply_pdf_metadata(
 ) -> Result<Vec<u8>> {
     let text = String::from_utf8_lossy(input_bytes).into_owned();
     let previous_xref = last_startxref_offset(input_bytes).ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "PDF has no startxref marker for an incremental update",
@@ -1800,7 +1800,7 @@ pub(crate) fn apply_pdf_metadata(
         .map(|offset| search_from + offset)
         .or_else(|| text.find("trailer"))
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Execute,
                 "PDF trailer could not be located",
@@ -1809,7 +1809,7 @@ pub(crate) fn apply_pdf_metadata(
         })?;
     let trailer_text = &text[trailer_start..];
     let root = indirect_reference(trailer_text, "/Root").ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "PDF trailer carries no /Root reference",
@@ -1834,7 +1834,7 @@ pub(crate) fn apply_pdf_metadata(
         info_entries.push_str(") ");
     }
     if info_entries.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "PDF metadata update carries no fields",
@@ -2014,7 +2014,7 @@ pub fn plan_pdf_watermark(
     ensure_qpdf(qpdf, "watermark")?;
     let text = text.trim();
     if text.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "PDF watermark needs non-empty text",
@@ -2024,7 +2024,7 @@ pub fn plan_pdf_watermark(
     if text.len() > MAX_WATERMARK_TEXT_BYTES
         || !text.bytes().all(|byte| (0x20..=0x7E).contains(&byte))
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!(
@@ -2035,7 +2035,7 @@ pub fn plan_pdf_watermark(
     }
     let angle = angle.unwrap_or(-45);
     if !(-180..=180).contains(&angle) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Watermark angle must be within -180..=180 degrees; got {angle}"),
@@ -2295,7 +2295,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity, LossClass};
+    use anole_engine_sdk::{Certification, EngineIdentity, LossClass};
 
     use super::{
         append_watermark_text_check, build_watermark_pdf, normalized_watermark_text,

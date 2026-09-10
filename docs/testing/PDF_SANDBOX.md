@@ -36,7 +36,7 @@ The passing fixture promotes the covered GW-09 all-pages path to Experimental on
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_pdf_sandbox.ps1 `
   -Python <python-with-reportlab-pypdf-pillow> `
   -PdfInfo <pdfinfo> `

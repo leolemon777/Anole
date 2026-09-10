@@ -9,10 +9,10 @@
 
 The installer owns **2 Open-in keys + 17 Convert keys** (19 total). Open-in:
 
-- `Software\Classes\*\shell\FormatWright`
-- `Software\Classes\Directory\shell\FormatWright`
+- `Software\Classes\*\shell\Anole`
+- `Software\Classes\Directory\shell\Anole`
 
-Convert keys live under `Software\Classes\SystemFileAssociations\<ext>\shell\FormatWright.To*` and invoke `--shell-convert --to <format> "%1"`. Uninstall deletes only this generated set. Windows 11 normally shows classic verbs under **Show more options**; a modern top-level extension is out of Wave 1.
+Convert keys live under `Software\Classes\SystemFileAssociations\<ext>\shell\Anole.To*` and invoke `--shell-convert --to <format> "%1"`. Uninstall deletes only this generated set. Windows 11 normally shows classic verbs under **Show more options**; a modern top-level extension is out of Wave 1.
 
 **Open in Anole** is navigation only: it may pre-fill an existing local file or directory and must create **0 Jobs**.
 

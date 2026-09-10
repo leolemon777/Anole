@@ -25,10 +25,10 @@ The filesystem cleanup hook executes only for a currently eligible job while the
 CLI now exposes:
 
 ~~~text
-formatwright jobs batches
-formatwright jobs select --state failed --search TEXT
-formatwright jobs selection SELECTION_ID
-formatwright jobs bulk SELECTION_ID --action retry
+anole jobs batches
+anole jobs select --state failed --search TEXT
+anole jobs selection SELECTION_ID
+anole jobs bulk SELECTION_ID --action retry
 ~~~
 
 `batch-images` creates a persistent batch and reports `batch_id`. Desktop Jobs provides path filtering plus stable-snapshot bulk Retry, Resume, and Cancel through the same Core service.

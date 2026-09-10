@@ -37,7 +37,7 @@ The passing fixture promotes Markdown/HTML → DOCX and PDF to Experimental on W
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_document_sandbox.ps1 `
   -Python <python-with-pillow> `
   -Pandoc <pandoc> `

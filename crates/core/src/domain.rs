@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

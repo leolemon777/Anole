@@ -23,7 +23,7 @@ The Plan makes start, duration, width, frame rate, loop count, palette size, and
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_gif_sandbox.ps1
 ~~~
 

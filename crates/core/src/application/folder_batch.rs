@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::job_store::JobCreateRequest;
 
 pub const MAX_FOLDER_BATCH_FILES: usize = 100_000;
@@ -57,7 +57,7 @@ impl FolderBatchService {
         let input_root = canonical_local_directory(input_root.as_ref(), "input")?;
         let output_root = canonical_local_directory(output_root.as_ref(), "output")?;
         if input_root.starts_with(&output_root) || output_root.starts_with(&input_root) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Plan,
                 "Folder batch input and output roots must not overlap",
@@ -89,7 +89,7 @@ impl FolderBatchService {
                     discovered = discovered.saturating_add(1);
                     files.push(path);
                     if files.len() > MAX_FOLDER_BATCH_FILES {
-                        return Err(FormatWrightError::new(
+                        return Err(AnoleError::new(
                             ErrorCode::ResourceExhausted,
                             Stage::Inspect,
                             "Folder batch exceeds the 100,000-file limit",
@@ -110,7 +110,7 @@ impl FolderBatchService {
             let relative_input_path = input_path
                 .strip_prefix(&input_root)
                 .map_err(|error| {
-                    FormatWrightError::new(
+                    AnoleError::new(
                         ErrorCode::Internal,
                         Stage::Plan,
                         "Enumerated file escaped its canonical folder root",
@@ -183,7 +183,7 @@ impl FolderBatchService {
         let safety_margin_bytes = (working_bytes / 10).max(256 * 1024 * 1024);
         let required_bytes = working_bytes.saturating_add(safety_margin_bytes);
         let available_bytes = fs2::available_space(&output_root).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 format!(
@@ -211,7 +211,7 @@ fn validate_target_extension(value: &str) -> Result<String> {
         || normalized.len() > 16
         || !normalized.bytes().all(|byte| byte.is_ascii_alphanumeric())
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Folder batch target extension is invalid",
@@ -227,7 +227,7 @@ fn validate_target_extension(value: &str) -> Result<String> {
 
 fn canonical_local_directory(path: &Path, purpose: &str) -> Result<PathBuf> {
     if path.as_os_str().is_empty() || is_network_or_device_path(path) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
             format!("Folder batch {purpose} root must be a local disk path"),
@@ -238,7 +238,7 @@ fn canonical_local_directory(path: &Path, purpose: &str) -> Result<PathBuf> {
         .canonicalize()
         .map_err(|error| folder_io_error(path, &format!("resolve the {purpose} root"), error))?;
     if !canonical.is_dir() || is_network_or_device_path(&canonical) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Folder batch {purpose} root is not a local directory"),
@@ -271,7 +271,7 @@ fn unique_output_path(
         .file_stem()
         .and_then(|value| value.to_str())
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "Folder batch contains a filename that is not valid Unicode",
@@ -297,7 +297,7 @@ fn unique_output_path(
             return Ok(output);
         }
     }
-    Err(FormatWrightError::new(
+    Err(AnoleError::new(
         ErrorCode::OutputConflict,
         Stage::Plan,
         "Folder batch could not assign a unique output name",
@@ -315,8 +315,8 @@ fn output_key(path: &Path) -> String {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn folder_io_error(path: &Path, action: &str, error: std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn folder_io_error(path: &Path, action: &str, error: std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Cannot {action} folder batch path: {}", path.display()),
@@ -397,17 +397,17 @@ mod tests {
             plan.steps.push(crate::domain::PlanStep {
                 step_id: format!("step-{index}"),
                 capability_id: "test".to_owned(),
-                engine: formatwright_engine_sdk::EngineIdentity {
+                engine: anole_engine_sdk::EngineIdentity {
                     engine_id: "test".to_owned(),
                     version: "1".to_owned(),
                     binary_path: suite.path().join("test"),
                     binary_sha256: "sha256:test".to_owned(),
                     manifest_sha256: None,
                     build_configuration: None,
-                    certification: formatwright_engine_sdk::Certification::Unverified,
+                    certification: anole_engine_sdk::Certification::Unverified,
                 },
-                operation: formatwright_engine_sdk::Operation::Serialize,
-                loss_class: formatwright_engine_sdk::LossClass::Lossless,
+                operation: anole_engine_sdk::Operation::Serialize,
+                loss_class: anole_engine_sdk::LossClass::Lossless,
                 arguments: std::collections::BTreeMap::new(),
                 estimated_temporary_bytes: Some((index + 1) * 1_000),
             });

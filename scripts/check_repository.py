@@ -40,7 +40,7 @@ def check_schemas(errors: list[str]) -> None:
         found_names.add(name)
         schema_id = document.get("$id")
         if not isinstance(schema_id, str) or not schema_id.startswith(
-            "urn:formatwright:schema:"
+            "urn:anole:schema:"
         ):
             errors.append(f"{path.relative_to(ROOT)}: missing canonical $id")
         elif schema_id in found_ids:

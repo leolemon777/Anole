@@ -310,10 +310,10 @@ describe("engine recovery notices", () => {
   it("raises notices only for degraded engines", () => {
     const recovery: { engine_recovery: EngineRecoveryOutcome[] } = {
       engine_recovery: [
-        { outcome: "activated", engine_id: "formatwright-pdf", version: "26.02.0-0" },
+        { outcome: "activated", engine_id: "anole-pdf", version: "26.02.0-0" },
         {
           outcome: "fell_back",
-          engine_id: "formatwright-media",
+          engine_id: "anole-media",
           fallback: {
             failed_version: "9.0",
             failed_manifest_sha256: "ab".repeat(32),
@@ -321,12 +321,12 @@ describe("engine recovery notices", () => {
             fallback_version: "8.0",
           },
         },
-        { outcome: "failed", engine_id: "formatwright-image", failed_version: "1.0.0", reason: "no verifiable copy" },
+        { outcome: "failed", engine_id: "anole-image", failed_version: "1.0.0", reason: "no verifiable copy" },
       ],
     };
     expect(engineRecoveryNotices(recovery, labels)).toEqual([
-      "formatwright-media -> 8.0",
-      "formatwright-image failed: no verifiable copy",
+      "anole-media -> 8.0",
+      "anole-image failed: no verifiable copy",
     ]);
     expect(engineRecoveryNotices(null, labels)).toEqual([]);
     expect(engineRecoveryNotices({}, labels)).toEqual([]);
@@ -343,15 +343,15 @@ describe("engine recovery notices", () => {
 
   it("maps per-engine badge state for the engines page", () => {
     const outcomes: EngineRecoveryOutcome[] = [
-      { outcome: "activated", engine_id: "formatwright-pdf" },
-      { outcome: "fell_back", engine_id: "formatwright-media" },
-      { outcome: "failed", engine_id: "formatwright-image" },
+      { outcome: "activated", engine_id: "anole-pdf" },
+      { outcome: "fell_back", engine_id: "anole-media" },
+      { outcome: "failed", engine_id: "anole-image" },
     ];
-    expect(engineRecoveryState(outcomes, "formatwright-pdf")).toBeNull();
-    expect(engineRecoveryState(outcomes, "formatwright-media")).toBe("fell-back");
-    expect(engineRecoveryState(outcomes, "formatwright-image")).toBe("failed");
+    expect(engineRecoveryState(outcomes, "anole-pdf")).toBeNull();
+    expect(engineRecoveryState(outcomes, "anole-media")).toBe("fell-back");
+    expect(engineRecoveryState(outcomes, "anole-image")).toBe("failed");
     expect(engineRecoveryState(outcomes, null)).toBeNull();
-    expect(engineRecoveryState(undefined, "formatwright-pdf")).toBeNull();
+    expect(engineRecoveryState(undefined, "anole-pdf")).toBeNull();
   });
 });
 

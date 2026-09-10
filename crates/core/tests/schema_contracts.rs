@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use formatwright_core::{
+use anole_core::{
     APPLICATION_STATE_BUNDLE_SCHEMA_VERSION, ApplicationSettings, ArtifactIdentity,
     ArtifactSummary, Certification, ChangeSet, ConversionPreset, EngineIdentity, FormatDescriptor,
     FormatKind, JobEventRecord, JobProgress, JobState, MetadataEntry, NetworkPolicy, Operation,
@@ -9,9 +9,9 @@ use formatwright_core::{
     StateBundleComponent, StateBundleComponents, StateBundleEntry, StateBundleManifest, StreamKind,
     StreamProbe, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use formatwright_engine_sdk::LossClass;
-use formatwright_engine_sdk::{
-    Capability, EngineArchitecture, EngineManifest, EnginePlatform, FormatWrightCompatibility,
+use anole_engine_sdk::LossClass;
+use anole_engine_sdk::{
+    AnoleCompatibility, Capability, EngineArchitecture, EngineManifest, EnginePlatform,
     ManifestExecutable, ManifestLicense, ManifestSource,
 };
 use serde::Serialize;
@@ -79,7 +79,7 @@ fn probe() -> Probe {
             "title".to_owned(),
             MetadataEntry {
                 value: json!("fixture"),
-                classification: formatwright_core::domain::MetadataClassification::Private,
+                classification: anole_core::domain::MetadataClassification::Private,
             },
         )]),
         warnings: Vec::new(),
@@ -190,7 +190,7 @@ fn engine_manifest() -> EngineManifest {
         platform: EnginePlatform::current().expect("supported test platform"),
         architecture: EngineArchitecture::current().expect("supported test architecture"),
         protocol_version: 1,
-        formatwright_compatibility: FormatWrightCompatibility {
+        anole_compatibility: AnoleCompatibility {
             minimum: "0.1.0".to_owned(),
             maximum_exclusive: "0.2.0".to_owned(),
         },
@@ -344,6 +344,7 @@ fn rust_application_settings_match_public_schema() {
             language: "zh-CN".to_owned(),
             expert_mode: true,
             theme: "dark".to_owned(),
+            palette: "classic".to_owned(),
         },
     );
 }

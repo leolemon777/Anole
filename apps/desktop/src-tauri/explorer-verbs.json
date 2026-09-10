@@ -1,39 +1,39 @@
 {
   "openIn": [
     {
-      "classesPath": "*\\shell\\FormatWright",
+      "classesPath": "*\\shell\\Anole",
       "label": "Open in Anole"
     },
     {
-      "classesPath": "Directory\\shell\\FormatWright",
+      "classesPath": "Directory\\shell\\Anole",
       "label": "Open in Anole"
     }
   ],
   "convert": [
-    { "assoc": ".pdf", "verb": "FormatWright.ToPng", "target": "png", "label": "Convert to PNG" },
-    { "assoc": ".pdf", "verb": "FormatWright.ToJpg", "target": "jpg", "label": "Convert to JPG" },
-    { "assoc": ".pdf", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".docx", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".html", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".htm", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".eml", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".msg", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
-    { "assoc": ".png", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },
-    { "assoc": ".jpg", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },
-    { "assoc": ".jpeg", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },
-    { "assoc": ".json", "verb": "FormatWright.ToYaml", "target": "yaml", "label": "Convert to YAML" },
-    { "assoc": ".csv", "verb": "FormatWright.ToJson", "target": "json", "label": "Convert to JSON" },
-    { "assoc": ".yaml", "verb": "FormatWright.ToJson", "target": "json", "label": "Convert to JSON" },
-    { "assoc": ".yml", "verb": "FormatWright.ToJson", "target": "json", "label": "Convert to JSON" },
-    { "assoc": ".xml", "verb": "FormatWright.ToJson", "target": "json", "label": "Convert to JSON" },
-    { "assoc": ".mp4", "verb": "FormatWright.ToMp3", "target": "mp3", "label": "Convert to MP3" },
-    { "assoc": ".mkv", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
-    { "assoc": ".mov", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
-    { "assoc": ".avi", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
-    { "assoc": ".webm", "verb": "FormatWright.ToMp4", "target": "mp4", "label": "Convert to MP4" },
-    { "assoc": ".mp3", "verb": "FormatWright.ToWav", "target": "wav", "label": "Convert to WAV" },
-    { "assoc": ".wav", "verb": "FormatWright.ToMp3", "target": "mp3", "label": "Convert to MP3" },
-    { "assoc": "Directory", "verb": "FormatWright.FolderToJpg", "target": "jpg", "label": "Convert folder to JPG" },
-    { "assoc": "Directory", "verb": "FormatWright.FolderToWebp", "target": "webp", "label": "Convert folder to WebP" }
+    { "assoc": ".pdf", "verb": "Anole.ToPng", "target": "png", "label": "Convert to PNG" },
+    { "assoc": ".pdf", "verb": "Anole.ToJpg", "target": "jpg", "label": "Convert to JPG" },
+    { "assoc": ".pdf", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".docx", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".html", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".htm", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".eml", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".msg", "verb": "Anole.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".png", "verb": "Anole.ToWebp", "target": "webp", "label": "Convert to WebP" },
+    { "assoc": ".jpg", "verb": "Anole.ToWebp", "target": "webp", "label": "Convert to WebP" },
+    { "assoc": ".jpeg", "verb": "Anole.ToWebp", "target": "webp", "label": "Convert to WebP" },
+    { "assoc": ".json", "verb": "Anole.ToYaml", "target": "yaml", "label": "Convert to YAML" },
+    { "assoc": ".csv", "verb": "Anole.ToJson", "target": "json", "label": "Convert to JSON" },
+    { "assoc": ".yaml", "verb": "Anole.ToJson", "target": "json", "label": "Convert to JSON" },
+    { "assoc": ".yml", "verb": "Anole.ToJson", "target": "json", "label": "Convert to JSON" },
+    { "assoc": ".xml", "verb": "Anole.ToJson", "target": "json", "label": "Convert to JSON" },
+    { "assoc": ".mp4", "verb": "Anole.ToMp3", "target": "mp3", "label": "Convert to MP3" },
+    { "assoc": ".mkv", "verb": "Anole.ToMp4", "target": "mp4", "label": "Convert to MP4" },
+    { "assoc": ".mov", "verb": "Anole.ToMp4", "target": "mp4", "label": "Convert to MP4" },
+    { "assoc": ".avi", "verb": "Anole.ToMp4", "target": "mp4", "label": "Convert to MP4" },
+    { "assoc": ".webm", "verb": "Anole.ToMp4", "target": "mp4", "label": "Convert to MP4" },
+    { "assoc": ".mp3", "verb": "Anole.ToWav", "target": "wav", "label": "Convert to WAV" },
+    { "assoc": ".wav", "verb": "Anole.ToMp3", "target": "mp3", "label": "Convert to MP3" },
+    { "assoc": "Directory", "verb": "Anole.FolderToJpg", "target": "jpg", "label": "Convert folder to JPG" },
+    { "assoc": "Directory", "verb": "Anole.FolderToWebp", "target": "webp", "label": "Convert folder to WebP" }
   ]
 }

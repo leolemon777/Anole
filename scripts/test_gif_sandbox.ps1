@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -14,12 +14,12 @@ function Assert-True {
     if (-not $Condition) { throw "GIF sandbox assertion failed: $Message" }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -46,7 +46,7 @@ $inputHash = (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash
 
 $output = Join-Path $casePath 'result 动画.gif'
 $database = Join-Path $casePath 'gif.sqlite3'
-$plan = Invoke-FormatWrightJson -Arguments @(
+$plan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $input, '--to', 'gif', '--output', $output,
     '--start-ms', '500', '--duration-ms', '1500', '--width', '240',
     '--fps', '12', '--loop-count', '2'
@@ -60,7 +60,7 @@ Assert-True ($plan.Data.steps[0].arguments.frames_per_second -eq '12') 'frame ra
 Assert-True ($plan.Data.steps[0].arguments.loop_count -eq '2') 'loop count was not planned'
 Assert-True ($plan.Data.steps[0].arguments.palette_max_colors -eq '256') 'palette size was not explicit'
 
-$conversion = Invoke-FormatWrightJson -Arguments @(
+$conversion = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $database, 'convert', $input, '--to', 'gif',
     '--output', $output, '--start-ms', '500', '--duration-ms', '1500',
     '--width', '240', '--fps', '12', '--loop-count', '2'
@@ -82,29 +82,29 @@ Assert-True ($frames -ge 17 -and $frames -le 19) 'GIF frame count is outside the
 $duration = [double]$probe.format.duration
 Assert-True ([Math]::Abs($duration - 1.5) -le 0.25) 'GIF duration is outside tolerance'
 
-$zeroDuration = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$zeroDuration = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $input, '--to', 'gif', '--duration-ms', '0'
 )
 Assert-True ($zeroDuration.Data.code -eq 'INPUT_INVALID') 'zero duration was not rejected'
-$badFps = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$badFps = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $input, '--to', 'gif', '--fps', '61'
 )
 Assert-True ($badFps.Data.code -eq 'INPUT_INVALID') 'unbounded GIF frame rate was not rejected'
-$outsideRange = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$outsideRange = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $input, '--to', 'gif', '--start-ms', '5000'
 )
 Assert-True ($outsideRange.Data.code -eq 'INPUT_INVALID') 'out-of-range GIF start was not rejected'
 
 $disguised = Join-Path $casePath 'actually-gif.bin'
 Copy-Item -LiteralPath $output -Destination $disguised
-$wrongExtension = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $disguised)
+$wrongExtension = Invoke-AnoleJson -Arguments @('--json', 'inspect', $disguised)
 Assert-True ($wrongExtension.Data.format.id -eq 'gif') 'header-first probe missed disguised GIF'
 Assert-True ($wrongExtension.Data.format.extension_matches -eq $false) 'GIF extension mismatch was missed'
 Assert-True (
     $inputHash -eq (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash
 ) 'GIF conversion modified the source'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'GIF suite left a staged output'
 
 $summary = [ordered]@{

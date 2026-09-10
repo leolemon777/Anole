@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::{AnoleError, ErrorCode, Result, Stage};
 
 pub const PRESET_SCHEMA_VERSION: u16 = 2;
 
@@ -329,8 +329,8 @@ impl Default for PresetLibrary {
     }
 }
 
-fn invalid_preset(message: &str, action: &str) -> FormatWrightError {
-    FormatWrightError::new(ErrorCode::InputInvalid, Stage::Store, message, action)
+fn invalid_preset(message: &str, action: &str) -> AnoleError {
+    AnoleError::new(ErrorCode::InputInvalid, Stage::Store, message, action)
 }
 
 #[cfg(test)]
@@ -375,14 +375,14 @@ mod tests {
         library.upsert(preset(id, "Web smaller")).expect("upsert");
 
         library.shell_verbs = vec![ShellVerbBinding {
-            verb_id: "FormatWright.ToWebp".to_owned(),
+            verb_id: "Anole.ToWebp".to_owned(),
             enabled: false,
             preset_id: Some(id),
         }];
         assert!(library.validate().is_ok());
 
         library.shell_verbs.push(ShellVerbBinding {
-            verb_id: "FormatWright.ToWebp".to_owned(),
+            verb_id: "Anole.ToWebp".to_owned(),
             enabled: true,
             preset_id: None,
         });
@@ -392,7 +392,7 @@ mod tests {
         );
 
         library.shell_verbs = vec![ShellVerbBinding {
-            verb_id: "FormatWright.ToPng".to_owned(),
+            verb_id: "Anole.ToPng".to_owned(),
             enabled: true,
             preset_id: Some(Uuid::new_v4()),
         }];

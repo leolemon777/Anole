@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [string]$PdfInfo = '',
     [string]$PdfToPpm = '',
@@ -32,12 +32,12 @@ function Resolve-ToolPath {
     return $command.Source
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -45,16 +45,16 @@ function Invoke-FormatWrightJson {
 }
 
 $script:BinaryPath = (Resolve-Path -LiteralPath $Binary).Path
-$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFINFO' -CommandName 'pdfinfo'
-$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
-$pdfToTextPath = Resolve-ToolPath -Explicit $PdfToText -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFTOTEXT' -CommandName 'pdftotext'
-$pdfFontsPath = Resolve-ToolPath -Explicit $PdfFonts -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFFONTS' -CommandName 'pdffonts'
-$env:FORMATWRIGHT_ENGINE_PDFINFO = $pdfInfoPath
-$env:FORMATWRIGHT_ENGINE_PDFTOPPM = $pdfToPpmPath
-$env:FORMATWRIGHT_ENGINE_PDFTOTEXT = $pdfToTextPath
-$env:FORMATWRIGHT_ENGINE_PDFFONTS = $pdfFontsPath
+$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'ANOLE_ENGINE_PDFINFO' -CommandName 'pdfinfo'
+$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'ANOLE_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
+$pdfToTextPath = Resolve-ToolPath -Explicit $PdfToText -EnvironmentName 'ANOLE_ENGINE_PDFTOTEXT' -CommandName 'pdftotext'
+$pdfFontsPath = Resolve-ToolPath -Explicit $PdfFonts -EnvironmentName 'ANOLE_ENGINE_PDFFONTS' -CommandName 'pdffonts'
+$env:ANOLE_ENGINE_PDFINFO = $pdfInfoPath
+$env:ANOLE_ENGINE_PDFTOPPM = $pdfToPpmPath
+$env:ANOLE_ENGINE_PDFTOTEXT = $pdfToTextPath
+$env:ANOLE_ENGINE_PDFFONTS = $pdfFontsPath
 # msedge is intentionally NOT pinned: ADR-0012 discovery (canonical install
-# locations, or FORMATWRIGHT_ENGINE_MSEDGE when the caller sets it) must work.
+# locations, or ANOLE_ENGINE_MSEDGE when the caller sets it) must work.
 
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
 $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) (
@@ -82,7 +82,7 @@ $cartonHtml = @'
 </style>
 </head>
 <body>
-  <div class="watermark">FORMATWRIGHT SANDBOX</div>
+  <div class="watermark">ANOLE SANDBOX</div>
   <h1>电子元件外箱标签 ELECTRIC CARTON</h1>
   <p class="field">公司: 示例电子有限公司 SPECIMEN ELECTRONICS CO., LTD.</p>
   <p class="field">品名: 电容器 CAPACITOR 440V 10uF</p>
@@ -122,26 +122,26 @@ $rasterSvgPath = Join-Path $casePath 'raster.svg'
 Set-Content -LiteralPath $rasterSvgPath -Value $rasterSvg -Encoding utf8
 
 # --- Inspection ------------------------------------------------------------
-$probe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $cartonHtmlPath)
+$probe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $cartonHtmlPath)
 Assert-True ($probe.Data.format.id -eq 'html') 'HTML was not detected'
 Assert-True ($probe.Data.streams[0].properties.text_characters -gt 0) 'HTML text was not extracted'
 
-$svgProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $vectorSvgPath)
+$svgProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $vectorSvgPath)
 Assert-True ($svgProbe.Data.format.id -eq 'svg') 'SVG was not detected'
 Assert-True ($svgProbe.Data.format.mime_type -eq 'image/svg+xml') 'SVG MIME type missing'
 
-$rasterProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $rasterSvgPath)
+$rasterProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $rasterSvgPath)
 Assert-True ($rasterProbe.Data.format.id -eq 'svg') 'raster SVG must still inspect as SVG'
 Assert-True (
     $rasterProbe.Data.streams[0].properties.has_external_resource -eq $true
 ) 'the raster <image> reference was not flagged under deny-all'
-$rasterPlan = Invoke-FormatWrightJson -Arguments @(
+$rasterPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $rasterSvgPath, '--to', 'pdf'
 ) -ExpectedExitCodes @(1, 3, 8)
 Assert-True ($rasterPlan.ExitCode -ne 0) 'planning a raster <image> SVG must be policy-blocked'
 
 # --- HTML -> PDF through the browser lane -----------------------------------
-$cartonPlan = Invoke-FormatWrightJson -Arguments @(
+$cartonPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $cartonHtmlPath, '--to', 'pdf'
 )
 Assert-True ($cartonPlan.Data.steps[0].engine.engine_id -eq 'msedge') 'msedge was not selected'
@@ -149,7 +149,7 @@ Assert-True ($cartonPlan.Data.network_policy -eq 'deny') 'network policy was not
 Assert-True (@($cartonPlan.Data.validators).Count -ge 5) 'EDGE_PDF validators were not declared'
 
 $cartonPdf = Join-Path $casePath 'carton.converted.pdf'
-$cartonResult = Invoke-FormatWrightJson -Arguments @(
+$cartonResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'carton.sqlite3'),
     'convert', $cartonHtmlPath, '--to', 'pdf', '--output', $cartonPdf
 )
@@ -177,7 +177,7 @@ Assert-True ($extractedText -match 'VECTOR PANEL 440') 'inline SVG panel text mi
 
 # --- SVG -> PDF (browser-only lane) -----------------------------------------
 $labelPdf = Join-Path $casePath 'label.converted.pdf'
-$labelResult = Invoke-FormatWrightJson -Arguments @(
+$labelResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'label.sqlite3'),
     'convert', $vectorSvgPath, '--to', 'pdf', '--output', $labelPdf
 )

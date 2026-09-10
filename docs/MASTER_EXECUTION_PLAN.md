@@ -136,7 +136,7 @@
 
 ### 3.4 Desktop
 
-- [x] Tauri 2 调用同一 `formatwright-core::prepare_conversion`，不是前端伪实现。
+- [x] Tauri 2 调用同一 `anole-core::prepare_conversion`，不是前端伪实现。
 - [x] Convert、Jobs、Presets、Engines、Reports、Settings 六个主入口。
 - [x] 文件拖放、原生输入选择、文件/目录输出选择、推荐格式、非覆盖输出建议。
 - [x] 普通/专家模式；显示真实格式、步骤、损失、保留/改变/丢弃/未知和类型化参数。

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:formatwright:schema:engine-manifest:v1",
+  "$id": "urn:anole:schema:engine-manifest:v1",
   "title": "Anole Engine Manifest v1",
   "type": "object",
   "additionalProperties": false,
@@ -11,7 +11,7 @@
     "platform",
     "architecture",
     "protocol_version",
-    "formatwright_compatibility",
+    "anole_compatibility",
     "executables",
     "source",
     "licenses",
@@ -24,7 +24,7 @@
     "platform": { "enum": ["windows", "macos", "linux"] },
     "architecture": { "enum": ["x86_64", "aarch64"] },
     "protocol_version": { "type": "integer", "minimum": 1 },
-    "formatwright_compatibility": {
+    "anole_compatibility": {
       "type": "object",
       "additionalProperties": false,
       "required": ["minimum", "maximum_exclusive"],

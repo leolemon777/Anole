@@ -62,7 +62,7 @@ Windows Starter Media（FFmpeg）为本机 GW-04/05/06/07 切片提供 Experimen
 
 GW-10 的浏览器打印 lane（ADR-0012）：HTML/HTM 与新增 SVG 输入在开发构建下经系统发现的 Edge 无头打印产出矢量 PDF，并用 pdfinfo/pdftoppm/pdftotext/pdffonts 验证（文字层可提取、字体全内嵌）；HTML 保留 Pandoc lane 作为回退，SVG 仅此 lane。Release 构建仍需激活已验证引擎包。
 
-GW-08 的引擎来源（2026-09-07，E-04）：可选 Document pack `formatwright-document` v26.2.6（官方 TDF MSI 在 Linux 解包组 pack，MPL-2.0，19,476 文件 SPDX SBOM）提供 pack 内 `soffice.com`，或继续使用宿主自装 LibreOffice。docx/xlsx→PDF 已由 pack 自有引擎真跑验证（`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染）；pptx 合成 fixture 无文字层属 fixture 限制（pack 与系统 LibreOffice 行为一致），真实 pptx 验证随 E-12 / 发布烟测。GW-08 全行仍非 Certified。
+GW-08 的引擎来源（2026-09-07，E-04）：可选 Document pack `anole-document` v26.2.6（官方 TDF MSI 在 Linux 解包组 pack，MPL-2.0，19,476 文件 SPDX SBOM）提供 pack 内 `soffice.com`，或继续使用宿主自装 LibreOffice。docx/xlsx→PDF 已由 pack 自有引擎真跑验证（`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染）；pptx 合成 fixture 无文字层属 fixture 限制（pack 与系统 LibreOffice 行为一致），真实 pptx 验证随 E-12 / 发布烟测。GW-08 全行仍非 Certified。
 
 GW-13 的 Markdown 导出波（2026-09-08）：直连覆盖 DOCX/HTML→md（Pandoc，`--sandbox=true` + `resource_policy=deny-all`，HTML 输入含外部资源时 PolicyBlocked）、EML/MSG/MBOX→md（内置 Rust 适配器，`# 主题` + 加粗头字段 + 正文，邮件分隔标记与 txt/html 同构）、PDF→md（Poppler `pdftotext` 文本层提取，`loss_class=Lossy`——标题/表格/版式结构不保留，多栏阅读顺序为 Unknown）、图像 OCR→md（与 →txt 同一 Tesseract lane，识别文本装入 .md）。pptx/xlsx/odt/odp/rtf/svg 经 PDF 中转在 CLI 链式可达（`X→pdf→md`）。音频转录、YouTube、EXIF 元数据等 MarkItDown 式源明确不在范围（与本地优先/零网络定位冲突）。
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:formatwright:schema:probe:v1",
+  "$id": "urn:anole:schema:probe:v1",
   "title": "Anole Probe v1",
   "type": "object",
   "additionalProperties": false,

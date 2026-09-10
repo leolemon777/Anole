@@ -4,7 +4,7 @@ Anole is designed for local file conversion. The v0.1 application does not uploa
 
 ## Data stored locally
 
-The desktop application stores the following under the operating system application-data directory for the identifier `local.formatwright.desktop`:
+The desktop application stores the following under the operating system application-data directory for the identifier `local.anole.desktop`:
 
 - `jobs.sqlite3`: input/output paths, immutable Plan JSON, state, and ordered recovery events.
 - `reports/<job-id>.json`: validation result, engine identity, checks, and output path.
@@ -34,7 +34,7 @@ Security issues involving privacy should follow `SECURITY.md`.
 
 The Engines page lists curated optional packs (for example the Document pack
 enabling Office→PDF). A pack downloads **only when you click its button**:
-the app connects directly to the official FormatWright release location over
+the app connects directly to the official Anole release location over
 TLS, verifies the archive against a release-pinned SHA-256 before installing,
 and never falls back to third-party mirrors. No telemetry accompanies the
 download; the only data leaving the machine is the standard HTTPS request.

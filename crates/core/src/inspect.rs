@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
-use formatwright_engine_sdk::EngineIdentity;
+use anole_engine_sdk::EngineIdentity;
 use serde_json::{Map, Value};
 use tokio::process::Command;
 
@@ -11,7 +11,7 @@ use crate::domain::{
     DiagnosticMessage, FormatDescriptor, FormatKind, MetadataClassification, MetadataEntry, Probe,
     ProbeEvidence, SCHEMA_VERSION, StreamKind, StreamProbe,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 
 /// Inspects a local media file with a pinned ffprobe identity.
@@ -45,7 +45,7 @@ pub async fn inspect_media(path: impl AsRef<Path>, ffprobe: &EngineIdentity) -> 
     let output = tokio::time::timeout(Duration::from_secs(60), future)
         .await
         .map_err(|_| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Inspect,
                 "Media inspection timed out",
@@ -54,7 +54,7 @@ pub async fn inspect_media(path: impl AsRef<Path>, ffprobe: &EngineIdentity) -> 
             .retryable(true)
         })?
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Inspect,
                 "Unable to start ffprobe",
@@ -63,7 +63,7 @@ pub async fn inspect_media(path: impl AsRef<Path>, ffprobe: &EngineIdentity) -> 
             .with_diagnostic(error.to_string())
         })?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "ffprobe could not recognize or open the input",
@@ -73,7 +73,7 @@ pub async fn inspect_media(path: impl AsRef<Path>, ffprobe: &EngineIdentity) -> 
     }
 
     let raw: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Inspect,
             "ffprobe returned invalid JSON",
@@ -97,7 +97,7 @@ struct HeaderHint {
 
 fn sniff_header(path: &Path) -> Result<Option<HeaderHint>> {
     let mut file = std::fs::File::open(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Unable to read input header: {}", path.display()),
@@ -107,7 +107,7 @@ fn sniff_header(path: &Path) -> Result<Option<HeaderHint>> {
     })?;
     let mut prefix = [0_u8; 512];
     let read = file.read(&mut prefix).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Unable to read input header: {}", path.display()),
@@ -604,7 +604,7 @@ pub async fn inspect_magick_image(
     magick: &EngineIdentity,
 ) -> Result<Probe> {
     if magick.engine_id != "magick" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Inspect,
             "The magick inspector was given the wrong engine",
@@ -619,7 +619,7 @@ pub async fn inspect_magick_image(
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     let format_id = magick_format_id(&extension).ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Inspect,
             "The magick inspector only accepts PSD and camera-RAW inputs",
@@ -639,7 +639,7 @@ pub async fn inspect_magick_image(
     let output = tokio::time::timeout(Duration::from_secs(60), future)
         .await
         .map_err(|_| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Inspect,
                 "ImageMagick inspection timed out",
@@ -648,7 +648,7 @@ pub async fn inspect_magick_image(
             .retryable(true)
         })?
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Inspect,
                 "Unable to start ImageMagick",
@@ -657,7 +657,7 @@ pub async fn inspect_magick_image(
             .with_diagnostic(error.to_string())
         })?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "ImageMagick could not identify the file as a supported raster image",
@@ -675,7 +675,7 @@ pub async fn inspect_magick_image(
         .next()
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Inspect,
                 "ImageMagick did not report a raster width",
@@ -686,7 +686,7 @@ pub async fn inspect_magick_image(
         .next()
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Inspect,
                 "ImageMagick did not report a raster height",

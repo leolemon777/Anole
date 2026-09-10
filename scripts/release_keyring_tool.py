@@ -8,10 +8,10 @@ Modes:
           `signature` field over the canonical manifest bytes.
 
 Verification is deliberately NOT implemented here: use the real gate
-`formatwright engines verify <manifest> --keyring <keyring.json>` so every
+`anole engines verify <manifest> --keyring <keyring.json>` so every
 signature is checked by the shipped Rust implementation.
 
-Canonical manifest bytes (must match `formatwright_engine_sdk::
+Canonical manifest bytes (must match `anole_engine_sdk::
 canonical_manifest_bytes` byte-for-byte, cross-validated 2026-08-15):
 compact JSON, schema struct field order, `signature` set to null,
 capability `constraints` maps sorted by key, non-ASCII unescaped.
@@ -37,7 +37,7 @@ CANONICAL_FIELD_ORDER = [
     "platform",
     "architecture",
     "protocol_version",
-    "formatwright_compatibility",
+    "anole_compatibility",
     "executables",
     "runtime_files",
     "source",
@@ -111,7 +111,7 @@ def command_sign(args: argparse.Namespace) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"signed {manifest_path} as key {args.key_id}")
-    print("verify with: formatwright engines verify <manifest> --keyring <keyring.json>")
+    print("verify with: anole engines verify <manifest> --keyring <keyring.json>")
 
 
 def build_parser() -> argparse.ArgumentParser:

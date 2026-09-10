@@ -2,7 +2,7 @@
 
 - Status: Web-level trademark screening done 2026-09-04 (post-rebrand, pre-promotion)
 - Public release gate: v0.1.0 shipped 2026-09-04 (owner decision); formal clearance still recommended before paid promotion or trademark registration
-- Prior check: 2026-08-10 (pre-rebrand, covered formatwright namespaces)
+- Prior check: 2026-08-10 (pre-rebrand, covered anole namespaces)
 
 ## 2026-09-04 web-level screening (Nice 9/42 focus)
 
@@ -21,8 +21,8 @@ Search-level limitations: trademark databases (tmsearch.uspto.gov, tmview.europa
 
 ## Namespace preflight (carried from 2026-08-10, still true)
 
-- GitHub repository name `FormatWright` in use by this project; brand is Anole.
-- Schema IDs use the domain-independent `urn:formatwright` namespace; no unowned domain is claimed anywhere.
+- GitHub repository name `Anole` in use by this project; brand is Anole.
+- Schema IDs use the domain-independent `urn:anole` namespace; no unowned domain is claimed anywhere.
 - Domain/organization/crates.io/npm reservations remain open follow-ups if the project adopts public distribution channels beyond GitHub.
 
 This document is an engineering preflight and is not legal advice.

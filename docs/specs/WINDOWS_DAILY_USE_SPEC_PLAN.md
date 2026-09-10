@@ -33,10 +33,10 @@ Anole 的差异化不是格式数量，而是 Plan-first、Validate-always、loc
 | Shell | `parse_shell_invocation` / `validated_shell_request` 解析 `--shell-open` 与 `--shell-convert --to`；目录 convert 拒绝；FIFO 32 条；单实例转发 | `apps/desktop/src-tauri/src/lib.rs` |
 | UI 自动跑 | `pendingShellConvert` 在 capability 可用后自动 `preview_conversion` + `run_desktop_conversion`；`applyShellOpen` **不**重置 quality/width/dpi/preset | `apps/desktop/src/App.tsx` |
 | 安装钩子 | NSIS **代码**已写/删 per-extension Convert verb | `apps/desktop/src-tauri/windows-explorer-hooks.nsh`；`scripts/register_dev_explorer_convert.ps1`（手抄同一表，目前一致） |
-| 测试合同（过时） | Explorer 烟测只跑 Open-in verb、断言 0 Job、卸载只查两把 Open-in 键；CLEAN_VM 脚本还查了不存在的 `*\shell\FormatWrightConvert` | `scripts/test_windows_explorer_integration.ps1`；`scripts/test_clean_vm_certification.ps1` L121–122 |
+| 测试合同（过时） | Explorer 烟测只跑 Open-in verb、断言 0 Job、卸载只查两把 Open-in 键；CLEAN_VM 脚本还查了不存在的 `*\shell\AnoleConvert` | `scripts/test_windows_explorer_integration.ps1`；`scripts/test_clean_vm_certification.ps1` L121–122 |
 | Starter | 内嵌 PDF（Poppler）+ Media（FFmpeg）；无官方 HEIC / Office pack | `docs/testing/WINDOWS_STARTER.md` |
 | 缺陷 | R-008 / R-009 为 **Fixed not Closed**（缺干净离线 VM） | `docs/DEFECT_REGISTER.md` |
-| 发布包 | `WINDOWS_PACKAGING.md` 最近入档的标准 NSIS 是 **2026-08-16**（NotSigned）。VOC 备注 2026-08-17 本机重建过 `target/release/formatwright-desktop.exe` 并 HKCU testdrive，**不是**该文档里的已记录安装器哈希 | `docs/release/WINDOWS_PACKAGING.md`；VOC 备注 |
+| 发布包 | `WINDOWS_PACKAGING.md` 最近入档的标准 NSIS 是 **2026-08-16**（NotSigned）。VOC 备注 2026-08-17 本机重建过 `target/release/anole-desktop.exe` 并 HKCU testdrive，**不是**该文档里的已记录安装器哈希 | `docs/release/WINDOWS_PACKAGING.md`；VOC 备注 |
 
 ### 痛点
 
@@ -119,7 +119,7 @@ SPEC_PLAN §2.4「Plan-first：执行前先生成可解释计划」、§1.4「�
 
 ### KD-4 — 第 1 波目录 Convert 拒绝；第 2.2 项只开命名 verb
 
-**决策：** 第 1 波 `validated_shell_request` 在 `convert_to.is_some() && !canonical.is_file()` 时返回 `None`。第 2.2 项 **只** 为 Directory 注册 `FormatWright.ToJpg` / `ToPng` / `ToWebp` 三个命名 verb，并把「convert + 目录」例外放宽 **仅** 对这些 verb。不是「按推荐目标」——目录没有扩展名，`recommendedTargets` / `supported_targets` 为空。  
+**决策：** 第 1 波 `validated_shell_request` 在 `convert_to.is_some() && !canonical.is_file()` 时返回 `None`。第 2.2 项 **只** 为 Directory 注册 `Anole.ToJpg` / `ToPng` / `ToWebp` 三个命名 verb，并把「convert + 目录」例外放宽 **仅** 对这些 verb。不是「按推荐目标」——目录没有扩展名，`recommendedTargets` / `supported_targets` 为空。  
 **理由：** 整夹转换需要命名目标、兄弟输出根、磁盘预算；不能假装智能推荐。  
 **后果：** 输出根为输入目录的 **同级** `{foldername}.converted-{target}`（例如 `C:\相册` → `C:\相册.converted-jpg`）。`preview_mapping` 禁止输出落在输入树内，兄弟目录满足该不变量。
 
@@ -150,7 +150,7 @@ SPEC_PLAN §2.4「Plan-first：执行前先生成可解释计划」、§1.4「�
 
 ### KD-9 — 单一 Rust Core，入口不复制规则
 
-**决策：** 格式是否可跑、缺哪个引擎、Plan、验证、提交，全部以 `formatwright-core` 为准。Desktop 只做 IPC / 投影 / 本地化。  
+**决策：** 格式是否可跑、缺哪个引擎、Plan、验证、提交，全部以 `anole-core` 为准。Desktop 只做 IPC / 投影 / 本地化。  
 **理由：** ADR-0001、ADR-0009。  
 **后果：** `recommendedTargets` 只做 UX 排序。`--to pdf file.xls` **进入 FIFO**（`pdf` 在允许目标里）；拒绝发生在 `ensure_route_available` → `Unsupported`。禁止在 `validated_shell_request` 复制扩展名×目标矩阵。
 
@@ -179,7 +179,7 @@ SPEC_PLAN §2.4「Plan-first：执行前先生成可解释计划」、§1.4「�
 **决策：**  
 - **PR-01** = 仅提交当前脏树 + 必要的「代码已如此」注释级对齐，**不**改行为。  
 - **PR-01b** = `changeTarget` / 手动改输出 / 用户点预览 清除 `pendingShellConvert`；capability 自动改目标在 pending 期间必须保住 `wanted` 或诚实失败。  
-- **PR-02** = **唯一**拥有 Explorer/VM 测试合同的 PR：完整拥有键、Open-in=0 Job、Convert=1 Job+Pass+源 hash、修正 CLEAN_VM `FormatWrightConvert` 笔误、同步 MASTER / UX_FLOWS / DESKTOP_MVP / WINDOWS_*。并由 PR-02 落地「一张表生成 nsh+ps1」。  
+- **PR-02** = **唯一**拥有 Explorer/VM 测试合同的 PR：完整拥有键、Open-in=0 Job、Convert=1 Job+Pass+源 hash、修正 CLEAN_VM `AnoleConvert` 笔误、同步 MASTER / UX_FLOWS / DESKTOP_MVP / WINDOWS_*。并由 PR-02 落地「一张表生成 nsh+ps1」。  
 
 **理由：** VOC 0.1 要可回滚基线；把行为补丁和测试翻转塞进同一 commit 会让回滚变难。  
 **后果：** 禁止「文档先改、测试后改」。未点头不自动 commit、不覆盖用户现有安装。
@@ -215,7 +215,7 @@ function defaultPlanConstraints(target: string): PlanConstraintSnapshot {
 
 **决策：**
 
-1. **收集：** 后端对 `convert_to` 请求 **不**交给前端逐条 `applyShellOpen`，也 **不**设置 `pendingShellConvert`。放入 **当前目标** 的 merge buffer；**同目标**到达重置 800ms 定时器。静默结束或因换目标立刻 flush 时：把 `DesktopShellOpenBatch` **写入后端 ready FIFO**（与 Open-in 一样，不靠事件 payload），再 emit `formatwright://shell-convert-batch` 作唤醒。前端必须 **先 listen 再** `take_desktop_shell_convert_batch`（冷启动 Starter/WebView ≫ 800ms 时事件会丢，FIFO 是真相）。`get_desktop_shell_open` 对 convert 不再 pop 单路径。Open-in 仍可单条立即投递，不打断 convert buffer。
+1. **收集：** 后端对 `convert_to` 请求 **不**交给前端逐条 `applyShellOpen`，也 **不**设置 `pendingShellConvert`。放入 **当前目标** 的 merge buffer；**同目标**到达重置 800ms 定时器。静默结束或因换目标立刻 flush 时：把 `DesktopShellOpenBatch` **写入后端 ready FIFO**（与 Open-in 一样，不靠事件 payload），再 emit `anole://shell-convert-batch` 作唤醒。前端必须 **先 listen 再** `take_desktop_shell_convert_batch`（冷启动 Starter/WebView ≫ 800ms 时事件会丢，FIFO 是真相）。`get_desktop_shell_open` 对 convert 不再 pop 单路径。Open-in 仍可单条立即投递，不打断 convert buffer。
 2. **为何是 800ms 而不是 350ms：** 本文与 Explorer 行为都写明经典 `"%1"` 间隔 **通常 200–800ms**。静默期必须 **≥ 声称的最大间隔**：350ms 会把 400–800ms 的合法空隙拆成多次 N=1。800ms 覆盖该区间；测试不钉在刀刃上（见 T-SH-08）。静默等待期间 UI 可显示「正在合并所选文件…」。
 3. **N 在静默之后计算，不在单次 FIFO drain 之后。** 同一 burst 内（间隔 100–400ms）必须合成一条 batch。定时器已触发后再来、距上一条 **≥900ms** 的到达是 **新会话**（独立算 N）。
 4. **唯一执行入口：** 前端对 **每一条** `DesktopShellOpenBatch`（N=1 与 N>1）只调用 `ingest_shell_convert_paths`。**禁止**再用 `pendingShellConvert` + 现有 preview+run effect 跑 Explorer convert。
@@ -253,7 +253,7 @@ function defaultPlanConstraints(target: string): PlanConstraintSnapshot {
 ### Journey A — 首次拖 PDF → PNG（HowToConvert）
 
 **角色：** 未装开发工具的 Windows 用户，刚装完 current-user NSIS（内嵌 Starter）。  
-**前置：** 首次启动已激活 `formatwright-pdf` + `formatwright-media`；无系统 Poppler/FFmpeg。
+**前置：** 首次启动已激活 `anole-pdf` + `anole-media`；无系统 Poppler/FFmpeg。
 
 ```mermaid
 sequenceDiagram
@@ -391,7 +391,7 @@ flowchart TB
     DnD["拖放 / 空状态卡"]
     ExplorerClassic["经典 Explorer verbs"]
     ExplorerModern["Win11 IExplorerCommand（第 2.1 项）"]
-    CLI["formatwright convert / batch"]
+    CLI["anole convert / batch"]
   end
 
   subgraph Desktop["apps/desktop"]
@@ -495,7 +495,7 @@ handle_second_instance / setup argv
         start 800ms timer
   → on quiet (800ms, no same-target arrival):
         ready_fifo.push(DesktopShellOpenBatch { target, paths })
-        emit formatwright://shell-convert-batch   // 唤醒，不是真相
+        emit anole://shell-convert-batch   // 唤醒，不是真相
 ```
 
 **Ready FIFO 是真相：** 冷启动 WebView 订阅前静默就可能结束。合同与 Open-in 相同：stash → emit → 前端 listen **然后** `take_desktop_shell_convert_batch`。禁止只把 batch 放在事件 payload 里。FIFO 最多 8 条 batch；满丢最旧。
@@ -594,7 +594,7 @@ FIFO 32 仍是 **进程到达** 上限；静默合并后的 `paths[]` 最多 32�
 
 无 HEIC 卡。灰卡可点 → Engines，说明 `missing_engines`。
 
-无 input 时没有 per-file snapshot：启动拉一次 Doctor / 对合成扩展名取三条路线（`dummy.pdf` / `dummy.mkv` 只用于扩展名，不访问磁盘——`capability_snapshot_for_input` 今日只看扩展名，可用不存在的绝对本地路径如 `C:\formatwright-probe.pdf`，但 **不要** canonicalize 失败挡住；空状态卡应走 **引擎是否 inspect 成功**，与 `required_engines` 对齐，而不是真实文件）。实现约定：新增 `desktop_capability_snapshot_for_extension(ext)` 或对 `capability_snapshot_for_input` 在路径不存在时仍按扩展名返回（今日已不要求文件存在——`ensure_route_available` 测试用 `Path::new("fixture.pdf")`）。空状态复用该行为即可。
+无 input 时没有 per-file snapshot：启动拉一次 Doctor / 对合成扩展名取三条路线（`dummy.pdf` / `dummy.mkv` 只用于扩展名，不访问磁盘——`capability_snapshot_for_input` 今日只看扩展名，可用不存在的绝对本地路径如 `C:\anole-probe.pdf`，但 **不要** canonicalize 失败挡住；空状态卡应走 **引擎是否 inspect 成功**，与 `required_engines` 对齐，而不是真实文件）。实现约定：新增 `desktop_capability_snapshot_for_extension(ext)` 或对 `capability_snapshot_for_input` 在路径不存在时仍按扩展名返回（今日已不要求文件存在——`ensure_route_available` 测试用 `Path::new("fixture.pdf")`）。空状态复用该行为即可。
 
 ### Win11 现代菜单（VOC 2.1）
 
@@ -618,14 +618,14 @@ flowchart LR
 **第 1 波（冻结实现）：**
 
 ```
-formatwright-desktop.exe --shell-open <ABS_PATH>
-formatwright-desktop.exe --shell-convert --to <FORMAT> <ABS_PATH>
+anole-desktop.exe --shell-open <ABS_PATH>
+anole-desktop.exe --shell-convert --to <FORMAT> <ABS_PATH>
 ```
 
 **第 2 波扩展（文法预留，PR-09/10 落地）：**
 
 ```
-formatwright-desktop.exe --shell-convert --to <FORMAT> -- <ABS_PATH> [<ABS_PATH> ...]
+anole-desktop.exe --shell-convert --to <FORMAT> -- <ABS_PATH> [<ABS_PATH> ...]
 ```
 
 `--` 之后每个参数都是路径，逐条走同一校验。第 1 波解析器若见到 `--` 可忽略或拒绝（测试钉死：第 1 波未见 `--`）。
@@ -659,14 +659,14 @@ jpg png webp avif mp4 mp3 m4a wav gif pdf docx json csv yaml xml
 
 | 关联 | Verb 名 | `--to` | 标签 |
 |---|---|---|---|
-| `.pdf` | `FormatWright.ToPng` / `ToJpg` | png / jpg | Convert to PNG / JPG |
-| `.png` `.jpg` `.jpeg` | `FormatWright.ToWebp` | webp | Convert to WebP |
-| `.json` | `FormatWright.ToYaml` | yaml | Convert to YAML |
-| `.csv` `.yaml` `.yml` `.xml` | `FormatWright.ToJson` | json | Convert to JSON |
-| `.mp4` | `FormatWright.ToMp3` | mp3 | Convert to MP3 |
-| `.mkv` `.mov` `.avi` `.webm` | `FormatWright.ToMp4` | mp4 | Convert to MP4 |
-| `.mp3` | `FormatWright.ToWav` | wav | Convert to WAV |
-| `.wav` | `FormatWright.ToMp3` | mp3 | Convert to MP3 |
+| `.pdf` | `Anole.ToPng` / `ToJpg` | png / jpg | Convert to PNG / JPG |
+| `.png` `.jpg` `.jpeg` | `Anole.ToWebp` | webp | Convert to WebP |
+| `.json` | `Anole.ToYaml` | yaml | Convert to YAML |
+| `.csv` `.yaml` `.yml` `.xml` | `Anole.ToJson` | json | Convert to JSON |
+| `.mp4` | `Anole.ToMp3` | mp3 | Convert to MP3 |
+| `.mkv` `.mov` `.avi` `.webm` | `Anole.ToMp4` | mp4 | Convert to MP4 |
+| `.mp3` | `Anole.ToWav` | wav | Convert to WAV |
+| `.wav` | `Anole.ToMp3` | mp3 | Convert to MP3 |
 
 **Explorer vs Convert 页默认可以不同：** `.mp4` 右键是抽音频（ToMp3）；Convert 页 `recommendedTargets` 首选 `mp4`（remux）。这是有意的：菜单给「最常见一键」，页面给「同家族首选」。不要为了对齐而改推荐矩阵。
 
@@ -676,9 +676,9 @@ jpg png webp avif mp4 mp3 m4a wav gif pdf docx json csv yaml xml
 
 | 关联 | Verb | `--to` | 输出根 |
 |---|---|---|---|
-| `Directory` | `FormatWright.ToJpg` | jpg | `{parent}\{name}.converted-jpg` |
-| `Directory` | `FormatWright.ToPng` | png | `{parent}\{name}.converted-png` |
-| `Directory` | `FormatWright.ToWebp` | webp | `{parent}\{name}.converted-webp` |
+| `Directory` | `Anole.ToJpg` | jpg | `{parent}\{name}.converted-jpg` |
+| `Directory` | `Anole.ToPng` | png | `{parent}\{name}.converted-png` |
+| `Directory` | `Anole.ToWebp` | webp | `{parent}\{name}.converted-webp` |
 
 ### 校验（`validated_shell_request`）
 
@@ -698,7 +698,7 @@ struct DesktopShellOpenBatch { target: String, paths: Vec<PathBuf> }
 ```
 
 Open-in IPC：`get_desktop_shell_open`（单条，仅 `convert_to=None`）。  
-Convert 批次：**ready FIFO** + `take_desktop_shell_convert_batch`（pop 一条）。事件 `formatwright://shell-convert-batch` **只唤醒**，payload 可空。禁止 event-payload-only。禁止前端对 convert 再 pop 单路径。冷启动与 Open-in 一样 listen-then-drain。
+Convert 批次：**ready FIFO** + `take_desktop_shell_convert_batch`（pop 一条）。事件 `anole://shell-convert-batch` **只唤醒**，payload 可空。禁止 event-payload-only。禁止前端对 convert 再 pop 单路径。冷启动与 Open-in 一样 listen-then-drain。
 
 `classify_desktop_drop_path(path) -> { kind: "file"|"directory"|"rejected", path? }`：复用同一本地盘规则，**不**要求 `--shell-*` 标记。
 
@@ -730,28 +730,28 @@ Convert 批次：**ready FIFO** + `take_desktop_shell_convert_batch`（pop 一�
 
 ### 安装器拥有的注册表键
 
-第 1 波拥有集 = 2 Open-in + **17** Convert 键（与下表一致，共 19）。PR-02 测试必须用这一集合，并修复 CLEAN_VM 的 `FormatWrightConvert` 错误名。
+第 1 波拥有集 = 2 Open-in + **17** Convert 键（与下表一致，共 19）。PR-02 测试必须用这一集合，并修复 CLEAN_VM 的 `AnoleConvert` 错误名。
 
 ```
 Software\Classes\*\shell\Anole
-Software\Classes\Directory\shell\FormatWright
-Software\Classes\SystemFileAssociations\.pdf\shell\FormatWright.ToPng
-Software\Classes\SystemFileAssociations\.pdf\shell\FormatWright.ToJpg
-Software\Classes\SystemFileAssociations\.png\shell\FormatWright.ToWebp
-Software\Classes\SystemFileAssociations\.jpg\shell\FormatWright.ToWebp
-Software\Classes\SystemFileAssociations\.jpeg\shell\FormatWright.ToWebp
-Software\Classes\SystemFileAssociations\.json\shell\FormatWright.ToYaml
-Software\Classes\SystemFileAssociations\.csv\shell\FormatWright.ToJson
-Software\Classes\SystemFileAssociations\.yaml\shell\FormatWright.ToJson
-Software\Classes\SystemFileAssociations\.yml\shell\FormatWright.ToJson
-Software\Classes\SystemFileAssociations\.xml\shell\FormatWright.ToJson
-Software\Classes\SystemFileAssociations\.mp4\shell\FormatWright.ToMp3
-Software\Classes\SystemFileAssociations\.mkv\shell\FormatWright.ToMp4
-Software\Classes\SystemFileAssociations\.mov\shell\FormatWright.ToMp4
-Software\Classes\SystemFileAssociations\.avi\shell\FormatWright.ToMp4
-Software\Classes\SystemFileAssociations\.webm\shell\FormatWright.ToMp4
-Software\Classes\SystemFileAssociations\.mp3\shell\FormatWright.ToWav
-Software\Classes\SystemFileAssociations\.wav\shell\FormatWright.ToMp3
+Software\Classes\Directory\shell\Anole
+Software\Classes\SystemFileAssociations\.pdf\shell\Anole.ToPng
+Software\Classes\SystemFileAssociations\.pdf\shell\Anole.ToJpg
+Software\Classes\SystemFileAssociations\.png\shell\Anole.ToWebp
+Software\Classes\SystemFileAssociations\.jpg\shell\Anole.ToWebp
+Software\Classes\SystemFileAssociations\.jpeg\shell\Anole.ToWebp
+Software\Classes\SystemFileAssociations\.json\shell\Anole.ToYaml
+Software\Classes\SystemFileAssociations\.csv\shell\Anole.ToJson
+Software\Classes\SystemFileAssociations\.yaml\shell\Anole.ToJson
+Software\Classes\SystemFileAssociations\.yml\shell\Anole.ToJson
+Software\Classes\SystemFileAssociations\.xml\shell\Anole.ToJson
+Software\Classes\SystemFileAssociations\.mp4\shell\Anole.ToMp3
+Software\Classes\SystemFileAssociations\.mkv\shell\Anole.ToMp4
+Software\Classes\SystemFileAssociations\.mov\shell\Anole.ToMp4
+Software\Classes\SystemFileAssociations\.avi\shell\Anole.ToMp4
+Software\Classes\SystemFileAssociations\.webm\shell\Anole.ToMp4
+Software\Classes\SystemFileAssociations\.mp3\shell\Anole.ToWav
+Software\Classes\SystemFileAssociations\.wav\shell\Anole.ToMp3
 ```
 
 单一源：例如 `apps/desktop/src-tauri/explorer-verbs.json`（或 `crates/core` 常量 + build.rs）。**PR-02** 增加生成器，写出 `windows-explorer-hooks.nsh` 与 `register_dev_explorer_convert.ps1`，禁止再手抄。卸载只删生成表里的键 + 2 把 Open-in。第 2.3 项 **不**在运行时增删键。
@@ -942,7 +942,7 @@ PR-02、PR-03、PR-04、PR-05 在 PR-01 之后 **并行**（02 与 01b 也可并
 | T-IN-04 | PS1 `-Remove` | I | 只删 Convert 17 键 |
 | T-IN-05 | 无 DevTools | S | byte scan |
 | T-IN-06 | 双 Starter | S/V | pdf+media；污染 PATH 不赢 |
-| T-IN-07 | CLEAN_VM 键名 | V | **不是** `FormatWrightConvert`；是 `FormatWright` + 17 Convert |
+| T-IN-07 | CLEAN_VM 键名 | V | **不是** `AnoleConvert`；是 `Anole` + 17 Convert |
 | T-IN-08 | 升级（2.4） | S | 静态键仍在 |
 
 `test_windows_explorer_integration.ps1` 必须 **拆** Open-in（0 Job）与 Convert（1 Job）。不得用「扩展两把键」却仍断言零任务来绿洗自动跑。
@@ -1061,7 +1061,7 @@ SPEC_PLAN No-Go。不采用。
 | 自动跑被当成绕过 Plan | 中 | KD-2 例外段 + MASTER 同步 |
 | 多选只转最后一张 | 高 | **800ms** 重置缓冲（350ms 短于 200–800ms 空隙）；1.4 可不挡退出 |
 | 测试仍断言 0 Job 绿洗 Convert | 高 | 合同只在 PR-02 翻转 |
-| CLEAN_VM 错键名 | 高 | PR-02 修 `FormatWrightConvert` |
+| CLEAN_VM 错键名 | 高 | PR-02 修 `AnoleConvert` |
 | 热窗口泄漏 width | 高 | KD-15 |
 | HEIC 推荐被当成支持声明 | 中 | 无 verb/卡/发布说明 |
 | 队列窗占用 | 中 | 一律 queue-only + 文案 |
@@ -1130,7 +1130,7 @@ SPEC_PLAN No-Go。不采用。
 
 - **VOC：** 0.2 + Issue 4 合同迁移  
 - **依赖：** PR-01（可与 01b/03/04/05 并行）  
-- **文件：** verb json + **生成器** → `windows-explorer-hooks.nsh` + `register_dev_explorer_convert.ps1`；`scripts/test_windows_explorer_integration.ps1`；`scripts/test_clean_vm_certification.ps1`（修正 `FormatWrightConvert`）；`docs/testing/WINDOWS_EXPLORER_INTEGRATION.md`；`CLEAN_VM_CERTIFICATION.md`；`WINDOWS_PACKAGING.md`；`DESKTOP_MVP.md`；`UX_FLOWS.md`；`MASTER_EXECUTION_PLAN.md`；`USER_GUIDE.md`；`VOC_BACKLOG.md`；SPEC_PLAN §7.1 交叉引用 KD-2  
+- **文件：** verb json + **生成器** → `windows-explorer-hooks.nsh` + `register_dev_explorer_convert.ps1`；`scripts/test_windows_explorer_integration.ps1`；`scripts/test_clean_vm_certification.ps1`（修正 `AnoleConvert`）；`docs/testing/WINDOWS_EXPLORER_INTEGRATION.md`；`CLEAN_VM_CERTIFICATION.md`；`WINDOWS_PACKAGING.md`；`DESKTOP_MVP.md`；`UX_FLOWS.md`；`MASTER_EXECUTION_PLAN.md`；`USER_GUIDE.md`；`VOC_BACKLOG.md`；SPEC_PLAN §7.1 交叉引用 KD-2  
 - **描述：** 标准 NSIS（无 DevTools）。测试拆分：Open-in=0 Job；Convert 小 PDF=1 Job+Pass+源 hash；拥有键 2+17；卸载全集；sibling 保留。  
 - **验收：** T-IN-*、T-SH-05、T-SH-06。不自动覆盖用户安装。
 

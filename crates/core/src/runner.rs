@@ -25,7 +25,7 @@ use crate::domain::{Plan, Probe, ValidationReport, ValidationStatus};
 use crate::edge_pdf::{
     EdgePrintEvidence, extract_pdf_text, inspect_pdf_font_table, validate_edge_pdf_output,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::{ensure_local_filesystem_path, identify_artifact};
 use crate::inspect::inspect_media;
 use crate::job_store::resolve_output_identity;
@@ -34,7 +34,7 @@ use crate::pdf::inspect_pdf;
 use crate::pdf::validate_pdf_render;
 use crate::structured::{convert_structured_file, inspect_structured, validate_structured_output};
 use crate::validation::validate_media_output;
-use formatwright_engine_sdk::Operation;
+use anole_engine_sdk::Operation;
 
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const EDGE_PRINT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
@@ -96,7 +96,7 @@ where
 {
     enforce_network_policy(plan)?;
     let step = plan.steps.first().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "Plan has no executable step",
@@ -105,7 +105,7 @@ where
     })?;
     let output_path = resolve_output_path(plan)?;
     if output_path.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             format!("Output already exists: {}", output_path.display()),
@@ -123,7 +123,7 @@ where
         staged_output_path(&output_path, job_id)?
     };
     if partial_path.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Execute,
             format!(
@@ -135,7 +135,7 @@ where
     }
 
     let output_parent = output_path.parent().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Resolved output path has no parent directory",
@@ -176,12 +176,12 @@ where
         )
         .await;
     }
-    if step.engine.engine_id == "formatwright.eml" {
+    if step.engine.engine_id == "anole.eml" {
         let (path, mut report) = crate::eml::execute_eml_export(input, plan).await?;
         let _ = observer(ExecutionMilestone::EngineFinished);
         if report.status == ValidationStatus::Fail {
             cleanup_partial(&path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "EML export failed validation",
@@ -198,12 +198,12 @@ where
             report,
         });
     }
-    if step.engine.engine_id == "formatwright.msg" {
+    if step.engine.engine_id == "anole.msg" {
         let (path, mut report) = crate::msg::execute_msg_export(input, plan).await?;
         let _ = observer(ExecutionMilestone::EngineFinished);
         if report.status == ValidationStatus::Fail {
             cleanup_partial(&path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "MSG export failed validation",
@@ -218,13 +218,13 @@ where
             report,
         });
     }
-    if step.engine.engine_id == "formatwright.mbox" {
+    if step.engine.engine_id == "anole.mbox" {
         let (path, report) =
             crate::mbox::execute_mbox_export(input, plan, job_id, cancellation).await?;
         let _ = observer(ExecutionMilestone::EngineFinished);
         if report.status == ValidationStatus::Fail {
             let _ = std::fs::remove_file(&path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "MBOX export failed validation",
@@ -237,7 +237,7 @@ where
             report,
         });
     }
-    if step.engine.engine_id == "formatwright.archive" {
+    if step.engine.engine_id == "anole.archive" {
         return execute_archive_plan(
             input,
             plan,
@@ -249,7 +249,7 @@ where
         )
         .await;
     }
-    if step.engine.engine_id == "formatwright.structured" {
+    if step.engine.engine_id == "anole.structured" {
         return execute_structured_plan(
             input,
             plan,
@@ -416,7 +416,7 @@ where
 
     if cancellation.is_cancelled() {
         cleanup_partial(&partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Conversion was cancelled before validation",
@@ -472,7 +472,7 @@ where
     }
     if report.status == ValidationStatus::Fail {
         cleanup_partial(&partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Output failed required validation checks",
@@ -485,7 +485,7 @@ where
 
     if output_path.exists() {
         cleanup_partial(&partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The destination appeared while the job was running",
@@ -555,7 +555,7 @@ where
     checked_argument(validation_step, "target_format", &["png"])?;
     checked_argument(validation_step, "purpose", &["validation-only"])?;
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged Office workspace",
@@ -569,7 +569,7 @@ where
     for directory in [&conversion_directory, &profile_directory, &render_directory] {
         if let Err(error) = std::fs::create_dir(directory) {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to create an isolated Office work directory",
@@ -628,7 +628,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start LibreOffice",
@@ -649,7 +649,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for LibreOffice",
@@ -660,7 +660,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Office conversion was cancelled",
@@ -677,7 +677,7 @@ where
     let diagnostic = format!("{stdout}\n{stderr}");
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("LibreOffice exited with status {status}"),
@@ -700,7 +700,7 @@ where
     .await;
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Office conversion was cancelled while waiting for renderer output",
@@ -721,7 +721,7 @@ where
             office_output_directory.display()
         );
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "LibreOffice reported success but produced no expected PDF",
@@ -735,7 +735,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Validate,
             "Office conversion was cancelled before validation",
@@ -778,7 +778,7 @@ where
     );
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Office PDF failed required validation",
@@ -788,7 +788,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The PDF destination appeared while LibreOffice was running",
@@ -838,7 +838,7 @@ where
     checked_argument(step, "macros", &["disabled"])?;
     checked_argument(step, "external_resources", &["deny"])?;
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged Office workspace",
@@ -851,7 +851,7 @@ where
     for directory in [&conversion_directory, &profile_directory] {
         if let Err(error) = std::fs::create_dir(directory) {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to create an isolated Office work directory",
@@ -910,7 +910,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start LibreOffice",
@@ -931,7 +931,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for LibreOffice",
@@ -942,7 +942,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Office conversion was cancelled",
@@ -959,7 +959,7 @@ where
     let diagnostic = format!("{stdout}\n{stderr}");
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("LibreOffice exited with status {status}"),
@@ -978,7 +978,7 @@ where
         wait_for_regular_file(&produced, &cancellation, std::time::Duration::from_secs(30)).await;
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Office conversion was cancelled while waiting for converter output",
@@ -999,7 +999,7 @@ where
             office_output_directory.display()
         );
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "LibreOffice reported success but produced no expected document",
@@ -1013,7 +1013,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Validate,
             "Office conversion was cancelled before validation",
@@ -1034,7 +1034,7 @@ where
     let mut report = validate_office_document_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Office document exchange failed structural validation",
@@ -1044,7 +1044,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The document destination appeared while LibreOffice was running",
@@ -1122,7 +1122,7 @@ where
     checked_argument(text_step, "purpose", &["validation-only"])?;
     checked_argument(font_step, "embedded", &["required"])?;
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged browser-print workspace",
@@ -1135,7 +1135,7 @@ where
     for directory in [&profile_directory, &render_directory] {
         if let Err(error) = std::fs::create_dir(directory) {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to create an isolated browser work directory",
@@ -1208,7 +1208,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start the browser print engine",
@@ -1229,7 +1229,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for the browser print engine",
@@ -1240,7 +1240,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Browser print was cancelled",
@@ -1250,7 +1250,7 @@ where
         () = tokio::time::sleep(EDGE_PRINT_TIMEOUT) => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "The browser print engine timed out",
@@ -1267,7 +1267,7 @@ where
     let diagnostic = format!("{stdout}\n{stderr}");
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("The browser print engine exited with status {status}"),
@@ -1283,7 +1283,7 @@ where
     .await;
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Browser print was cancelled while waiting for the printed PDF",
@@ -1292,7 +1292,7 @@ where
     }
     if !output_appeared {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "The browser print engine reported success but produced no PDF",
@@ -1306,7 +1306,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Validate,
             "Browser print was cancelled before validation",
@@ -1356,7 +1356,7 @@ where
     );
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Browser-printed PDF failed required validation",
@@ -1366,7 +1366,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The PDF destination appeared while the browser was printing",
@@ -1438,7 +1438,7 @@ pub(crate) async fn render_office_pdf_for_validation(
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Validate,
             "Unable to start the PDF page-render validator",
@@ -1458,7 +1458,7 @@ pub(crate) async fn render_office_pdf_for_validation(
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Validate,
                 "Unable to wait for the PDF page-render validator",
@@ -1468,7 +1468,7 @@ pub(crate) async fn render_office_pdf_for_validation(
         })?,
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Validate,
                 "Office PDF validation was cancelled",
@@ -1479,7 +1479,7 @@ pub(crate) async fn render_office_pdf_for_validation(
     let _ = stdout_task.await;
     let stderr = stderr_task.await.unwrap_or_default();
     if !status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             format!("PDF page-render validator exited with status {status}"),
@@ -1492,7 +1492,7 @@ pub(crate) async fn render_office_pdf_for_validation(
     tokio::task::spawn_blocking(move || validate_office_render_files(&directory, &expected))
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Validate,
                 "Office PDF pixel-validation worker failed",
@@ -1523,7 +1523,7 @@ fn validate_office_render_files(directory: &Path, probe: &Probe) -> Result<usize
                 .is_some_and(|value| value.eq_ignore_ascii_case("png"))
             || pages.insert(page_number, path).is_some()
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "PDF render validation produced unexpected page entries",
@@ -1532,7 +1532,7 @@ fn validate_office_render_files(directory: &Path, probe: &Probe) -> Result<usize
         }
     }
     if pages.len() != probe.streams.len() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Not every Office PDF page rendered",
@@ -1577,7 +1577,7 @@ fn validate_office_render_files(directory: &Path, probe: &Probe) -> Result<usize
         if (f64::from(image.width()) - width.round()).abs() > 1.0
             || (f64::from(image.height()) - height.round()).abs() > 1.0
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "Rendered Office PDF page dimensions do not match the PDF page box",
@@ -1588,8 +1588,8 @@ fn validate_office_render_files(directory: &Path, probe: &Probe) -> Result<usize
     Ok(pages.len())
 }
 
-fn office_pixel_error(path: &Path, error: &impl std::fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn office_pixel_error(path: &Path, error: &impl std::fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::ValidationFailed,
         Stage::Validate,
         format!(
@@ -1603,7 +1603,7 @@ fn office_pixel_error(path: &Path, error: &impl std::fmt::Display) -> FormatWrig
 
 fn local_file_url(path: &Path) -> Result<String> {
     let canonical = path.canonicalize().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to resolve the isolated LibreOffice profile directory",
@@ -1621,7 +1621,7 @@ fn local_file_url(path: &Path) -> Result<String> {
         } else {
             use std::fmt::Write as _;
             write!(&mut encoded, "%{byte:02X}").map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::Internal,
                     Stage::Execute,
                     "Unable to encode the LibreOffice profile URL",
@@ -1673,7 +1673,7 @@ where
     checked_argument(step, "page_prefix", &["page"])?;
     let extension = if target == "jpeg" { "jpg" } else { "png" };
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged PDF page directory",
@@ -1692,7 +1692,7 @@ where
     // only (documented deviation from the env-channel wording in the spec).
     let document_password = match step.arguments.get("password").map(String::as_str) {
         Some("[redacted]") => Some(crate::pdf::take_pdf_secret(plan.plan_id).ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Execute,
                 "The PDF password is unavailable for this queued plan",
@@ -1748,7 +1748,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start pdftoppm",
@@ -1769,7 +1769,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for pdftoppm",
@@ -1780,7 +1780,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "PDF rendering was cancelled",
@@ -1794,7 +1794,7 @@ where
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("pdftoppm exited with status {status}"),
@@ -1808,7 +1808,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "PDF rendering was cancelled before validation",
@@ -1832,7 +1832,7 @@ where
     };
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Rendered PDF pages failed required validation",
@@ -1842,7 +1842,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The page-directory destination appeared while rendering",
@@ -1874,7 +1874,7 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
                 .and_then(|value| value.to_str())
                 .is_some_and(|value| value.eq_ignore_ascii_case(extension))
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "pdftoppm produced an unexpected page-directory entry",
@@ -1888,7 +1888,7 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
             .and_then(|value| value.parse::<u32>().ok())
             .filter(|value| (1..=page_count).contains(value))
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::ValidationFailed,
                     Stage::Validate,
                     "pdftoppm produced an unexpected page filename",
@@ -1896,7 +1896,7 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
                 )
             })?;
         if pages.insert(page, path).is_some() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ValidationFailed,
                 Stage::Validate,
                 "pdftoppm produced duplicate page numbers",
@@ -1905,7 +1905,7 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
         }
     }
     if pages.len() != page_count as usize {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "pdftoppm did not render every PDF page",
@@ -1913,12 +1913,12 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
         ));
     }
     for (page, source) in &pages {
-        let temporary = directory.join(format!(".formatwright-rename-{page:06}.{extension}"));
+        let temporary = directory.join(format!(".anole-rename-{page:06}.{extension}"));
         std::fs::rename(source, &temporary)
             .map_err(|error| pdf_staging_error(directory, &error))?;
     }
     for page in 1..=page_count {
-        let temporary = directory.join(format!(".formatwright-rename-{page:06}.{extension}"));
+        let temporary = directory.join(format!(".anole-rename-{page:06}.{extension}"));
         let final_path = directory.join(format!("page-{page:06}.{extension}"));
         std::fs::rename(temporary, final_path)
             .map_err(|error| pdf_staging_error(directory, &error))?;
@@ -1926,8 +1926,8 @@ fn normalize_poppler_pages(directory: &Path, page_count: u32, extension: &str) -
     Ok(())
 }
 
-fn pdf_staging_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn pdf_staging_error(path: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Execute,
         format!("Unable to normalize rendered pages in {}", path.display()),
@@ -1964,7 +1964,7 @@ where
     checked_argument(step, "metadata", &["drop"])?;
     checked_argument(step, "image_selection", &["single-primary"])?;
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged HEIC workspace",
@@ -1997,7 +1997,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start heif-dec",
@@ -2018,7 +2018,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for heif-dec",
@@ -2029,7 +2029,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "HEIC conversion was cancelled",
@@ -2045,7 +2045,7 @@ where
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("heif-dec exited with status {status}"),
@@ -2060,7 +2060,7 @@ where
         .collect::<Vec<_>>();
     if staged_files.len() != 1 || !staged_output.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Execute,
             "HEIC input did not produce exactly one primary image",
@@ -2085,7 +2085,7 @@ where
     let mut report = validate_media_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "HEIC output failed required validation",
@@ -2095,7 +2095,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The HEIC destination appeared while conversion was running",
@@ -2154,7 +2154,7 @@ where
         return Err(invalid_plan_argument("magick source_format mismatch"));
     }
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged ImageMagick workspace",
@@ -2189,7 +2189,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start ImageMagick",
@@ -2210,7 +2210,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for ImageMagick",
@@ -2221,7 +2221,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "ImageMagick conversion was cancelled",
@@ -2237,7 +2237,7 @@ where
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("ImageMagick exited with status {status}"),
@@ -2247,7 +2247,7 @@ where
     }
     if !staged_output.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "ImageMagick did not produce the staged output",
@@ -2273,7 +2273,7 @@ where
     let mut report = validate_media_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "ImageMagick output failed required validation",
@@ -2283,7 +2283,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The destination appeared while conversion was running",
@@ -2336,7 +2336,7 @@ where
         return Err(invalid_plan_argument("markup PDF LibreOffice step"));
     }
     std::fs::create_dir(partial_path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the staged markup PDF workspace",
@@ -2371,7 +2371,7 @@ where
         Ok(child) => child,
         Err(error) => {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start Pandoc for markup PDF conversion",
@@ -2392,7 +2392,7 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for Pandoc",
@@ -2403,7 +2403,7 @@ where
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Markup PDF conversion was cancelled during Pandoc execution",
@@ -2417,7 +2417,7 @@ where
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("Pandoc exited with status {status}"),
@@ -2427,7 +2427,7 @@ where
     }
     if !intermediate_path.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Pandoc produced no intermediate DOCX",
@@ -2436,7 +2436,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Markup PDF conversion was cancelled before DOCX validation",
@@ -2453,7 +2453,7 @@ where
     let intermediate_report = validate_docx_output(input, &intermediate_probe, plan, job_id);
     if intermediate_report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Intermediate DOCX failed semantic validation",
@@ -2610,7 +2610,7 @@ async fn validate_pdf_operation_output(
     job_id: Uuid,
     operation: &str,
     expected_pages: u32,
-    pdfinfo: &formatwright_engine_sdk::EngineIdentity,
+    pdfinfo: &anole_engine_sdk::EngineIdentity,
 ) -> Result<crate::domain::ValidationReport> {
     if operation == "pdf-encrypt" {
         // Page-count probing is impossible on an encrypted output: pdfinfo
@@ -2658,7 +2658,7 @@ async fn extract_pdf_text_layer(path: &Path, pdftotext: &EngineIdentity) -> Resu
     )
     .await
     .map_err(|_| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Validate,
             "PDF text extraction timed out",
@@ -2667,7 +2667,7 @@ async fn extract_pdf_text_layer(path: &Path, pdftotext: &EngineIdentity) -> Resu
         .retryable(true)
     })?
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Validate,
             "Unable to start pdftotext",
@@ -2676,7 +2676,7 @@ async fn extract_pdf_text_layer(path: &Path, pdftotext: &EngineIdentity) -> Resu
         .with_diagnostic(error.to_string())
     })?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "pdftotext could not extract the output text",
@@ -2709,7 +2709,7 @@ async fn await_pdf_ops_child(
     ));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for qpdf",
@@ -2720,7 +2720,7 @@ async fn await_pdf_ops_child(
         () = cancellation.cancelled() => {
             terminate_process_tree(child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "PDF operation was cancelled",
@@ -2734,7 +2734,7 @@ async fn await_pdf_ops_child(
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("qpdf exited with status {status}"),
@@ -2840,11 +2840,11 @@ where
             .ok_or_else(|| invalid_plan_argument("watermark page height"))?;
         let layer = crate::pdf::build_watermark_pdf(width, height, text.as_str(), angle);
         let mut stamp = tempfile::Builder::new()
-            .prefix("formatwright-watermark-")
+            .prefix("anole-watermark-")
             .suffix(".pdf")
             .tempfile()
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Execute,
                     "Unable to stage the watermark layer",
@@ -2853,7 +2853,7 @@ where
                 .with_diagnostic(error.to_string())
             })?;
         std::io::Write::write_all(&mut stamp, &layer).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to write the watermark layer",
@@ -2862,7 +2862,7 @@ where
             .with_diagnostic(error.to_string())
         })?;
         stamp.as_file().sync_all().map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to flush the watermark layer",
@@ -2888,7 +2888,7 @@ where
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Execute,
             "Unable to start qpdf",
@@ -2899,7 +2899,7 @@ where
     await_pdf_ops_child(&mut child, &cancellation, partial_path).await?;
     if !partial_path.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "qpdf produced no PDF output",
@@ -2934,7 +2934,7 @@ where
     };
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "PDF operation output failed validation",
@@ -2949,7 +2949,7 @@ where
 /// Tesseract's `stdout` output configuration avoids the automatic `.txt`
 /// suffix it appends to file basenames.
 async fn run_tesseract_to_stdout(
-    tesseract: &formatwright_engine_sdk::EngineIdentity,
+    tesseract: &anole_engine_sdk::EngineIdentity,
     image: &Path,
     language: &str,
     psm: &str,
@@ -2968,7 +2968,7 @@ async fn run_tesseract_to_stdout(
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Execute,
             "Unable to start tesseract",
@@ -2993,7 +2993,7 @@ async fn run_tesseract_to_stdout(
     let status = tokio::time::timeout(std::time::Duration::from_secs(120), child.wait())
         .await
         .map_err(|_| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "OCR recognition timed out",
@@ -3002,7 +3002,7 @@ async fn run_tesseract_to_stdout(
             .retryable(true)
         })?
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for tesseract",
@@ -3014,7 +3014,7 @@ async fn run_tesseract_to_stdout(
         .await
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("tesseract exited with status {status}"),
@@ -3058,7 +3058,7 @@ async fn commit_ocr_text_output(
         crate::ocr::validate_ocr_output(input, &output_identity, plan, job_id, text, page_coverage);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "OCR output failed validation",
@@ -3106,7 +3106,7 @@ where
     .await?;
     std::fs::write(partial_path, text.as_bytes()).map_err(|error| {
         cleanup_partial(partial_path);
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to write the OCR text output",
@@ -3116,7 +3116,7 @@ where
     })?;
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Image OCR was cancelled",
@@ -3167,7 +3167,7 @@ where
     let metadata_author = author;
     tokio::task::spawn_blocking(move || {
         let bytes = std::fs::read(&input_path).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Execute,
                 "Unable to read the PDF input",
@@ -3181,7 +3181,7 @@ where
             metadata_author.as_deref(),
         )?;
         std::fs::write(&partial, updated).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Execute,
                 "Unable to write the metadata-revised PDF",
@@ -3192,7 +3192,7 @@ where
     })
     .await
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "PDF metadata worker failed",
@@ -3202,7 +3202,7 @@ where
     })??;
     if !partial_path.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "PDF metadata update produced no output",
@@ -3211,7 +3211,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "PDF metadata update was cancelled",
@@ -3252,7 +3252,7 @@ where
     );
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "PDF metadata output failed validation",
@@ -3300,7 +3300,7 @@ where
         .unwrap_or(u64::from(crate::ocr::OCR_PDF_DPI));
     let pdftoppm = crate::doctor::inspect_engine("pdftoppm").await?;
     let staging = tempfile::tempdir().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the OCR staging directory",
@@ -3313,7 +3313,7 @@ where
     for page in 1..=expected_pages {
         if cancellation.is_cancelled() {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "PDF OCR was cancelled",
@@ -3334,7 +3334,7 @@ where
             .output()
             .await
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::EngineIncompatible,
                     Stage::Execute,
                     "Unable to start pdftoppm",
@@ -3344,7 +3344,7 @@ where
             })?;
         if !rasterized.status.success() {
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 format!("pdftoppm could not rasterize page {page}"),
@@ -3357,7 +3357,7 @@ where
         let page_image = std::fs::read_dir(staging.path())
             .map_err(|error| {
                 cleanup_partial(partial_path);
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::Internal,
                     Stage::Execute,
                     "Unable to list the OCR staging directory",
@@ -3373,7 +3373,7 @@ where
             })
             .ok_or_else(|| {
                 cleanup_partial(partial_path);
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::ExecutionFailed,
                     Stage::Execute,
                     format!("pdftoppm produced no image for page {page}"),
@@ -3387,7 +3387,7 @@ where
     }
     std::fs::write(partial_path, text.as_bytes()).map_err(|error| {
         cleanup_partial(partial_path);
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to write the OCR text output",
@@ -3417,7 +3417,7 @@ fn commit_pdf_ops_result(
 ) -> Result<ExecutionResult> {
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The PDF destination appeared while running",
@@ -3473,7 +3473,7 @@ where
     )
     .await
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "Archive repack worker failed",
@@ -3483,7 +3483,7 @@ where
     })??;
     if !partial_path.is_file() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Archive repack produced no output",
@@ -3492,7 +3492,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Archive conversion was cancelled",
@@ -3517,7 +3517,7 @@ where
     let mut report = crate::archive::validate_archive_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Archive output failed validation",
@@ -3527,7 +3527,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The archive destination appeared while running",
@@ -3577,7 +3577,7 @@ where
     )
     .await
     .map_err(|_| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "PDF text extraction timed out",
@@ -3586,7 +3586,7 @@ where
         .retryable(true)
     })?
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Execute,
             "Unable to start pdftotext",
@@ -3596,7 +3596,7 @@ where
     })?;
     if !output.status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "pdftotext could not extract the PDF text layer",
@@ -3607,7 +3607,7 @@ where
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "PDF text export was cancelled",
@@ -3616,7 +3616,7 @@ where
     }
     std::fs::write(partial_path, text.as_bytes()).map_err(|error| {
         cleanup_partial(partial_path);
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to write the Markdown text output",
@@ -3642,7 +3642,7 @@ where
     let mut report = validate_text_export_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "MD output failed validation",
@@ -3652,7 +3652,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The MD destination appeared while running",
@@ -3732,7 +3732,7 @@ where
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Execute,
             "Unable to start Pandoc",
@@ -3752,12 +3752,12 @@ where
     let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(ErrorCode::ExecutionFailed, Stage::Execute, "Unable to wait for Pandoc", "Retry the conversion.").with_diagnostic(error.to_string())
+            AnoleError::new(ErrorCode::ExecutionFailed, Stage::Execute, "Unable to wait for Pandoc", "Retry the conversion.").with_diagnostic(error.to_string())
         })?,
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(ErrorCode::Cancelled, Stage::Execute, "Document conversion was cancelled", "Retry when ready."));
+            return Err(AnoleError::new(ErrorCode::Cancelled, Stage::Execute, "Document conversion was cancelled", "Retry when ready."));
         }
     };
     let _ = stdout_task.await;
@@ -3766,7 +3766,7 @@ where
         .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("Pandoc exited with status {status}"),
@@ -3775,7 +3775,7 @@ where
         .with_diagnostic(stderr));
     }
     if !partial_path.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("Pandoc produced no {} output", target.to_uppercase()),
@@ -3784,7 +3784,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Document conversion was cancelled before validation",
@@ -3813,7 +3813,7 @@ where
     };
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             format!("{} output failed validation", target.to_uppercase()),
@@ -3823,7 +3823,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             format!(
@@ -3865,7 +3865,7 @@ where
     });
     let worker_result = tokio::select! {
         result = &mut worker => result.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Execute,
                 "Structured conversion worker failed",
@@ -3878,7 +3878,7 @@ where
             // releases the staged file, then remove that file before returning.
             let _ = worker.await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Conversion was cancelled",
@@ -3891,7 +3891,7 @@ where
         return Err(error);
     }
     if !partial_path.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Structured adapter reported success but produced no output",
@@ -3900,7 +3900,7 @@ where
     }
     if cancellation.is_cancelled() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Cancelled,
             Stage::Execute,
             "Conversion was cancelled before validation",
@@ -3925,7 +3925,7 @@ where
     let mut report = validate_structured_output(input, &output_probe, plan, job_id);
     if report.status == ValidationStatus::Fail {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "Structured output failed required validation checks",
@@ -3937,7 +3937,7 @@ where
     }
     if output_path.exists() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The destination appeared while the job was running",
@@ -3968,7 +3968,7 @@ async fn run_ffmpeg_attempt(
     crf_override: Option<u8>,
 ) -> Result<()> {
     let step = plan.steps.first().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "Plan has no FFmpeg step",
@@ -4006,7 +4006,7 @@ async fn run_ffmpeg_attempt(
         "starting conversion engine"
     );
     let mut child = command.spawn().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Execute,
             "Unable to start FFmpeg",
@@ -4015,7 +4015,7 @@ async fn run_ffmpeg_attempt(
         .with_diagnostic(error.to_string())
     })?;
     let stdout = child.stdout.take().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "FFmpeg stdout pipe was not created",
@@ -4023,7 +4023,7 @@ async fn run_ffmpeg_attempt(
         )
     })?;
     let stderr = child.stderr.take().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "FFmpeg stderr pipe was not created",
@@ -4035,7 +4035,7 @@ async fn run_ffmpeg_attempt(
 
     let status = tokio::select! {
         status = child.wait() => status.map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::ExecutionFailed,
                 Stage::Execute,
                 "Unable to wait for FFmpeg",
@@ -4046,7 +4046,7 @@ async fn run_ffmpeg_attempt(
         () = cancellation.cancelled() => {
             terminate_process_tree(&mut child).await;
             cleanup_partial(partial_path);
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "Conversion was cancelled",
@@ -4061,7 +4061,7 @@ async fn run_ffmpeg_attempt(
 
     if !status.success() {
         cleanup_partial(partial_path);
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             format!("FFmpeg exited with status {status}"),
@@ -4070,7 +4070,7 @@ async fn run_ffmpeg_attempt(
         .with_diagnostic(stderr));
     }
     if !partial_path.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "FFmpeg reported success but produced no output",
@@ -4117,7 +4117,7 @@ fn configure_ffmpeg_output(
     crf_override: Option<u8>,
 ) -> Result<()> {
     let step = plan.steps.first().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Execute,
             "Plan has no FFmpeg step",
@@ -4335,7 +4335,7 @@ fn configure_ffmpeg_output(
             command.arg("-f").arg(muxer);
         }
         target => {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Unsupported,
                 Stage::Execute,
                 format!("No FFmpeg runner is available for {target}"),
@@ -4499,8 +4499,8 @@ fn audio_bitrate_argument(step: &crate::domain::PlanStep) -> Result<u32> {
     }
 }
 
-fn invalid_plan_argument(name: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_plan_argument(name: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::PolicyBlocked,
         Stage::Execute,
         format!("Plan contains an invalid or missing {name} argument"),
@@ -4510,7 +4510,7 @@ fn invalid_plan_argument(name: &str) -> FormatWrightError {
 
 fn enforce_network_policy(plan: &Plan) -> Result<()> {
     if plan.network_policy != crate::domain::NetworkPolicy::Deny {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Execute,
             "This build executes only network-denied Plans",
@@ -4529,7 +4529,7 @@ fn enforce_network_policy(plan: &Plan) -> Result<()> {
 /// directories.
 pub fn resolve_output_path(plan: &Plan) -> Result<PathBuf> {
     let requested = plan.output_path.as_ref().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Plan has no output path",
@@ -4539,7 +4539,7 @@ pub fn resolve_output_path(plan: &Plan) -> Result<PathBuf> {
     ensure_local_filesystem_path(requested, Stage::Plan)?;
     let resolved = resolve_output_identity(requested, Stage::Plan)?;
     let parent = resolved.parent().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Resolved output path has no parent directory",
@@ -4547,7 +4547,7 @@ pub fn resolve_output_path(plan: &Plan) -> Result<PathBuf> {
         )
     })?;
     let metadata = parent.metadata().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Output directory is unavailable: {}", parent.display()),
@@ -4556,7 +4556,7 @@ pub fn resolve_output_path(plan: &Plan) -> Result<PathBuf> {
         .with_diagnostic(error.to_string())
     })?;
     if !metadata.is_dir() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Output parent is not a directory: {}", parent.display()),
@@ -4576,14 +4576,14 @@ pub fn staged_output_path(output: &Path, job_id: Uuid) -> Result<PathBuf> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "Output filename is not valid Unicode",
                 "Choose a Unicode output filename.",
             )
         })?;
-    Ok(output.with_file_name(format!(".formatwright-partial-{job_id}-{file_name}")))
+    Ok(output.with_file_name(format!(".anole-partial-{job_id}-{file_name}")))
 }
 
 /// Removes a deterministic staged output left after a process crash.
@@ -4620,7 +4620,7 @@ pub fn staged_output_candidates(output: &Path, job_id: Uuid) -> Result<Vec<PathB
 
 fn office_staged_work_path(output: &Path, job_id: Uuid) -> Result<PathBuf> {
     let parent = output.parent().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Office output path has no parent directory",
@@ -4638,7 +4638,7 @@ fn remove_staged_path(partial: &Path) -> Result<bool> {
         Err(error) => return Err(staged_cleanup_error(partial, &error)),
     };
     if is_reparse_or_symlink(&metadata) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Commit,
             format!(
@@ -4673,8 +4673,8 @@ fn is_reparse_or_symlink(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-fn staged_cleanup_error(partial: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn staged_cleanup_error(partial: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Commit,
         format!("Unable to remove staged output: {}", partial.display()),
@@ -4689,7 +4689,7 @@ async fn ensure_input_unchanged(input: &Probe, stage: Stage) -> Result<()> {
         || observed.modified_unix_ms != input.artifact.modified_unix_ms
         || observed.fast_fingerprint != input.artifact.fast_fingerprint
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputChanged,
             stage,
             "Input changed after inspection",
@@ -4818,7 +4818,7 @@ fn cleanup_partial(path: &Path) {
 pub(crate) fn commit_path_no_replace(source: &Path, destination: &Path) -> Result<()> {
     rename_path_no_replace(source, destination).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists || destination.exists() {
-            return FormatWrightError::new(
+            return AnoleError::new(
                 ErrorCode::OutputConflict,
                 Stage::Commit,
                 "The destination appeared before the validated output could be committed",
@@ -4826,7 +4826,7 @@ pub(crate) fn commit_path_no_replace(source: &Path, destination: &Path) -> Resul
             )
             .with_diagnostic(error.to_string());
         }
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Commit,
             "Validated output could not be committed without overwriting",
@@ -4888,17 +4888,17 @@ mod tests {
         PlanStep {
             step_id: "step-1".to_owned(),
             capability_id: "ffmpeg.test".to_owned(),
-            engine: formatwright_engine_sdk::EngineIdentity {
+            engine: anole_engine_sdk::EngineIdentity {
                 engine_id: "ffmpeg".to_owned(),
                 version: "test".to_owned(),
                 binary_path: std::path::PathBuf::from("ffmpeg.exe"),
                 binary_sha256: "0".repeat(64),
                 manifest_sha256: None,
                 build_configuration: None,
-                certification: formatwright_engine_sdk::Certification::Unverified,
+                certification: anole_engine_sdk::Certification::Unverified,
             },
-            operation: formatwright_engine_sdk::Operation::Transcode,
-            loss_class: formatwright_engine_sdk::LossClass::Lossy,
+            operation: anole_engine_sdk::Operation::Transcode,
+            loss_class: anole_engine_sdk::LossClass::Lossy,
             arguments: arguments
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
@@ -5109,7 +5109,7 @@ mod tests {
         let staged = staged_output_path(&output, job_id).expect("staged path");
         assert_eq!(
             staged.file_name().and_then(|name| name.to_str()),
-            Some(".formatwright-partial-019fea79-90c7-7e31-8165-f5c468ac119e-result.mp4")
+            Some(".anole-partial-019fea79-90c7-7e31-8165-f5c468ac119e-result.mp4")
         );
 
         fs::write(&staged, b"partial").expect("write partial");
@@ -5140,14 +5140,14 @@ mod tests {
         let directory = tempdir().expect("temporary directory");
         let ready_marker = directory.path().join("descendant-ready");
         let survivor_marker = directory.path().join("descendant-survived");
-        let partial = directory.path().join(".formatwright-partial-fixture");
+        let partial = directory.path().join(".anole-partial-fixture");
         fs::create_dir(&partial).expect("create staged directory");
         fs::write(partial.join("page-000001.tmp"), b"partial").expect("write partial fixture");
 
         let parent_script = r"
-$payload = '$ready=$env:FORMATWRIGHT_CHILD_READY; $survivor=$env:FORMATWRIGHT_SURVIVOR_MARKER; [IO.File]::WriteAllText($ready,''ready''); Start-Sleep -Milliseconds 1200; [IO.File]::WriteAllText($survivor,''survived'')'
+$payload = '$ready=$env:ANOLE_CHILD_READY; $survivor=$env:ANOLE_SURVIVOR_MARKER; [IO.File]::WriteAllText($ready,''ready''); Start-Sleep -Milliseconds 1200; [IO.File]::WriteAllText($survivor,''survived'')'
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($payload))
-Start-Process -FilePath $env:FORMATWRIGHT_POWERSHELL -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$encoded) -WindowStyle Hidden
+Start-Process -FilePath $env:ANOLE_POWERSHELL -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$encoded) -WindowStyle Hidden
 Start-Sleep -Seconds 30
 ";
         let powershell =
@@ -5156,9 +5156,9 @@ Start-Sleep -Seconds 30
         let mut command = Command::new(&powershell);
         command
             .args(["-NoProfile", "-NonInteractive", "-Command", parent_script])
-            .env("FORMATWRIGHT_POWERSHELL", &powershell)
-            .env("FORMATWRIGHT_CHILD_READY", &ready_marker)
-            .env("FORMATWRIGHT_SURVIVOR_MARKER", &survivor_marker)
+            .env("ANOLE_POWERSHELL", &powershell)
+            .env("ANOLE_CHILD_READY", &ready_marker)
+            .env("ANOLE_SURVIVOR_MARKER", &survivor_marker)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -5196,8 +5196,8 @@ Start-Sleep -Seconds 30
         let mut command = Command::new("sh");
         command
             .arg("-c")
-            .arg("(sleep 1; printf survived > \"$FORMATWRIGHT_SURVIVOR_MARKER\") & wait")
-            .env("FORMATWRIGHT_SURVIVOR_MARKER", &survivor_marker)
+            .arg("(sleep 1; printf survived > \"$ANOLE_SURVIVOR_MARKER\") & wait")
+            .env("ANOLE_SURVIVOR_MARKER", &survivor_marker)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

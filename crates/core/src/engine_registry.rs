@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application_state::EngineRegistryIdentity;
 use crate::engine_pack::{VerifiedEnginePack, activate_engine_pack};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 /// Bounded retention for automatic fallback reporting.
 const MAX_REPORTED_ENGINES: usize = 64;
@@ -280,8 +280,7 @@ impl EngineRegistry {
                 let failed_version = std::fs::read(active_path)
                     .ok()
                     .and_then(|bytes| {
-                        serde_json::from_slice::<formatwright_engine_sdk::EngineManifest>(&bytes)
-                            .ok()
+                        serde_json::from_slice::<anole_engine_sdk::EngineManifest>(&bytes).ok()
                     })
                     .map_or_else(|| "unknown".to_owned(), |manifest| manifest.version);
                 let failed_manifest_sha256 = active_path
@@ -350,7 +349,7 @@ impl EngineRegistry {
                 && VersionKey::parse(&target.version) < VersionKey::parse(&active_version)
                 && !allow_downgrade
             {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::PolicyBlocked,
                     Stage::Doctor,
                     format!(
@@ -476,8 +475,8 @@ impl PartialOrd for VersionKey {
     }
 }
 
-fn registry_error(message: String, diagnostic: impl Into<String>) -> FormatWrightError {
-    FormatWrightError::new(ErrorCode::StorageFailed, Stage::Store, message, diagnostic)
+fn registry_error(message: String, diagnostic: impl Into<String>) -> AnoleError {
+    AnoleError::new(ErrorCode::StorageFailed, Stage::Store, message, diagnostic)
 }
 
 #[cfg(test)]
@@ -491,8 +490,8 @@ mod tests {
 
     use super::EngineRegistry;
     use crate::engine_pack::install_engine_pack;
-    use formatwright_engine_sdk::{
-        Capability, EngineArchitecture, EngineManifest, EnginePlatform, FormatWrightCompatibility,
+    use anole_engine_sdk::{
+        AnoleCompatibility, Capability, EngineArchitecture, EngineManifest, EnginePlatform,
         LossClass, ManifestExecutable, ManifestLicense, ManifestSource, Operation,
     };
 
@@ -504,7 +503,7 @@ mod tests {
             platform: EnginePlatform::current().unwrap_or(EnginePlatform::Linux),
             architecture: EngineArchitecture::current().unwrap_or(EngineArchitecture::X86_64),
             protocol_version: crate::engine_pack::ENGINE_PROTOCOL_VERSION,
-            formatwright_compatibility: FormatWrightCompatibility {
+            anole_compatibility: AnoleCompatibility {
                 minimum: "0.1.0".to_owned(),
                 maximum_exclusive: "0.2.0".to_owned(),
             },

@@ -150,7 +150,7 @@ try {
     $adobeNotice = Copy-PackFile (Join-Path $popplerData "COPYING.adobe") $pdfRoot "licenses/POPPLER-DATA-ADOBE.txt"
     $pdfProvenancePath = Join-Path $pdfRoot "PROVENANCE.txt"
     Write-Utf8File $pdfProvenancePath @"
-FormatWright Windows PDF development pack
+Anole Windows PDF development pack
 Poppler upstream version: $PopplerVersion
 Binary distributor: https://github.com/oschwartz10612/poppler-windows
 Binary archive SHA-256: 993e4a94376ed712fafc7058d724ea0b943d118bbd2305cd9ed55174eb85cda5
@@ -163,12 +163,12 @@ Certification status: development/unverified; transitive dependency license inve
     }
     $pdfManifest = [ordered]@{
         schema_version = 1
-        engine_id = "formatwright-pdf"
+        engine_id = "anole-pdf"
         version = $PopplerVersion
         platform = "windows"
         architecture = "x86_64"
         protocol_version = 1
-        formatwright_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
+        anole_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
         executables = $pdfExecutables
         runtime_files = $pdfRuntime
         source = [ordered]@{
@@ -189,7 +189,7 @@ Certification status: development/unverified; transitive dependency license inve
     }
     $pdfSources = [ordered]@{
         schema_version = 1
-        engine_id = "formatwright-pdf"
+        engine_id = "anole-pdf"
         version = $PopplerVersion
         review_status = "incomplete"
         artifacts = @(
@@ -229,7 +229,7 @@ Certification status: development/unverified; transitive dependency license inve
     $buildConfiguration = (& (Join-Path $ffmpegBin "ffmpeg.exe") -buildconf 2>&1 | Out-String).Trim()
     $mediaProvenancePath = Join-Path $mediaRoot "PROVENANCE.txt"
     Write-Utf8File $mediaProvenancePath @"
-FormatWright Windows Media development pack
+Anole Windows Media development pack
 FFmpeg upstream version: $FfmpegVersion
 Binary distributor: https://github.com/GyanD/codexffmpeg
 Binary archive SHA-256: e6b54767a6065919048f1a098eb27211ca4e12b4348a05d88777a5855d0b6e71
@@ -242,12 +242,12 @@ Certification status: development/unverified; GPL source-offer and patent/region
     )
     $mediaManifest = [ordered]@{
         schema_version = 1
-        engine_id = "formatwright-media"
+        engine_id = "anole-media"
         version = $FfmpegVersion
         platform = "windows"
         architecture = "x86_64"
         protocol_version = 1
-        formatwright_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
+        anole_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
         executables = $mediaExecutables
         runtime_files = $mediaRuntime
         source = [ordered]@{
@@ -267,7 +267,7 @@ Certification status: development/unverified; GPL source-offer and patent/region
     }
     $mediaSources = [ordered]@{
         schema_version = 1
-        engine_id = "formatwright-media"
+        engine_id = "anole-media"
         version = $FfmpegVersion
         review_status = "incomplete"
         artifacts = @(
@@ -313,7 +313,7 @@ Certification status: development/unverified; GPL source-offer and patent/region
         }
         $ocrProvenancePath = Join-Path $ocrRoot "PROVENANCE.txt"
         Write-Utf8File $ocrProvenancePath @"
-FormatWright Windows OCR development pack
+Anole Windows OCR development pack
 Tesseract upstream version: $TesseractVersion (UB-Mannheim Windows build)
 Binary installer SHA-256: c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9
 Unpacked with 7-Zip from the NSIS installer (no installer execution).
@@ -328,12 +328,12 @@ Certification status: development/unverified; transitive dependency license inve
         }
         $ocrManifest = [ordered]@{
             schema_version = 1
-            engine_id = "formatwright-ocr"
+            engine_id = "anole-ocr"
             version = $TesseractVersion
             platform = "windows"
             architecture = "x86_64"
             protocol_version = 1
-            formatwright_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
+            anole_compatibility = [ordered]@{ minimum = "0.1.0"; maximum_exclusive = "0.2.0" }
             executables = $ocrExecutables
             runtime_files = $ocrRuntime
             source = [ordered]@{
@@ -353,7 +353,7 @@ Certification status: development/unverified; transitive dependency license inve
         }
         $ocrSources = [ordered]@{
             schema_version = 1
-            engine_id = "formatwright-ocr"
+            engine_id = "anole-ocr"
             version = $TesseractVersion
             review_status = "incomplete"
             artifacts = @(
@@ -393,7 +393,7 @@ Certification status: development/unverified; transitive dependency license inve
 
     $bundle = [ordered]@{
         schema_version = 1
-        bundle_id = "formatwright-windows-starter"
+        bundle_id = "anole-windows-starter"
         application_version = "0.1.0"
         packs = $packList
     }

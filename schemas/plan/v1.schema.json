@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:formatwright:schema:plan:v1",
+  "$id": "urn:anole:schema:plan:v1",
   "title": "Anole Plan v1",
   "type": "object",
   "additionalProperties": false,

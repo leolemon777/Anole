@@ -6,7 +6,7 @@
 
 ## Contract
 
-The desktop Presets destination edits named conversion settings backed by the shared Rust `ConversionPreset` and `PresetLibrary` v1 contract. Each entry has a stable UUID and bounded target, quality, dimensions, DPI, color mode, and stream-preservation policy. The portable JSON envelope is governed by `urn:formatwright:schema:preset-library:v1`.
+The desktop Presets destination edits named conversion settings backed by the shared Rust `ConversionPreset` and `PresetLibrary` v1 contract. Each entry has a stable UUID and bounded target, quality, dimensions, DPI, color mode, and stream-preservation policy. The portable JSON envelope is governed by `urn:anole:schema:preset-library:v1`.
 
 Imports are limited to 1 MiB, reject unknown fields and unsupported versions, validate all entries before changing the current library, merge by stable ID, and reject case-insensitive name conflicts. A library is limited to 4,096 presets. Writes occur through a same-directory partial and recoverable backup; startup restores a backup left between replacement steps.
 
@@ -14,7 +14,7 @@ Imports are limited to 1 MiB, reject unknown fields and unsupported versions, va
 
 ~~~powershell
 pwsh -NoProfile -File scripts/test_preset_sandbox.ps1 `
-  -Cargo E:\Users\Administrator\Desktop\FormatWright\.devtools\cargo\bin\cargo.exe
+  -Cargo E:\Users\Administrator\Desktop\Anole\.devtools\cargo\bin\cargo.exe
 ~~~
 
 The recorded Windows run passed three core mutation/validation tests, the public JSON Schema contract test, and the desktop backup-recovery test. The frontend TypeScript check and production build also pass with the Presets editor, apply/edit, two-step delete, and native import/export controls.

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use formatwright_engine_sdk::Operation;
+use anole_engine_sdk::Operation;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -232,7 +232,7 @@ const fn rank(class: WorkClass) -> u8 {
 mod tests {
     use super::*;
     use crate::domain::{ChangeSet, NetworkPolicy, PlanStep};
-    use formatwright_engine_sdk::{Certification, EngineIdentity, LossClass};
+    use anole_engine_sdk::{Certification, EngineIdentity, LossClass};
     use std::path::PathBuf;
 
     fn request(job_id: Uuid, class: WorkClass, memory_bytes: u64) -> ResourceRequest {

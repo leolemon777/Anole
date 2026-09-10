@@ -22,7 +22,7 @@
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_audio_sandbox.ps1
 ~~~
 

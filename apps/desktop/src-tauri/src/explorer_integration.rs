@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use formatwright_core::{ConversionPreset, PresetLibrary, ShellVerbBinding};
+use anole_core::{ConversionPreset, PresetLibrary, ShellVerbBinding};
 use serde::{Deserialize, Serialize};
 
 const EXPLORER_VERBS_JSON: &str = include_str!("../explorer-verbs.json");
@@ -360,7 +360,7 @@ mod tests {
 
     fn preset_named(name: &str, target: &str) -> ConversionPreset {
         ConversionPreset {
-            schema_version: formatwright_core::PRESET_SCHEMA_VERSION,
+            schema_version: anole_core::PRESET_SCHEMA_VERSION,
             preset_id: Uuid::new_v4(),
             name: name.to_owned(),
             target_format: target.to_owned(),
@@ -402,20 +402,20 @@ mod tests {
         library.upsert(small.clone()).expect("upsert");
         // A binding pointing at a preset with a DIFFERENT target is ignored.
         library.shell_verbs = vec![ShellVerbBinding {
-            verb_id: "FormatWright.ToWebp".to_owned(),
+            verb_id: "Anole.ToWebp".to_owned(),
             enabled: false,
             preset_id: None,
         }];
         let registrations = resolve_registrations(&library);
         let to_webp = registrations
             .iter()
-            .find(|r| r.definition.verb == "FormatWright.ToWebp")
+            .find(|r| r.definition.verb == "Anole.ToWebp")
             .expect("webp verb");
         assert!(!to_webp.enabled);
         assert!(to_webp.preset.is_none());
         let to_png = registrations
             .iter()
-            .find(|r| r.definition.verb == "FormatWright.ToPng")
+            .find(|r| r.definition.verb == "Anole.ToPng")
             .expect("png verb");
         assert!(to_png.enabled);
         assert!(to_png.preset.is_none());
@@ -429,14 +429,14 @@ mod tests {
         // Bind the png verb (target png) to a jpg preset: must not apply.
         let preset_id = library.presets[0].preset_id;
         library.shell_verbs = vec![ShellVerbBinding {
-            verb_id: "FormatWright.ToPng".to_owned(),
+            verb_id: "Anole.ToPng".to_owned(),
             enabled: true,
             preset_id: Some(preset_id),
         }];
         let registrations = resolve_registrations(&library);
         let to_png = registrations
             .iter()
-            .find(|r| r.definition.verb == "FormatWright.ToPng")
+            .find(|r| r.definition.verb == "Anole.ToPng")
             .expect("png verb");
         assert!(to_png.preset.is_none(), "cross-target preset must not bind");
     }
@@ -445,7 +445,7 @@ mod tests {
     fn verb_command_and_label_carry_the_bound_preset() {
         let preset = preset_named("Small WebP", "webp");
         let registration = VerbRegistration {
-            definition: definition(".png", "FormatWright.ToWebp", "webp"),
+            definition: definition(".png", "Anole.ToWebp", "webp"),
             enabled: true,
             preset: Some(preset.clone()),
         };
@@ -463,12 +463,12 @@ mod tests {
         // exit so the test never leaves user-visible menu entries behind.
         let scratch_assoc = ".fw-verb-test";
         let enabled = VerbRegistration {
-            definition: definition(scratch_assoc, "FormatWright.TestOn", "png"),
+            definition: definition(scratch_assoc, "Anole.TestOn", "png"),
             enabled: true,
             preset: None,
         };
         let disabled = VerbRegistration {
-            definition: definition(scratch_assoc, "FormatWright.TestOff", "png"),
+            definition: definition(scratch_assoc, "Anole.TestOff", "png"),
             enabled: false,
             preset: None,
         };

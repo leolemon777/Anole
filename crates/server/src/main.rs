@@ -5,7 +5,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use formatwright_server::routes::{AppState, build_router};
+use anole_server::routes::{AppState, build_router};
 
 fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -13,7 +13,7 @@ fn main() {
         .build()
         .expect("tokio runtime");
     if let Err(error) = runtime.block_on(serve()) {
-        eprintln!("formatwright-server: {error}");
+        eprintln!("anole-server: {error}");
         std::process::exit(1);
     }
 }
@@ -25,7 +25,7 @@ async fn serve() -> Result<(), String> {
         .map_err(|error| format!("failed to bind {bind}: {error}"))?;
     let state = AppState::new(default_state_db());
     let app = build_router(state);
-    println!("formatwright-server listening on http://{bind}");
+    println!("anole-server listening on http://{bind}");
     axum::serve(listener, app)
         .await
         .map_err(|error| format!("server error: {error}"))
@@ -56,9 +56,7 @@ where
 fn default_state_db() -> PathBuf {
     #[cfg(windows)]
     if let Some(root) = std::env::var_os("LOCALAPPDATA") {
-        return PathBuf::from(root)
-            .join("FormatWright")
-            .join("jobs.sqlite3");
+        return PathBuf::from(root).join("Anole").join("jobs.sqlite3");
     }
 
     #[cfg(target_os = "macos")]
@@ -66,22 +64,20 @@ fn default_state_db() -> PathBuf {
         return PathBuf::from(root)
             .join("Library")
             .join("Application Support")
-            .join("FormatWright")
+            .join("Anole")
             .join("jobs.sqlite3");
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     if let Some(root) = std::env::var_os("XDG_STATE_HOME") {
-        return PathBuf::from(root)
-            .join("formatwright")
-            .join("jobs.sqlite3");
+        return PathBuf::from(root).join("anole").join("jobs.sqlite3");
     } else if let Some(root) = std::env::var_os("HOME") {
         return PathBuf::from(root)
             .join(".local")
             .join("state")
-            .join("formatwright")
+            .join("anole")
             .join("jobs.sqlite3");
     }
 
-    PathBuf::from("formatwright-jobs.sqlite3")
+    PathBuf::from("anole-jobs.sqlite3")
 }

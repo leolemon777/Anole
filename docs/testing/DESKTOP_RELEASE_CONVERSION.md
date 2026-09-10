@@ -12,14 +12,14 @@ Prove that a real Release desktop build converts a real user PDF to PNG and JPEG
 ## Harness design
 
 - The desktop binary is built with `apps/desktop/src-tauri/tauri.release-e2e.conf.json`, which only adds a fixed loopback DevTools port (`--remote-debugging-port=9338`) to the WebView2 arguments. Production and installer builds never use this overlay.
-- Each target format runs in **its own application process with its own isolated application state**. The harness moves both authoritative application-state roots (`%APPDATA%` and `%LOCALAPPDATA%` `local.formatwright.desktop`) to same-volume isolated names before each round, launches the Release executable with `--shell-open` and the Unicode/space input path, drives one conversion over CDP, verifies the deterministic page outputs, force-closes the process, removes the test state, and restores the original directories byte-for-byte. One format can therefore never inherit another format's React, engine-store, or job state.
+- Each target format runs in **its own application process with its own isolated application state**. The harness moves both authoritative application-state roots (`%APPDATA%` and `%LOCALAPPDATA%` `local.anole.desktop`) to same-volume isolated names before each round, launches the Release executable with `--shell-open` and the Unicode/space input path, drives one conversion over CDP, verifies the deterministic page outputs, force-closes the process, removes the test state, and restores the original directories byte-for-byte. One format can therefore never inherit another format's React, engine-store, or job state.
 - The CDP driver sets React-controlled values through native prototype setters plus real `input`/`change` events, waits for the target option to be capability-enabled, sets the output directory, clicks the real Plan preview button, asserts the plan card targets the requested format, clicks the real conversion button, and then requires: report status `pass`, zero non-pass checks, and the report output path equal to the requested directory. Timeouts dump a full form/button/notice diagnostic and a screenshot into the evidence directory.
 - Input is a real 15-page user PDF (`ST508S`); outputs must be exactly `page-000001.<fmt>` … `page-000003.<fmt>` with three pages.
 
 ## Commands
 
 ~~~text
-pnpm --filter @formatwright/desktop tauri build --no-bundle --config src-tauri/tauri.release-e2e.conf.json
+pnpm --filter @anole/desktop tauri build --no-bundle --config src-tauri/tauri.release-e2e.conf.json
 pwsh -File scripts/test_desktop_release_conversion.ps1 -SourcePdf <real-pdf>
 ~~~
 

@@ -500,16 +500,16 @@ export default function App() {
   useEffect(() => {
     mounted.current = true;
     const disposers: Array<() => void> = [];
-    void listen<QueueDeltaBatch>("formatwright://queue-delta", (event) => {
+    void listen<QueueDeltaBatch>("anole://queue-delta", (event) => {
       projection.apply(event.payload, requestAnimationFrame, (next) => {
         if (mounted.current) setQueueSnapshot(next);
       });
     }).then((dispose) => disposers.push(dispose));
-    void listen<JobRecord>("formatwright://job-updated", (event) => {
+    void listen<JobRecord>("anole://job-updated", (event) => {
       if (event.payload.state === "running") setActiveJobId(event.payload.id);
       void refreshJobs();
     }).then((dispose) => disposers.push(dispose));
-    void listen<JobProgressUpdate>("formatwright://job-progress", (event) => {
+    void listen<JobProgressUpdate>("anole://job-progress", (event) => {
       if (!mounted.current) return;
       setJobProgress((current) => ({
         ...current,
@@ -518,7 +518,7 @@ export default function App() {
       setProgressClock(Date.now());
     }).then((dispose) => disposers.push(dispose));
     void listen<{ packId: string; downloaded: number; total: number }>(
-      "formatwright://optional-pack-progress",
+      "anole://optional-pack-progress",
       (event) => {
         if (!mounted.current) return;
         const percent = event.payload.total > 0
@@ -527,7 +527,7 @@ export default function App() {
         setOptionalPackProgress(`${copy.optionalPackDownloading} ${percent}%`);
       },
     ).then((dispose) => disposers.push(dispose));
-    void listen<QueueRunReport>("formatwright://queue-window-finished", (event) => {
+    void listen<QueueRunReport>("anole://queue-window-finished", (event) => {
       if (mounted.current) setQueueReport(event.payload);
       void refreshJobs();
     }).then((dispose) => disposers.push(dispose));
@@ -553,7 +553,7 @@ export default function App() {
           consumingShellOpen = false;
         }
       };
-      void listen<void>("formatwright://shell-open-requested", () => void consumeShellOpens())
+      void listen<void>("anole://shell-open-requested", () => void consumeShellOpens())
         .then((dispose) => {
           if (!mounted.current) {
             dispose();
@@ -583,7 +583,7 @@ export default function App() {
           consumingConvert = false;
         }
       };
-      void listen<void>("formatwright://shell-convert-batch", () => void consumeConvertBatches())
+      void listen<void>("anole://shell-convert-batch", () => void consumeConvertBatches())
         .then((dispose) => {
           if (!mounted.current) {
             dispose();
@@ -772,10 +772,10 @@ export default function App() {
     try {
       const [pdf, video] = await Promise.all([
         invoke<CapabilitySnapshot>("desktop_capability_snapshot", {
-          inputPath: "C:\\formatwright-probe.pdf",
+          inputPath: "C:\\anole-probe.pdf",
         }),
         invoke<CapabilitySnapshot>("desktop_capability_snapshot", {
-          inputPath: "C:\\formatwright-probe.mkv",
+          inputPath: "C:\\anole-probe.mkv",
         }),
       ]);
       if (!mounted.current) return;
@@ -1236,7 +1236,7 @@ export default function App() {
     setError(null);
     try {
       const selected = await save({
-        defaultPath: `formatwright-state-${new Date().toISOString().slice(0, 10)}.fwstate`,
+        defaultPath: `anole-state-${new Date().toISOString().slice(0, 10)}.fwstate`,
         title: copy.backupState,
         filters: [{ name: "Anole state bundle", extensions: ["fwstate"] }],
       });
@@ -1583,7 +1583,7 @@ export default function App() {
     setError(null);
     try {
       const selected = await save({
-        defaultPath: "formatwright-presets.json",
+        defaultPath: "anole-presets.json",
         title: copy.exportPresets,
         filters: [{ name: "Anole preset library", extensions: ["json"] }],
       });
@@ -1632,7 +1632,7 @@ export default function App() {
     setReportBusy("report");
     try {
       const selected = await save({
-        defaultPath: `formatwright-report-${report.job_id}.json`,
+        defaultPath: `anole-report-${report.job_id}.json`,
         title: copy.exportReport,
         filters: [{ name: "Anole ValidationReport", extensions: ["json"] }],
       });
@@ -1657,7 +1657,7 @@ export default function App() {
     setReportBusy("recipe");
     try {
       const selected = await save({
-        defaultPath: `formatwright-recipe-${report.job_id}.json`,
+        defaultPath: `anole-recipe-${report.job_id}.json`,
         title: copy.exportRecipe,
         filters: [{ name: "Anole job recipe", extensions: ["json"] }],
       });

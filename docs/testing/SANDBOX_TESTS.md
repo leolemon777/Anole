@@ -11,7 +11,7 @@ The sandbox harness exercises destructive and failure-prone behavior only in a n
 
 Prerequisites:
 
-- A debug build at `target/debug/formatwright.exe`.
+- A debug build at `target/debug/anole.exe`.
 - `ffmpeg` and `ffprobe` on `PATH`.
 - PowerShell 7 or later.
 

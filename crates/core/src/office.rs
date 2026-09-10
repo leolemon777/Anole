@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde_json::{Value, json};
@@ -15,7 +15,7 @@ use crate::domain::{
     Plan, PlanStep, Probe, ProbeEvidence, ReportRedaction, SCHEMA_VERSION, StreamKind, StreamProbe,
     ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
@@ -82,7 +82,7 @@ pub async fn inspect_office(path: impl AsRef<Path>) -> Result<Probe> {
     })
     .await
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Inspect,
             "Office inspection worker failed",
@@ -91,7 +91,7 @@ pub async fn inspect_office(path: impl AsRef<Path>) -> Result<Probe> {
         .with_diagnostic(error.to_string())
     })??;
     if inspection.has_macros {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
             "Office package contains a VBA project",
@@ -99,7 +99,7 @@ pub async fn inspect_office(path: impl AsRef<Path>) -> Result<Probe> {
         ));
     }
     if inspection.has_external_relationships {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
             "Office package contains external relationships under deny-all policy",
@@ -176,7 +176,7 @@ pub async fn inspect_office(path: impl AsRef<Path>) -> Result<Probe> {
             }]
         },
         evidence: ProbeEvidence {
-            engine_id: "formatwright.office-inspector".to_owned(),
+            engine_id: "anole.office-inspector".to_owned(),
             engine_version: env!("CARGO_PKG_VERSION").to_owned(),
             engine_binary_sha256: None,
         },
@@ -210,7 +210,7 @@ pub fn plan_office_to_pdf(
         || pdfinfo.engine_id != "pdfinfo"
         || pdftoppm.engine_id != "pdftoppm"
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "Office-to-PDF Plan was given an incorrect engine",
@@ -325,7 +325,7 @@ pub fn plan_office_document_exchange(
         ));
     }
     if probe.format.id == target {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("Document exchange cannot convert {target} to itself"),
@@ -336,7 +336,7 @@ pub fn plan_office_document_exchange(
         return Err(unsupported("Document exchange target must be DOCX or ODT"));
     }
     if soffice.engine_id != "soffice" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "Document exchange Plan was given an incorrect engine",
@@ -507,7 +507,7 @@ pub fn plan_image_to_pdf(
         || pdfinfo.engine_id != "pdfinfo"
         || pdftoppm.engine_id != "pdftoppm"
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "Image-to-PDF Plan was given an incorrect engine",
@@ -726,7 +726,7 @@ fn inspect_package(path: &Path) -> Result<PackageInspection> {
     let mut archive = ZipArchive::new(file).map_err(|error| invalid_zip(&error))?;
     let expanded_bytes = check_package_limits(&mut archive)?;
     let format = detect_package_family(&mut archive).ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Inspect,
             "ZIP package is not recognized as DOCX, PPTX, or XLSX",
@@ -840,7 +840,7 @@ fn relationships_are_external(bytes: &[u8]) -> Result<bool> {
                 }
             }
             Ok(Event::DocType(_)) => {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::PolicyBlocked,
                     Stage::Inspect,
                     "Office relationship XML contains a DTD",
@@ -917,8 +917,8 @@ fn is_relationship_part(name: &str) -> bool {
     })
 }
 
-fn input_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_error(path: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Unable to read Office input: {}", path.display()),
@@ -927,8 +927,8 @@ fn input_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn invalid_zip(error: &zip::result::ZipError) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_zip(error: &zip::result::ZipError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         "Office package ZIP structure is invalid",
@@ -937,8 +937,8 @@ fn invalid_zip(error: &zip::result::ZipError) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn resource_error(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn resource_error(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::ResourceExhausted,
         Stage::Inspect,
         message,
@@ -946,8 +946,8 @@ fn resource_error(message: &str) -> FormatWrightError {
     )
 }
 
-fn package_read_error(error: &zip::result::ZipError) -> FormatWrightError {
-    FormatWrightError::new(
+fn package_read_error(error: &zip::result::ZipError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         "Unable to read an Office package entry",
@@ -956,8 +956,8 @@ fn package_read_error(error: &zip::result::ZipError) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn package_io_error(error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn package_io_error(error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         "Unable to read Office relationship XML",
@@ -966,8 +966,8 @@ fn package_io_error(error: &std::io::Error) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn relationship_xml_error(error: &impl std::fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn relationship_xml_error(error: &impl std::fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         "Office relationship XML is malformed",
@@ -976,8 +976,8 @@ fn relationship_xml_error(error: &impl std::fmt::Display) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message,
@@ -990,7 +990,7 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity};
+    use anole_engine_sdk::{Certification, EngineIdentity};
     use tempfile::NamedTempFile;
     use zip::write::SimpleFileOptions;
 

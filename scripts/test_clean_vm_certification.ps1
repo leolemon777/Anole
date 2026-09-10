@@ -1,7 +1,7 @@
 #requires -Version 7.0
 
 # Batch D automation: run INSIDE a clean, offline Windows 11 VM that has no
-# FFmpeg/Poppler/LibreOffice/Pandoc/libvips and no FormatWright development
+# FFmpeg/Poppler/LibreOffice/Pandoc/libvips and no Anole development
 # caches. Proves out-of-box installed conversions from the real UI with a
 # deliberately polluted PATH, then verifies uninstall leaves nothing behind.
 # See docs/testing/CLEAN_VM_CERTIFICATION.md for the full runbook, including
@@ -18,7 +18,7 @@ param(
     [string]$E2EBinary,
     [Parameter(Mandatory = $true)]
     [string]$SourcePdf,
-    [string]$InstallRoot = "$env:LOCALAPPDATA\Programs\FormatWright",
+    [string]$InstallRoot = "$env:LOCALAPPDATA\Programs\Anole",
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts\clean-vm-certification')
 )
 
@@ -36,8 +36,8 @@ foreach ($tool in $forbiddenTools) {
         "VM is not clean: '$tool' is on PATH; rebuild the VM without conversion tools"
     )
 }
-Assert-True (-not (Test-Path "$env:APPDATA\local.formatwright.desktop")) 'user app-state already exists; VM is not clean'
-Assert-True (-not (Test-Path "$env:LOCALAPPDATA\local.formatwright.desktop")) 'user local app-state already exists; VM is not clean'
+Assert-True (-not (Test-Path "$env:APPDATA\local.anole.desktop")) 'user app-state already exists; VM is not clean'
+Assert-True (-not (Test-Path "$env:LOCALAPPDATA\local.anole.desktop")) 'user local app-state already exists; VM is not clean'
 Assert-True (-not (Test-Path $InstallRoot)) 'install root already exists; VM is not clean'
 
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
@@ -62,8 +62,8 @@ try {
     $installClock.Stop()
     Assert-True ($process.ExitCode -eq 0) "installer exited $($process.ExitCode)"
     $installed = $true
-    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot 'formatwright-desktop.exe')) 'installed executable is missing'
-    $installedExe = (Resolve-Path -LiteralPath (Join-Path $InstallRoot 'formatwright-desktop.exe')).Path
+    Assert-True (Test-Path -LiteralPath (Join-Path $InstallRoot 'anole-desktop.exe')) 'installed executable is missing'
+    $installedExe = (Resolve-Path -LiteralPath (Join-Path $InstallRoot 'anole-desktop.exe')).Path
     $installedBytes = (Get-Item -LiteralPath $installedExe).Length
     Assert-True ((Get-Content -LiteralPath $installedExe -AsByteStream -TotalCount 200MB -ReadCount 0) -is [byte[]]) 'installed binary unreadable'
     # The standard build must not embed the release-e2e DevTools argument.
@@ -73,7 +73,7 @@ try {
     # 2. First launch of the INSTALLED app installs engine packs from embedded
     #    resources even with the polluted PATH, then exits cleanly.
     $app = Start-Process -FilePath $installedExe -PassThru
-    $engineStore = "$env:LOCALAPPDATA\local.formatwright.desktop\engines"
+    $engineStore = "$env:LOCALAPPDATA\local.anole.desktop\engines"
     $deadline = [DateTime]::UtcNow.AddSeconds(180)
     do {
         Start-Sleep -Seconds 2
@@ -84,7 +84,7 @@ try {
     Assert-True (-not $app.HasExited) 'installed app exited during observation'
     Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
     $app.WaitForExit(10000) | Out-Null
-    Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 
     # 3. Real UI conversions from the e2e-overlay binary (isolated per format).
@@ -115,12 +115,12 @@ finally {
         $uninstall = Start-Process -FilePath (Join-Path $InstallRoot 'uninstall.exe') -ArgumentList @('/S') -PassThru -Wait
         Start-Sleep -Seconds 3
         Assert-True (-not (Test-Path -LiteralPath $InstallRoot)) 'uninstall left the install root behind'
-        Assert-True (-not (Test-Path "$env:APPDATA\local.formatwright.desktop")) 'uninstall left user app-state behind'
-        Assert-True (-not (Test-Path "$env:LOCALAPPDATA\local.formatwright.desktop")) 'uninstall left user local app-state behind'
+        Assert-True (-not (Test-Path "$env:APPDATA\local.anole.desktop")) 'uninstall left user app-state behind'
+        Assert-True (-not (Test-Path "$env:LOCALAPPDATA\local.anole.desktop")) 'uninstall left user local app-state behind'
         $verbTable = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\apps\desktop\src-tauri\explorer-verbs.json') -Raw -Encoding utf8 | ConvertFrom-Json
         $shellKeys = @(
-            'HKCU:\Software\Classes\*\shell\FormatWright',
-            'HKCU:\Software\Classes\Directory\shell\FormatWright'
+            'HKCU:\Software\Classes\*\shell\Anole',
+            'HKCU:\Software\Classes\Directory\shell\Anole'
         ) + @(
             foreach ($item in $verbTable.convert) {
                 if ($item.assoc -eq 'Directory') {
@@ -134,5 +134,5 @@ finally {
             Assert-True (-not (Test-Path $key)) "uninstall left owned shell key: $key"
         }
     }
-    Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }

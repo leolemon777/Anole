@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use formatwright_core::{
+use anole_core::{
     JobCreateRequest, JobExecutionService, JobState, Plan, PlanRequest, QueueWindowControl,
     ReportService, SqliteJobStore, activate_engine_pack, inspect_builtin_engine, inspect_engine,
     inspect_media, inspect_structured, plan_conversion, plan_structured_conversion,
@@ -54,14 +54,14 @@ struct MixedTenThousandResult {
 #[ignore = "release gate: run explicitly for the 10,000-file mixed certification"]
 #[allow(clippy::too_many_lines)]
 async fn converts_ten_thousand_mixed_files_with_fair_bounded_scheduling() {
-    let suite = required_directory("FORMATWRIGHT_MIXED_SUITE_ROOT");
+    let suite = required_directory("ANOLE_MIXED_SUITE_ROOT");
     let input_root = suite.join("input");
     let output_root = suite.join("output");
     let report_root = suite.join("reports");
     fs::create_dir_all(&input_root).expect("input root");
     fs::create_dir_all(&output_root).expect("output root");
     let database = suite.join("jobs.sqlite3");
-    activate_engine_pack(required_fixture("FORMATWRIGHT_MIXED_MEDIA_PACK_MANIFEST"))
+    activate_engine_pack(required_fixture("ANOLE_MIXED_MEDIA_PACK_MANIFEST"))
         .expect("activate verified media pack");
 
     let planning_started = Instant::now();
@@ -74,16 +74,16 @@ async fn converts_ten_thousand_mixed_files_with_fair_bounded_scheduling() {
     let structured_probe = inspect_structured(&structured_input)
         .await
         .expect("inspect structured fixture");
-    let structured_engine = inspect_builtin_engine("formatwright.structured")
+    let structured_engine = inspect_builtin_engine("anole.structured")
         .await
         .expect("structured engine");
 
     let ffprobe = inspect_engine("ffprobe").await.expect("ffprobe engine");
     let ffmpeg = inspect_engine("ffmpeg").await.expect("ffmpeg engine");
-    let image_input = required_fixture("FORMATWRIGHT_MIXED_IMAGE_FIXTURE");
-    let media_input = required_fixture("FORMATWRIGHT_MIXED_MEDIA_FIXTURE");
-    let changed_image_input = required_fixture("FORMATWRIGHT_MIXED_CHANGED_IMAGE_FIXTURE");
-    let changed_media_input = required_fixture("FORMATWRIGHT_MIXED_CHANGED_MEDIA_FIXTURE");
+    let image_input = required_fixture("ANOLE_MIXED_IMAGE_FIXTURE");
+    let media_input = required_fixture("ANOLE_MIXED_MEDIA_FIXTURE");
+    let changed_image_input = required_fixture("ANOLE_MIXED_CHANGED_IMAGE_FIXTURE");
+    let changed_media_input = required_fixture("ANOLE_MIXED_CHANGED_MEDIA_FIXTURE");
     let image_probe = inspect_media(&image_input, &ffprobe)
         .await
         .expect("inspect image fixture");
@@ -255,7 +255,7 @@ async fn converts_ten_thousand_mixed_files_with_fair_bounded_scheduling() {
         #[allow(clippy::manual_is_multiple_of)]
         if completed % 1_000 == 0 || completed == JOB_COUNT {
             println!(
-                "FORMATWRIGHT_MIXED_10000_PROGRESS completed={completed} elapsed_ms={}",
+                "ANOLE_MIXED_10000_PROGRESS completed={completed} elapsed_ms={}",
                 execution_started.elapsed().as_millis()
             );
         }
@@ -371,7 +371,7 @@ async fn converts_ten_thousand_mixed_files_with_fair_bounded_scheduling() {
         staged_outputs_remaining,
     };
     println!(
-        "FORMATWRIGHT_MIXED_10000_RESULT {}",
+        "ANOLE_MIXED_10000_RESULT {}",
         serde_json::to_string(&result).expect("serialize result")
     );
 }
@@ -433,7 +433,7 @@ fn create_batch_from_template(
     jobs.into_iter().map(|job| job.id).collect()
 }
 
-fn count_job_ids(jobs: &[formatwright_core::JobRecord], ids: &[uuid::Uuid]) -> usize {
+fn count_job_ids(jobs: &[anole_core::JobRecord], ids: &[uuid::Uuid]) -> usize {
     let ids = ids
         .iter()
         .copied()
@@ -506,7 +506,7 @@ fn count_staged_files(root: &Path) -> usize {
             } else if entry
                 .file_name()
                 .to_string_lossy()
-                .starts_with(".formatwright-partial-")
+                .starts_with(".anole-partial-")
             {
                 count += 1;
             }

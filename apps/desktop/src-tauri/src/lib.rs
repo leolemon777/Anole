@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use formatwright_core::{
+use anole_core::{
     ApplicationSettings, ApplicationSettingsService, ApplicationStateLayout,
     ApplicationStateService, BatchRecord, BulkActionReport, BulkJobAction, BulkJobService,
     CapabilitySnapshot, Certification, CompactReport, ConversionPreset, ConversionService,
@@ -66,7 +66,7 @@ struct DesktopStartupRecovery {
     restored_bundle_id: Option<Uuid>,
     restore_error: Option<String>,
     #[serde(default)]
-    engine_recovery: Vec<formatwright_core::EngineRecovery>,
+    engine_recovery: Vec<anole_core::EngineRecovery>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -75,7 +75,7 @@ struct DesktopRecoverySummary {
     removed_staged_outputs: usize,
     restored_bundle_id: Option<Uuid>,
     restore_error: Option<String>,
-    engine_recovery: Vec<formatwright_core::EngineRecovery>,
+    engine_recovery: Vec<anole_core::EngineRecovery>,
     state_counts: Vec<JobStateCount>,
 }
 
@@ -431,7 +431,7 @@ async fn run_queue_bridge_benchmark(
             u32::try_from(batch.jobs.len()).map_err(|_| "batch length exceeds u32".to_owned())?,
         );
         window
-            .emit("formatwright://queue-delta", &batch)
+            .emit("anole://queue-delta", &batch)
             .map_err(|error| format!("unable to emit queue batch: {error}"))?;
         emitted_batches = emitted_batches.saturating_add(1);
         tokio::task::yield_now().await;
@@ -446,7 +446,7 @@ async fn run_queue_bridge_benchmark(
 
 #[tauri::command]
 async fn desktop_doctor() -> DoctorReport {
-    formatwright_core::doctor().await
+    anole_core::doctor().await
 }
 
 #[tauri::command]
@@ -462,7 +462,7 @@ async fn import_desktop_engine_pack(
     let _operation = acquire_active_operation(&state.operation_gate)?;
     let engine_store_directory = state.engine_store_directory.clone();
     let verified = tokio::task::spawn_blocking(move || {
-        formatwright_core::install_engine_pack(manifest_path, engine_store_directory)
+        anole_core::install_engine_pack(manifest_path, engine_store_directory)
     })
     .await
     .map_err(|error| format!("engine-pack verification worker failed: {error}"))?
@@ -525,11 +525,11 @@ async fn preview_conversion(request: DesktopConversionRequest) -> Result<Desktop
 
 async fn prepare_approved_desktop_conversion(
     request: &DesktopConversionRequest,
-) -> Result<(Probe, Plan, formatwright_core::EngineIdentity), String> {
+) -> Result<(Probe, Plan, anole_core::EngineIdentity), String> {
     let prepared = prepare_conversion(&request.input_path, &request.plan_request())
         .await
         .map_err(serialize_error)?;
-    formatwright_core::ensure_plan_approved(&prepared.1, request.approved_plan_hash.as_deref())
+    anole_core::ensure_plan_approved(&prepared.1, request.approved_plan_hash.as_deref())
         .map_err(serialize_error)?;
     Ok(prepared)
 }
@@ -564,9 +564,9 @@ async fn run_desktop_conversion(
                     tokens.insert(job.id, cancellation.clone());
                 }
             }
-            let _ = window.emit("formatwright://job-updated", job);
+            let _ = window.emit("anole://job-updated", job);
             let _ = window.emit(
-                "formatwright://job-progress",
+                "anole://job-progress",
                 &QueueProgressUpdate {
                     schema_version: 1,
                     job_id: job.id,
@@ -605,7 +605,7 @@ async fn queue_desktop_conversion(
             let created = store
                 .enqueue_job_idempotent(
                     key,
-                    &formatwright_core::JobCreateRequest {
+                    &anole_core::JobCreateRequest {
                         input_path: probe.artifact.canonical_path.clone(),
                         output_path: request.output_path.clone(),
                         plan: plan.clone(),
@@ -620,7 +620,7 @@ async fn queue_desktop_conversion(
                 .map_err(serialize_error)?
         }
     };
-    let _ = window.emit("formatwright://job-updated", &job);
+    let _ = window.emit("anole://job-updated", &job);
     Ok(job)
 }
 
@@ -744,7 +744,7 @@ async fn ingest_shell_convert(
         )
         .await
         .map_err(serialize_error)?;
-        formatwright_core::ensure_plan_approved(&prepared.1, Some(prepared.1.plan_hash.as_str()))
+        anole_core::ensure_plan_approved(&prepared.1, Some(prepared.1.plan_hash.as_str()))
             .map_err(serialize_error)?;
         let cancellation = CancellationToken::new();
         let mut execution_store =
@@ -764,7 +764,7 @@ async fn ingest_shell_convert(
                     tokens.insert(job.id, cancellation.clone());
                 }
                 if let Some(window) = window {
-                    let _ = window.emit("formatwright://job-updated", job);
+                    let _ = window.emit("anole://job-updated", job);
                 }
             },
         )
@@ -794,7 +794,7 @@ async fn ingest_shell_convert(
             .map_err(serialize_error)?
     };
     if let Some(window) = window {
-        let _ = window.emit("formatwright://job-updated", ());
+        let _ = window.emit("anole://job-updated", ());
     }
     Ok(DesktopIngestResult {
         ran_immediately: false,
@@ -875,9 +875,9 @@ async fn build_desktop_folder_preview(
     .map_err(|error| format!("folder-enumeration worker failed: {error}"))?
     .map_err(serialize_error)?;
     if mapping.mappings.len() > DESKTOP_FOLDER_PLAN_LIMIT {
-        return Err(serialize_error(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::ResourceExhausted,
-            formatwright_core::Stage::Plan,
+        return Err(serialize_error(anole_core::AnoleError::new(
+            anole_core::ErrorCode::ResourceExhausted,
+            anole_core::Stage::Plan,
             "Desktop folder preview exceeds the 10,000-Plan limit",
             "Split the source into smaller folders before previewing.",
         )));
@@ -901,9 +901,9 @@ async fn build_desktop_folder_preview(
             match prepare_conversion(&entry.input_path, &plan_request).await {
                 Ok((probe, plan, _)) => {
                     if entry.output_path.exists() {
-                        return Err(serialize_error(formatwright_core::FormatWrightError::new(
-                            formatwright_core::ErrorCode::OutputConflict,
-                            formatwright_core::Stage::Plan,
+                        return Err(serialize_error(anole_core::AnoleError::new(
+                            anole_core::ErrorCode::OutputConflict,
+                            anole_core::Stage::Plan,
                             format!(
                                 "Folder batch output already exists: {}",
                                 entry.output_path.display()
@@ -927,9 +927,9 @@ async fn build_desktop_folder_preview(
     }
     .await?;
     if requests.is_empty() {
-        return Err(serialize_error(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::Unsupported,
-            formatwright_core::Stage::Plan,
+        return Err(serialize_error(anole_core::AnoleError::new(
+            anole_core::ErrorCode::Unsupported,
+            anole_core::Stage::Plan,
             "No file in the selected folder can use this conversion route",
             "Choose another target or a folder containing supported inputs.",
         )));
@@ -1010,9 +1010,9 @@ fn queue_desktop_folder_preview(
         FolderBatchService::disk_budget(&cache.preview.output_root, &cache.requests, 4)
             .map_err(serialize_error)?;
     if !current_budget.sufficient {
-        return Err(serialize_error(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::ResourceExhausted,
-            formatwright_core::Stage::Store,
+        return Err(serialize_error(anole_core::AnoleError::new(
+            anole_core::ErrorCode::ResourceExhausted,
+            anole_core::Stage::Store,
             format!(
                 "Folder batch requires {} bytes but only {} bytes are available",
                 current_budget.required_bytes, current_budget.available_bytes
@@ -1022,9 +1022,9 @@ fn queue_desktop_folder_preview(
     }
     for request in &cache.requests {
         if request.output_path.exists() {
-            return Err(serialize_error(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::OutputConflict,
-                formatwright_core::Stage::Store,
+            return Err(serialize_error(anole_core::AnoleError::new(
+                anole_core::ErrorCode::OutputConflict,
+                anole_core::Stage::Store,
                 format!(
                     "Folder batch output appeared after preview: {}",
                     request.output_path.display()
@@ -1123,9 +1123,9 @@ async fn ingest_desktop_shell_directory(
     let _operation = acquire_active_operation(&state.operation_gate)?;
     let target = target.trim().to_ascii_lowercase();
     if classify_local_absolute_path(&path).kind != "directory" {
-        return Err(serialize_error(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::InputInvalid,
-            formatwright_core::Stage::Inspect,
+        return Err(serialize_error(anole_core::AnoleError::new(
+            anole_core::ErrorCode::InputInvalid,
+            anole_core::Stage::Inspect,
             "Folder conversion needs a local folder path",
             "Right-click a folder in Explorer, or drop one onto the convert page.",
         )));
@@ -1175,9 +1175,9 @@ async fn run_queue_window_on_database<F, P>(
     control: QueueWindowControl,
     on_report: F,
     on_progress: P,
-) -> formatwright_core::Result<QueueRunReport>
+) -> anole_core::Result<QueueRunReport>
 where
-    F: FnMut(Uuid, &ValidationReport) -> formatwright_core::Result<()>,
+    F: FnMut(Uuid, &ValidationReport) -> anole_core::Result<()>,
     P: FnMut(QueueProgressUpdate),
 {
     let mut queue_store = SqliteJobStore::open(database_path)?;
@@ -1217,12 +1217,12 @@ async fn run_desktop_queue_window(
                 .map(drop)
         },
         move |progress| {
-            let _ = progress_window.emit("formatwright://job-progress", &progress);
+            let _ = progress_window.emit("anole://job-progress", &progress);
         },
     )
     .await;
     let report = report.map_err(serialize_error)?;
-    let _ = window.emit("formatwright://queue-window-finished", &report);
+    let _ = window.emit("anole://queue-window-finished", &report);
     Ok(report)
 }
 
@@ -1297,11 +1297,11 @@ fn cancel_desktop_job(
     }
 }
 
-fn requeue_job(store: &mut SqliteJobStore, job_id: Uuid) -> formatwright_core::Result<JobRecord> {
+fn requeue_job(store: &mut SqliteJobStore, job_id: Uuid) -> anole_core::Result<JobRecord> {
     let job = store.get_job(job_id)?.ok_or_else(|| {
-        formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::StorageFailed,
-            formatwright_core::Stage::Store,
+        anole_core::AnoleError::new(
+            anole_core::ErrorCode::StorageFailed,
+            anole_core::Stage::Store,
             format!("Job does not exist: {job_id}"),
             "Refresh the job list.",
         )
@@ -1310,9 +1310,9 @@ fn requeue_job(store: &mut SqliteJobStore, job_id: Uuid) -> formatwright_core::R
         JobState::Interrupted | JobState::Blocked => "DESKTOP_JOB_RESUMED",
         JobState::Failed | JobState::Cancelled => "DESKTOP_JOB_RETRIED",
         state => {
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::PolicyBlocked,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::PolicyBlocked,
+                anole_core::Stage::Store,
                 format!("Job in state {state:?} cannot be queued again"),
                 "Only interrupted, blocked, failed, or cancelled jobs can be resumed or retried.",
             ));
@@ -1594,7 +1594,7 @@ fn export_desktop_report(
     let report = report_for_export(report, redact_paths.unwrap_or(true));
     let bytes = serde_json::to_vec_pretty(&report).map_err(|error| {
         serialize_error(desktop_export_error(
-            formatwright_core::ErrorCode::StorageFailed,
+            anole_core::ErrorCode::StorageFailed,
             "ValidationReport could not be serialized for export",
             "Retry the export or restore a valid report from backup.",
             Some(error.to_string()),
@@ -1624,7 +1624,7 @@ fn export_desktop_recipe(
     };
     let bytes = serde_json::to_vec_pretty(&recipe).map_err(|error| {
         serialize_error(desktop_export_error(
-            formatwright_core::ErrorCode::StorageFailed,
+            anole_core::ErrorCode::StorageFailed,
             "Job recipe could not be serialized for export",
             "Retry the export or restore a valid job database from backup.",
             Some(error.to_string()),
@@ -1665,7 +1665,7 @@ async fn revalidate_desktop_job(
         JobState::Completed | JobState::Warning | JobState::Failed
     ) {
         return Err(serialize_error(desktop_export_error(
-            formatwright_core::ErrorCode::PolicyBlocked,
+            anole_core::ErrorCode::PolicyBlocked,
             "Only completed, warning, or validation-failed jobs can be revalidated",
             "Finish the conversion successfully before running validation-only.",
             None,
@@ -1679,7 +1679,7 @@ async fn revalidate_desktop_job(
         || details.plan.plan_hash != details.job.plan_hash
     {
         return Err(serialize_error(desktop_export_error(
-            formatwright_core::ErrorCode::InputChanged,
+            anole_core::ErrorCode::InputChanged,
             "Stored conversion evidence does not match the immutable Plan",
             "Run an integrity check and restore a consistent application-state backup.",
             None,
@@ -2040,7 +2040,7 @@ fn schedule_convert_quiet_flush(
             .lock()
             .is_ok_and(|mut guard| guard.generation == generation && guard.flush_quiet().is_some());
         if flushed {
-            let _ = app.emit("formatwright://shell-convert-batch", ());
+            let _ = app.emit("anole://shell-convert-batch", ());
         }
     });
 }
@@ -2061,13 +2061,13 @@ fn accept_desktop_shell_request(
             (outcome, coordinator.generation)
         };
         if outcome.flushed_ready {
-            let _ = app.emit("formatwright://shell-convert-batch", ());
+            let _ = app.emit("anole://shell-convert-batch", ());
         }
         schedule_convert_quiet_flush(app.clone(), Arc::clone(convert_batches), generation);
         return;
     }
     enqueue_shell_request(shell_open_paths, request);
-    let _ = app.emit("formatwright://shell-open-requested", ());
+    let _ = app.emit("anole://shell-open-requested", ());
 }
 
 fn handle_second_instance(
@@ -2116,7 +2116,7 @@ async fn generate_desktop_output_preview(
 ) -> Result<Option<DesktopOutputPreview>, String> {
     use base64::Engine as _;
 
-    let preview = formatwright_core::generate_output_preview(std::path::Path::new(&output_path))
+    let preview = anole_core::generate_output_preview(std::path::Path::new(&output_path))
         .await
         .map_err(serialize_error)?;
     Ok(preview.map(|preview| DesktopOutputPreview {
@@ -2290,7 +2290,7 @@ async fn download_optional_engine_pack(
         &archive,
         &(move |downloaded, total| {
             let _ = progress_window.emit(
-                "formatwright://optional-pack-progress",
+                "anole://optional-pack-progress",
                 serde_json::json!({
                     "packId": pack_name,
                     "downloaded": downloaded,
@@ -2305,7 +2305,7 @@ async fn download_optional_engine_pack(
         optional_packs::stage_verified_pack_archive(&archive, spec.archive_sha256, &staging)?;
     let engine_store_directory = state.engine_store_directory.clone();
     let verified = tokio::task::spawn_blocking(move || {
-        formatwright_core::install_engine_pack(manifest_path, engine_store_directory)
+        anole_core::install_engine_pack(manifest_path, engine_store_directory)
     })
     .await
     .map_err(|error| format!("engine-pack verification worker failed: {error}"))?
@@ -2330,7 +2330,7 @@ fn show_desktop_toast(app: tauri::AppHandle, title: String, body: String) -> Res
         let escaped_title = title.replace('\'', "''");
         let escaped_body = body.replace('\'', "''");
         let script = format!(
-            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $text = $template.GetElementsByTagName('text'); $text.Item(0).AppendChild($template.CreateTextNode('{escaped_title}')) > $null; $text.Item(1).AppendChild($template.CreateTextNode('{escaped_body}')) > $null; $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('FormatWright').Show($toast)"
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $text = $template.GetElementsByTagName('text'); $text.Item(0).AppendChild($template.CreateTextNode('{escaped_title}')) > $null; $text.Item(1).AppendChild($template.CreateTextNode('{escaped_body}')) > $null; $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Anole').Show($toast)"
         );
         let _ = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &script])
@@ -2356,13 +2356,10 @@ fn report_for_export(mut report: ValidationReport, redact_paths: bool) -> Valida
     report
 }
 
-fn write_desktop_export_noclobber(
-    destination: &Path,
-    bytes: &[u8],
-) -> formatwright_core::Result<u64> {
+fn write_desktop_export_noclobber(destination: &Path, bytes: &[u8]) -> anole_core::Result<u64> {
     if bytes.len() > MAX_DESKTOP_EXPORT_BYTES {
         return Err(desktop_export_error(
-            formatwright_core::ErrorCode::ResourceExhausted,
+            anole_core::ErrorCode::ResourceExhausted,
             "Desktop JSON export exceeds the 16 MiB limit",
             "Export a smaller report or recipe.",
             None,
@@ -2370,7 +2367,7 @@ fn write_desktop_export_noclobber(
     }
     if destination.file_name().is_none() {
         return Err(desktop_export_error(
-            formatwright_core::ErrorCode::InputInvalid,
+            anole_core::ErrorCode::InputInvalid,
             "Desktop JSON export needs a file destination",
             "Choose a JSON filename inside an existing local directory.",
             None,
@@ -2378,7 +2375,7 @@ fn write_desktop_export_noclobber(
     }
     let parent = destination.parent().ok_or_else(|| {
         desktop_export_error(
-            formatwright_core::ErrorCode::InputInvalid,
+            anole_core::ErrorCode::InputInvalid,
             "Desktop JSON export destination has no parent directory",
             "Choose a JSON filename inside an existing local directory.",
             None,
@@ -2388,7 +2385,7 @@ fn write_desktop_export_noclobber(
         .file_name()
         .ok_or_else(|| {
             desktop_export_error(
-                formatwright_core::ErrorCode::InputInvalid,
+                anole_core::ErrorCode::InputInvalid,
                 "Desktop JSON export needs a file destination",
                 "Choose a JSON filename inside an existing local directory.",
                 None,
@@ -2397,7 +2394,7 @@ fn write_desktop_export_noclobber(
         .to_os_string();
     let parent = parent.canonicalize().map_err(|error| {
         desktop_export_error(
-            formatwright_core::ErrorCode::InputInvalid,
+            anole_core::ErrorCode::InputInvalid,
             "Desktop JSON export directory is unavailable",
             "Choose an existing writable local directory.",
             Some(error.to_string()),
@@ -2406,14 +2403,14 @@ fn write_desktop_export_noclobber(
     let destination = parent.join(file_name);
     if destination.exists() {
         return Err(desktop_export_error(
-            formatwright_core::ErrorCode::OutputConflict,
+            anole_core::ErrorCode::OutputConflict,
             "Desktop JSON export will not overwrite an existing file",
             "Choose another filename or remove the existing file first.",
             None,
         ));
     }
 
-    let partial = parent.join(format!(".formatwright-export-{}.partial", Uuid::new_v4()));
+    let partial = parent.join(format!(".anole-export-{}.partial", Uuid::new_v4()));
     let write_result = (|| -> std::io::Result<()> {
         let mut file = OpenOptions::new()
             .write(true)
@@ -2425,7 +2422,7 @@ fn write_desktop_export_noclobber(
     if let Err(error) = write_result {
         let _ = std::fs::remove_file(&partial);
         return Err(desktop_export_error(
-            formatwright_core::ErrorCode::StorageFailed,
+            anole_core::ErrorCode::StorageFailed,
             "Desktop JSON export could not be persisted",
             "Check destination permissions and available storage, then retry.",
             Some(error.to_string()),
@@ -2433,7 +2430,7 @@ fn write_desktop_export_noclobber(
     }
     let temporary = TempPath::try_from_path(partial).map_err(|error| {
         desktop_export_error(
-            formatwright_core::ErrorCode::StorageFailed,
+            anole_core::ErrorCode::StorageFailed,
             "Desktop JSON export staging path is invalid",
             "Choose another local destination and retry.",
             Some(error.to_string()),
@@ -2442,9 +2439,9 @@ fn write_desktop_export_noclobber(
     if let Err(error) = temporary.persist_noclobber(&destination) {
         return Err(desktop_export_error(
             if destination.exists() {
-                formatwright_core::ErrorCode::OutputConflict
+                anole_core::ErrorCode::OutputConflict
             } else {
-                formatwright_core::ErrorCode::StorageFailed
+                anole_core::ErrorCode::StorageFailed
             },
             "Desktop JSON export could not be committed without overwriting",
             "Choose another filename and retry.",
@@ -2454,10 +2451,10 @@ fn write_desktop_export_noclobber(
     Ok(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
 }
 
-fn reveal_existing_output(path: &Path) -> formatwright_core::Result<()> {
+fn reveal_existing_output(path: &Path) -> anole_core::Result<()> {
     let path = path.canonicalize().map_err(|error| {
         desktop_export_error(
-            formatwright_core::ErrorCode::InputInvalid,
+            anole_core::ErrorCode::InputInvalid,
             "The job output is no longer available",
             "Restore the output or run the conversion again.",
             Some(error.to_string()),
@@ -2466,7 +2463,7 @@ fn reveal_existing_output(path: &Path) -> formatwright_core::Result<()> {
     let mut command = platform_reveal_command(&path);
     command.spawn().map_err(|error| {
         desktop_export_error(
-            formatwright_core::ErrorCode::ExecutionFailed,
+            anole_core::ErrorCode::ExecutionFailed,
             "The operating-system file browser could not be opened",
             "Open the output path manually from the report.",
             Some(error.to_string()),
@@ -2501,9 +2498,9 @@ fn platform_reveal_command(path: &Path) -> std::process::Command {
     command
 }
 
-fn desktop_missing_job_artifact(artifact: &str) -> formatwright_core::FormatWrightError {
+fn desktop_missing_job_artifact(artifact: &str) -> anole_core::AnoleError {
     desktop_export_error(
-        formatwright_core::ErrorCode::InputInvalid,
+        anole_core::ErrorCode::InputInvalid,
         format!("The requested {artifact} was not found"),
         "Refresh the job list and select an existing completed job.",
         None,
@@ -2511,17 +2508,12 @@ fn desktop_missing_job_artifact(artifact: &str) -> formatwright_core::FormatWrig
 }
 
 fn desktop_export_error(
-    code: formatwright_core::ErrorCode,
+    code: anole_core::ErrorCode,
     message: impl Into<String>,
     action: impl Into<String>,
     diagnostic: Option<String>,
-) -> formatwright_core::FormatWrightError {
-    let error = formatwright_core::FormatWrightError::new(
-        code,
-        formatwright_core::Stage::Store,
-        message,
-        action,
-    );
+) -> anole_core::AnoleError {
+    let error = anole_core::AnoleError::new(code, anole_core::Stage::Store, message, action);
     match diagnostic {
         Some(diagnostic) => error.with_diagnostic(diagnostic),
         None => error,
@@ -2529,7 +2521,7 @@ fn desktop_export_error(
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn serialize_error(error: formatwright_core::FormatWrightError) -> String {
+fn serialize_error(error: anole_core::AnoleError) -> String {
     serde_json::to_string(&error).unwrap_or_else(|_| error.to_string())
 }
 
@@ -2567,7 +2559,7 @@ fn persist_preset_library(path: &Path, library: &PresetLibrary) -> Result<(), St
         .parent()
         .ok_or_else(|| "preset destination has no parent directory".to_owned())?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let partial = parent.join(format!(".formatwright-presets-{}.partial", Uuid::new_v4()));
+    let partial = parent.join(format!(".anole-presets-{}.partial", Uuid::new_v4()));
     let backup = backup_path(path);
     let bytes = serde_json::to_vec_pretty(library).map_err(|error| error.to_string())?;
     std::fs::write(&partial, bytes).map_err(|error| error.to_string())?;
@@ -2601,13 +2593,13 @@ fn stage_pending_restore(
     database_path: &Path,
     bundle_path: &Path,
     expected_bundle_id: Uuid,
-) -> formatwright_core::Result<DesktopScheduledRestore> {
+) -> anole_core::Result<DesktopScheduledRestore> {
     let state = ApplicationStateService::from_database(database_path.to_path_buf())?;
     let report = state.restore_preflight(bundle_path)?;
     if report.bundle_id != expected_bundle_id {
-        return Err(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::InputChanged,
-            formatwright_core::Stage::Store,
+        return Err(anole_core::AnoleError::new(
+            anole_core::ErrorCode::InputChanged,
+            anole_core::Stage::Store,
             "The selected bundle changed after restore preflight",
             "Choose the bundle again and repeat restore preflight.",
         ));
@@ -2632,9 +2624,9 @@ fn stage_pending_restore(
         Ok(report) if report.bundle_id == expected_bundle_id => report,
         Ok(_) => {
             let _ = std::fs::remove_file(&staged_bundle);
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::InputChanged,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::InputChanged,
+                anole_core::Stage::Store,
                 "The state bundle changed while it was staged",
                 "Choose the bundle again and repeat restore preflight.",
             ));
@@ -2670,29 +2662,29 @@ fn apply_pending_restore(database_path: &Path) -> (Option<Uuid>, Option<String>)
         cleanup_orphaned_pending_restore_bundles(database_path);
         return (None, None);
     }
-    let result = (|| -> formatwright_core::Result<Uuid> {
+    let result = (|| -> anole_core::Result<Uuid> {
         let bytes = std::fs::read(&path).map_err(desktop_storage_error)?;
         if bytes.len() > 64 * 1024 {
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::StorageFailed,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::StorageFailed,
+                anole_core::Stage::Store,
                 "Pending desktop restore request exceeds 64 KiB",
                 "Remove the pending restore request and schedule the restore again.",
             ));
         }
         let request = serde_json::from_slice::<DesktopPendingRestore>(&bytes).map_err(|error| {
-            formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::StorageFailed,
-                formatwright_core::Stage::Store,
+            anole_core::AnoleError::new(
+                anole_core::ErrorCode::StorageFailed,
+                anole_core::Stage::Store,
                 "Pending desktop restore request is invalid",
                 "Remove the pending restore request and schedule the restore again.",
             )
             .with_diagnostic(error.to_string())
         })?;
         if request.schema_version != DESKTOP_PENDING_RESTORE_SCHEMA_VERSION {
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::InputInvalid,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::InputInvalid,
+                anole_core::Stage::Store,
                 "Pending desktop restore request uses an unsupported version",
                 "Update Anole and schedule the restore again.",
             ));
@@ -2702,9 +2694,9 @@ fn apply_pending_restore(database_path: &Path) -> (Option<Uuid>, Option<String>)
             .len();
         let current_blake3 = blake3_file(&request.bundle_path)?;
         if current_size != request.bundle_size_bytes || current_blake3 != request.bundle_blake3 {
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::InputChanged,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::InputChanged,
+                anole_core::Stage::Store,
                 "The scheduled state bundle changed before restart",
                 "Choose the bundle again and repeat restore preflight.",
             ));
@@ -2712,9 +2704,9 @@ fn apply_pending_restore(database_path: &Path) -> (Option<Uuid>, Option<String>)
         let service = ApplicationStateService::from_database(database_path.to_path_buf())?;
         let preflight = service.restore_preflight(&request.bundle_path)?;
         if preflight.bundle_id != request.bundle_id {
-            return Err(formatwright_core::FormatWrightError::new(
-                formatwright_core::ErrorCode::InputChanged,
-                formatwright_core::Stage::Store,
+            return Err(anole_core::AnoleError::new(
+                anole_core::ErrorCode::InputChanged,
+                anole_core::Stage::Store,
                 "The scheduled state bundle changed before restart",
                 "Choose the bundle again and repeat restore preflight.",
             ));
@@ -2773,14 +2765,11 @@ fn cleanup_pending_restore_bundle(database_path: &Path, request_path: &Path) {
     }
 }
 
-fn persist_pending_restore(
-    path: &Path,
-    request: &DesktopPendingRestore,
-) -> formatwright_core::Result<()> {
+fn persist_pending_restore(path: &Path, request: &DesktopPendingRestore) -> anole_core::Result<()> {
     let parent = path.parent().ok_or_else(|| {
-        formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::StorageFailed,
-            formatwright_core::Stage::Store,
+        anole_core::AnoleError::new(
+            anole_core::ErrorCode::StorageFailed,
+            anole_core::Stage::Store,
             "Pending restore request has no parent directory",
             "Choose a valid application data directory.",
         )
@@ -2788,9 +2777,9 @@ fn persist_pending_restore(
     std::fs::create_dir_all(parent).map_err(desktop_storage_error)?;
     let partial = parent.join(format!(".desktop-state-restore-{}.partial", Uuid::new_v4()));
     let bytes = serde_json::to_vec_pretty(request).map_err(|error| {
-        formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::Internal,
-            formatwright_core::Stage::Store,
+        anole_core::AnoleError::new(
+            anole_core::ErrorCode::Internal,
+            anole_core::Stage::Store,
             "Pending restore request could not be serialized",
             "Retry scheduling the restore.",
         )
@@ -2808,9 +2797,9 @@ fn persist_pending_restore(
     drop(file);
     if path.exists() {
         std::fs::remove_file(&partial).map_err(desktop_storage_error)?;
-        return Err(formatwright_core::FormatWrightError::new(
-            formatwright_core::ErrorCode::OutputConflict,
-            formatwright_core::Stage::Store,
+        return Err(anole_core::AnoleError::new(
+            anole_core::ErrorCode::OutputConflict,
+            anole_core::Stage::Store,
             "A desktop state restore is already scheduled",
             "Restart Anole before scheduling another restore.",
         ));
@@ -2822,17 +2811,17 @@ fn persist_pending_restore(
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn desktop_storage_error(error: std::io::Error) -> formatwright_core::FormatWrightError {
-    formatwright_core::FormatWrightError::new(
-        formatwright_core::ErrorCode::StorageFailed,
-        formatwright_core::Stage::Store,
+fn desktop_storage_error(error: std::io::Error) -> anole_core::AnoleError {
+    anole_core::AnoleError::new(
+        anole_core::ErrorCode::StorageFailed,
+        anole_core::Stage::Store,
         "Desktop maintenance state could not be persisted",
         "Check the application data directory permissions and retry.",
     )
     .with_diagnostic(error.to_string())
 }
 
-fn blake3_file(path: &Path) -> formatwright_core::Result<String> {
+fn blake3_file(path: &Path) -> anole_core::Result<String> {
     let mut file = std::fs::File::open(path).map_err(desktop_storage_error)?;
     let mut hasher = blake3::Hasher::new();
     std::io::copy(&mut file, &mut hasher).map_err(desktop_storage_error)?;
@@ -2875,7 +2864,7 @@ fn bundled_manifest_paths(resource_directory: &Path) -> Result<Vec<PathBuf>, Str
     let bytes = std::fs::read(&bundle_path).map_err(|error| error.to_string())?;
     let bundle = serde_json::from_slice::<DesktopEngineBundle>(&bytes)
         .map_err(|error| format!("invalid bundled engine definition: {error}"))?;
-    if bundle.schema_version != 1 || bundle.bundle_id != "formatwright-windows-starter" {
+    if bundle.schema_version != 1 || bundle.bundle_id != "anole-windows-starter" {
         return Err("unsupported bundled engine definition".to_owned());
     }
     if bundle.packs.is_empty() {
@@ -2930,7 +2919,7 @@ fn install_bundled_engine_packs(
     let manifests = bundled_manifest_paths(resource_directory)?;
     let mut installed = Vec::with_capacity(manifests.len());
     for manifest in manifests {
-        let verified = formatwright_core::install_engine_pack(manifest, engine_store_directory)
+        let verified = anole_core::install_engine_pack(manifest, engine_store_directory)
             .map_err(serialize_error)?;
         EngineRegistry::new(engine_registry_directory, engine_store_directory)
             .set_active(&verified)
@@ -2940,9 +2929,7 @@ fn install_bundled_engine_packs(
     Ok(installed)
 }
 
-fn recover_desktop_jobs(
-    store: &mut SqliteJobStore,
-) -> formatwright_core::Result<DesktopStartupRecovery> {
+fn recover_desktop_jobs(store: &mut SqliteJobStore) -> anole_core::Result<DesktopStartupRecovery> {
     let interrupted = store.interrupt_active_jobs()?;
     let mut removed_staged_outputs = 0;
     for job in &interrupted {
@@ -2997,7 +2984,7 @@ pub fn register_shell_and_exit() -> ! {
 /// without initializing the full application.
 fn shell_bootstrap_data_dir() -> Result<PathBuf, String> {
     let base = std::env::var("APPDATA").map_err(|_| "APPDATA is not set".to_owned())?;
-    Ok(PathBuf::from(base).join("local.formatwright.desktop"))
+    Ok(PathBuf::from(base).join("local.anole.desktop"))
 }
 
 fn setup_desktop(
@@ -3036,7 +3023,7 @@ fn setup_desktop(
     .map_err(Box::<dyn std::error::Error>::from)?;
     if engine_recovery
         .iter()
-        .any(|outcome| matches!(outcome, formatwright_core::EngineRecovery::Failed { .. }))
+        .any(|outcome| matches!(outcome, anole_core::EngineRecovery::Failed { .. }))
     {
         // A failed engine disables its routes until a working pack is
         // imported; it must never be silently skipped (ADR-0011 item 6).
@@ -3196,7 +3183,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use formatwright_core::{
+    use anole_core::{
         ApplicationStateService, ArtifactSummary, ChangeSet, ConversionPreset, JobState,
         NetworkPolicy, PRESET_SCHEMA_VERSION, Plan, PlanRequest, PresetLibrary, QueueWindowControl,
         ReportRedaction, ReportService, SqliteJobStore, StateBundleOptions, ValidationReport,
@@ -3343,10 +3330,7 @@ mod tests {
         }
     }
 
-    fn structured_job_request(
-        root: &std::path::Path,
-        name: &str,
-    ) -> formatwright_core::JobCreateRequest {
+    fn structured_job_request(root: &std::path::Path, name: &str) -> anole_core::JobCreateRequest {
         let input = root.join(format!("{name}.json"));
         let output = root.join(format!("{name}.yaml"));
         fs::write(&input, r#"[{"id":1}]"#).expect("write structured input");
@@ -3355,7 +3339,7 @@ mod tests {
             .build()
             .expect("planning runtime");
         let plan = runtime
-            .block_on(formatwright_core::prepare_conversion(
+            .block_on(anole_core::prepare_conversion(
                 &input,
                 &PlanRequest {
                     target_format: "yaml".to_owned(),
@@ -3365,7 +3349,7 @@ mod tests {
             ))
             .expect("prepare structured conversion")
             .1;
-        formatwright_core::JobCreateRequest {
+        anole_core::JobCreateRequest {
             input_path: input,
             output_path: output,
             plan,
@@ -3376,7 +3360,7 @@ mod tests {
     fn engine_registry_reads_entries_and_ignores_partials() {
         let directory = tempdir().expect("temporary registry");
         let expected = PathBuf::from("C:/engine-pack/manifest.json");
-        let entry = formatwright_core::EngineRegistryIdentity {
+        let entry = anole_core::EngineRegistryIdentity {
             engine_id: Some("fixture-engine".to_owned()),
             manifest_path: expected.clone(),
         };
@@ -3387,7 +3371,7 @@ mod tests {
         .expect("write registry entry");
         fs::write(directory.path().join(".abc.partial"), b"incomplete").expect("write partial");
 
-        let registry = formatwright_core::EngineRegistry::new(
+        let registry = anole_core::EngineRegistry::new(
             directory.path().to_path_buf(),
             directory.path().join("store"),
         );
@@ -3411,7 +3395,7 @@ mod tests {
             bundle_root.join("bundle.json"),
             br#"{
                 "schema_version": 1,
-                "bundle_id": "formatwright-windows-starter",
+                "bundle_id": "anole-windows-starter",
                 "packs": ["../manifest.json"]
             }"#,
         )
@@ -3573,7 +3557,7 @@ mod tests {
             .expect("complete job");
         let error = requeue_job(&mut store, completed)
             .expect_err("successful terminal job must not be requeued");
-        assert_eq!(error.code, formatwright_core::ErrorCode::PolicyBlocked);
+        assert_eq!(error.code, anole_core::ErrorCode::PolicyBlocked);
         assert_eq!(
             store
                 .get_job(completed)
@@ -3599,7 +3583,7 @@ mod tests {
         store
             .transition(job.id, JobState::Running, "TEST_STARTED")
             .expect("start job");
-        let staged = formatwright_core::staged_output_path(&output, job.id).expect("staged path");
+        let staged = anole_core::staged_output_path(&output, job.id).expect("staged path");
         fs::write(&staged, b"incomplete").expect("write staged output");
 
         let recovery = recover_desktop_jobs(&mut store).expect("recover desktop jobs");
@@ -3651,7 +3635,7 @@ mod tests {
         fs::write(&input, b"{}").expect("input");
         assert_eq!(
             validated_shell_open_path([
-                "formatwright-desktop.exe".into(),
+                "anole-desktop.exe".into(),
                 "--shell-open".into(),
                 input.clone().into_os_string(),
             ]),
@@ -3659,7 +3643,7 @@ mod tests {
         );
         assert_eq!(
             shell_open_path_from_args([
-                "formatwright-desktop.exe",
+                "anole-desktop.exe",
                 "--unknown",
                 "value",
                 "--shell-open",
@@ -3690,7 +3674,7 @@ mod tests {
         let input = suite.path().join("manual.pdf");
         fs::write(&input, b"%PDF-1.4").expect("input");
         let parsed = parse_shell_invocation([
-            "formatwright-desktop.exe",
+            "anole-desktop.exe",
             "--shell-convert",
             "--to",
             "PNG",
@@ -3699,7 +3683,7 @@ mod tests {
         assert_eq!(parsed, Some((input.clone(), Some("png".to_owned()), None)));
         assert_eq!(
             parse_shell_invocation([
-                "formatwright-desktop.exe",
+                "anole-desktop.exe",
                 "--shell-convert",
                 input.to_str().expect("utf8"),
                 "--to",
@@ -3709,7 +3693,7 @@ mod tests {
         );
         assert_eq!(
             parse_shell_invocation([
-                "formatwright-desktop.exe",
+                "anole-desktop.exe",
                 "--shell-convert",
                 "--to",
                 "exe",
@@ -3718,7 +3702,7 @@ mod tests {
             None
         );
         let request = validated_shell_request([
-            "formatwright-desktop.exe".into(),
+            "anole-desktop.exe".into(),
             "--shell-convert".into(),
             "--to".into(),
             "png".into(),
@@ -3730,7 +3714,7 @@ mod tests {
         // E-05: folder verbs convert through the coordinator; the webview
         // routes directory paths into the folder-batch lane.
         let folder_request = validated_shell_request([
-            "formatwright-desktop.exe".into(),
+            "anole-desktop.exe".into(),
             "--shell-convert".into(),
             "--to".into(),
             "jpg".into(),
@@ -3741,7 +3725,7 @@ mod tests {
         assert_eq!(folder_request.convert_to.as_deref(), Some("jpg"));
         assert_eq!(
             validated_shell_request([
-                "formatwright-desktop.exe".into(),
+                "anole-desktop.exe".into(),
                 "--shell-convert".into(),
                 "--to".into(),
                 "png".into(),
@@ -3783,7 +3767,7 @@ mod tests {
             input.to_str().expect("utf8")
         );
         let parsed = parse_shell_invocation(
-            std::iter::once("formatwright-desktop.exe")
+            std::iter::once("anole-desktop.exe")
                 .chain(invocation.split(' '))
                 .map(std::ffi::OsString::from),
         );
@@ -3798,7 +3782,7 @@ mod tests {
         // An unknown preset marker is carried verbatim; execution-time
         // resolution decides what to do with it.
         let unparsed = parse_shell_invocation(
-            std::iter::once("formatwright-desktop.exe")
+            std::iter::once("anole-desktop.exe")
                 .chain(
                     format!(
                         "--shell-convert --to webp --preset not-a-uuid {}",
@@ -3888,7 +3872,7 @@ mod tests {
     #[test]
     fn parse_shell_invocation_prefers_convert_when_both_markers_are_present() {
         let parsed = parse_shell_invocation([
-            "formatwright-desktop.exe",
+            "anole-desktop.exe",
             "--shell-open",
             r"C:\in\manual.pdf",
             "--shell-convert",
@@ -3905,7 +3889,7 @@ mod tests {
         );
         assert_eq!(
             parse_shell_invocation([
-                "formatwright-desktop.exe",
+                "anole-desktop.exe",
                 "--shell-open",
                 r"C:\in\manual.pdf",
                 "--shell-convert",
@@ -3920,9 +3904,9 @@ mod tests {
     fn shell_open_rejects_missing_or_incomplete_requests() {
         assert_eq!(
             validated_shell_open_path([
-                "formatwright-desktop.exe".into(),
+                "anole-desktop.exe".into(),
                 "--shell-open".into(),
-                PathBuf::from("definitely-missing-formatwright-input").into_os_string(),
+                PathBuf::from("definitely-missing-anole-input").into_os_string(),
             ]),
             None
         );
@@ -3930,7 +3914,7 @@ mod tests {
         for rejected in [r"\\server\share\file.txt", r"\\.\C:\device.txt"] {
             assert_eq!(
                 validated_shell_open_path([
-                    "formatwright-desktop.exe".into(),
+                    "anole-desktop.exe".into(),
                     "--shell-open".into(),
                     PathBuf::from(rejected).into_os_string(),
                 ]),
@@ -3938,16 +3922,16 @@ mod tests {
             );
         }
         assert_eq!(
-            shell_open_path_from_args(["formatwright-desktop.exe", "--shell-open"]),
+            shell_open_path_from_args(["anole-desktop.exe", "--shell-open"]),
             None
         );
         assert_eq!(
-            shell_open_path_from_args(["formatwright-desktop.exe", "selected.txt"]),
+            shell_open_path_from_args(["anole-desktop.exe", "selected.txt"]),
             None
         );
         assert_eq!(
             validated_shell_open_path([
-                "formatwright-desktop.exe".into(),
+                "anole-desktop.exe".into(),
                 "--shell-open".into(),
                 PathBuf::from("relative-input.txt").into_os_string(),
             ]),
@@ -4082,7 +4066,7 @@ mod tests {
             .build()
             .expect("planning runtime");
         let first_plan = runtime
-            .block_on(formatwright_core::prepare_conversion(
+            .block_on(anole_core::prepare_conversion(
                 &first_input,
                 &PlanRequest {
                     target_format: "yaml".to_owned(),
@@ -4093,7 +4077,7 @@ mod tests {
             .expect("prepare first")
             .1;
         let second_plan = runtime
-            .block_on(formatwright_core::prepare_conversion(
+            .block_on(anole_core::prepare_conversion(
                 &second_input,
                 &PlanRequest {
                     target_format: "yaml".to_owned(),
@@ -4195,7 +4179,7 @@ mod tests {
         let output = suite.path().join("output.yaml");
         fs::write(&input, r#"[{"id":1}]"#).expect("write input");
         let request = conversion_request(input.clone(), output.clone(), None);
-        let preview = formatwright_core::prepare_conversion(&input, &request.plan_request())
+        let preview = anole_core::prepare_conversion(&input, &request.plan_request())
             .await
             .expect("preview");
 

@@ -134,12 +134,12 @@ impl EngineArchitecture {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FormatWrightCompatibility {
+pub struct AnoleCompatibility {
     pub minimum: String,
     pub maximum_exclusive: String,
 }
 
-impl FormatWrightCompatibility {
+impl AnoleCompatibility {
     /// Half-open range `[minimum, maximum_exclusive)` over dotted numeric
     /// prefixes (`0.1.0`, `26.02.0-0`). Non-numeric suffixes are ignored.
     #[must_use]
@@ -541,7 +541,7 @@ pub struct EngineManifest {
     pub platform: EnginePlatform,
     pub architecture: EngineArchitecture,
     pub protocol_version: u32,
-    pub formatwright_compatibility: FormatWrightCompatibility,
+    pub anole_compatibility: AnoleCompatibility,
     pub executables: Vec<ManifestExecutable>,
     #[serde(default)]
     pub runtime_files: Vec<ManifestRuntimeFile>,
@@ -590,12 +590,8 @@ impl EngineManifest {
                     .to_owned(),
             );
         }
-        if self.formatwright_compatibility.minimum.trim().is_empty()
-            || self
-                .formatwright_compatibility
-                .maximum_exclusive
-                .trim()
-                .is_empty()
+        if self.anole_compatibility.minimum.trim().is_empty()
+            || self.anole_compatibility.maximum_exclusive.trim().is_empty()
         {
             return manifest_error("Anole compatibility bounds are empty".to_owned());
         }
@@ -819,7 +815,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        Capability, EngineArchitecture, EngineManifest, EnginePlatform, FormatWrightCompatibility,
+        AnoleCompatibility, Capability, EngineArchitecture, EngineManifest, EnginePlatform,
         LossClass, ManifestExecutable, ManifestLicense, ManifestSource, Operation,
     };
 
@@ -831,7 +827,7 @@ mod tests {
             platform: EnginePlatform::current().unwrap_or(EnginePlatform::Linux),
             architecture: EngineArchitecture::current().unwrap_or(EngineArchitecture::X86_64),
             protocol_version: 1,
-            formatwright_compatibility: FormatWrightCompatibility {
+            anole_compatibility: AnoleCompatibility {
                 minimum: "0.1.0".to_owned(),
                 maximum_exclusive: "0.2.0".to_owned(),
             },
@@ -1027,7 +1023,7 @@ mod tests {
 
     #[test]
     fn compatibility_range_is_half_open_and_numeric() {
-        let range = super::FormatWrightCompatibility {
+        let range = super::AnoleCompatibility {
             minimum: "0.1.0".to_owned(),
             maximum_exclusive: "0.2.0".to_owned(),
         };

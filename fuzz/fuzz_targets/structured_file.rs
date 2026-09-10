@@ -30,5 +30,5 @@ fuzz_target!(|data: &[u8]| {
             .build()
             .expect("fuzz runtime")
     });
-    let _ = runtime.block_on(formatwright_core::inspect_structured(fixture.path()));
+    let _ = runtime.block_on(anole_core::inspect_structured(fixture.path()));
 });

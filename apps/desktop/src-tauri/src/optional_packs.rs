@@ -32,10 +32,10 @@ pub struct OptionalPackSpec {
 /// pack is attached to a release (DECISION-3 approved 2026-09-07).
 pub const DOCUMENT_PACK: OptionalPackSpec = OptionalPackSpec {
     pack_id: "document",
-    engine_id: "formatwright-document",
+    engine_id: "anole-document",
     display_name: "Document pack (LibreOffice)",
     description: "docx/xlsx/pptx → PDF without installing LibreOffice yourself",
-    archive_url: "https://github.com/leolemon777/FormatWright/releases/download/v0.1.1/document-pack-windows-x86_64.zip",
+    archive_url: "https://github.com/leolemon777/Anole/releases/download/v0.1.1/document-pack-windows-x86_64.zip",
     // LibreOffice 26.2.6 official TDF build; reproducible zip (fixed
     // timestamps) so the pinned hash matches the published asset byte-for-byte.
     archive_sha256: "44126a49ac2c2ff0ab1e459c73010c9315f665744dbb2a4548901e6f36325369",
@@ -267,14 +267,14 @@ mod tests {
     fn archive_with_root_and_nested_manifest_extracts_to_staging() {
         let archive = zip_with_manifest(&[(
             "document-pack/manifest.json",
-            r#"{"engine_id":"formatwright-document"}"#,
+            r#"{"engine_id":"anole-document"}"#,
         )]);
         let staging = tempfile::tempdir().expect("staging");
         let sha = sha256_file(&archive).expect("hash");
         let manifest = stage_verified_pack_archive(&archive, &sha, staging.path()).expect("staged");
         assert!(manifest.ends_with("manifest.json"));
         let contents = std::fs::read_to_string(&manifest).expect("read manifest");
-        assert!(contents.contains("formatwright-document"));
+        assert!(contents.contains("anole-document"));
     }
 
     #[test]

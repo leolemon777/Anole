@@ -34,4 +34,4 @@ The runtime verifier currently proves schema/protocol compatibility, safe relati
 
 ## Development discovery
 
-`formatwright doctor` may inspect programs already installed by the developer. Those identities are useful for tests but always remain `unverified` and carry no redistribution conclusion.
+`anole doctor` may inspect programs already installed by the developer. Those identities are useful for tests but always remain `unverified` and carry no redistribution conclusion.

@@ -142,7 +142,7 @@ try {
   await waitFor(
     client,
     "document.readyState === 'complete' && Boolean(document.querySelector('.fw-main-window'))",
-    "FormatWright document",
+    "Anole document",
   );
 
   const initial = await client.evaluate(`(() => ({

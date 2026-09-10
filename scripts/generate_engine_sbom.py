@@ -175,7 +175,7 @@ def generate(manifest_path: Path, epoch: int | None) -> dict[str, Any]:
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": f"Anole-{engine_id}-{version}-engine-pack-SBOM",
-        "documentNamespace": f"https://formatwright.local/spdx/engine/{identity_digest}",
+        "documentNamespace": f"https://anole.local/spdx/engine/{identity_digest}",
         "creationInfo": {
             "created": creation_time(epoch),
             "creators": ["Tool: Anole scripts/generate_engine_sbom.py"],

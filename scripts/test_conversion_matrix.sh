@@ -1,35 +1,35 @@
 #!/usr/bin/env bash
-# FormatWright conversion-matrix smoke run: every supported route, one shot.
+# Anole conversion-matrix smoke run: every supported route, one shot.
 set -u
-FW="E:\\Desktop\\FormatWright\\target\\debug\\formatwright.exe"
-FX="/e/Desktop/FormatWright/target/matrix/fixtures"
-OUT="/e/Desktop/FormatWright/target/matrix/out"
+FW="E:\\Desktop\\Anole\\target\\debug\\anole.exe"
+FX="/e/Desktop/Anole/target/matrix/fixtures"
+OUT="/e/Desktop/Anole/target/matrix/out"
 # A previous run's numbered outputs collide with this run's counters.
 rm -rf "$OUT"
 mkdir -p "$OUT"
-export FORMATWRIGHT_ENGINE_PDFINFO="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdfinfo.exe"
-export FORMATWRIGHT_ENGINE_PDFTOPPM="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdftoppm.exe"
-export FORMATWRIGHT_ENGINE_PDFTOTEXT="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdftotext.exe"
-export FORMATWRIGHT_ENGINE_PDFFONTS="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdffonts.exe"
-export FORMATWRIGHT_ENGINE_QPDF="E:\\DevCaches\\qpdf-12.4.1\\bin\\qpdf.exe"
-export FORMATWRIGHT_ENGINE_SOFFICE="E:\\DevCaches\\LibreOffice\\program\\soffice.com"
+export ANOLE_ENGINE_PDFINFO="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdfinfo.exe"
+export ANOLE_ENGINE_PDFTOPPM="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdftoppm.exe"
+export ANOLE_ENGINE_PDFTOTEXT="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdftotext.exe"
+export ANOLE_ENGINE_PDFFONTS="E:\\DevCaches\\poppler-26.02.0\\Library\\bin\\pdffonts.exe"
+export ANOLE_ENGINE_QPDF="E:\\DevCaches\\qpdf-12.4.1\\bin\\qpdf.exe"
+export ANOLE_ENGINE_SOFFICE="E:\\DevCaches\\LibreOffice\\program\\soffice.com"
 FFDIR="/c/Users/leo lemon/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1.1-full_build/bin"
-export FORMATWRIGHT_ENGINE_FFMPEG="$FFDIR/ffmpeg.exe"
-export FORMATWRIGHT_ENGINE_FFPROBE="$FFDIR/ffprobe.exe"
+export ANOLE_ENGINE_FFMPEG="$FFDIR/ffmpeg.exe"
+export ANOLE_ENGINE_FFPROBE="$FFDIR/ffprobe.exe"
 # C1 long-tail fixtures: opaque TIFF/BMP generated on demand.
 [ -f "$FX/sample.tiff" ] || "$FFDIR/ffmpeg.exe" -y -f lavfi -i "testsrc2=size=320x240" -frames:v 1 -pix_fmt bgr24 -c:v tiff "$FX/sample.tiff" -loglevel error
 [ -f "$FX/sample.bmp" ] || "$FFDIR/ffmpeg.exe" -y -f lavfi -i "testsrc2=size=320x240" -frames:v 1 -pix_fmt bgr24 -c:v bmp "$FX/sample.bmp" -loglevel error
 # C1 wave 2: PSD/RAW via the discovered ImageMagick engine.
 MAGICK="E:\\DevCaches\\ImageMagick\\magick.exe"
-export FORMATWRIGHT_ENGINE_MAGICK="$MAGICK"
+export ANOLE_ENGINE_MAGICK="$MAGICK"
 [ -f "$FX/sample.psd" ] || "$MAGICK" -size 320x240 gradient:blue-red "$FX/sample.psd"
 # Real camera-RAW fixtures are large downloads; run those rows only when present.
 for rawext in dng cr2; do
-  if [ ! -f "$FX/sample.$rawext" ] && [ -f "/e/Desktop/FormatWright/target/c1-raw/sample.$rawext" ]; then
-    cp "/e/Desktop/FormatWright/target/c1-raw/sample.$rawext" "$FX/sample.$rawext"
+  if [ ! -f "$FX/sample.$rawext" ] && [ -f "/e/Desktop/Anole/target/c1-raw/sample.$rawext" ]; then
+    cp "/e/Desktop/Anole/target/c1-raw/sample.$rawext" "$FX/sample.$rawext"
   fi
 done
-export FORMATWRIGHT_ENGINE_PANDOC="D:\\Anaconda3\\Library\\bin\\pandoc.exe"
+export ANOLE_ENGINE_PANDOC="D:\\Anaconda3\\Library\\bin\\pandoc.exe"
 
 n=0; pass=0; fail=0
 run() { # run <source> <target> [extra args...]
@@ -94,7 +94,7 @@ Content-Type: text/plain
 ELECTRIC body 998877.
 ' > "$FX/sample.eml"
 for t in txt html md; do run sample.eml "$t"; done
-if [ -f "$FX/sample.msg" ] || { cp "/e/Desktop/FormatWright/target/c2-msg/real.msg" "$FX/sample.msg" 2>/dev/null; [ -f "$FX/sample.msg" ]; }; then
+if [ -f "$FX/sample.msg" ] || { cp "/e/Desktop/Anole/target/c2-msg/real.msg" "$FX/sample.msg" 2>/dev/null; [ -f "$FX/sample.msg" ]; }; then
   for t in txt html pdf md; do run sample.msg "$t"; done
 fi
 # C3 MBOX aggregation (builtin split; pdf needs the html->pdf lane + qpdf)

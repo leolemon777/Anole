@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # Linux-side conversion matrix: engines from the user-level conda env.
 set -u
-SRC="${FW_SRC:-/home/leo/linux-runs/FormatWright/src}"
-FX="${FW_FIXTURES:-/home/leo/linux-runs/FormatWright/fixtures}"
-OUT="${FW_OUT:-/home/leo/linux-runs/FormatWright/out}"
+SRC="${FW_SRC:-/home/leo/linux-runs/Anole/src}"
+FX="${FW_FIXTURES:-/home/leo/linux-runs/Anole/fixtures}"
+OUT="${FW_OUT:-/home/leo/linux-runs/Anole/out}"
 rm -rf "$OUT"
 mkdir -p "$FX" "$OUT"
 export PATH="$HOME/.cargo/bin:$HOME/miniforge/envs/ocr/bin:$PATH"
-export FORMATWRIGHT_ENGINE_PDFINFO="$HOME/miniforge/envs/ocr/bin/pdfinfo"
-export FORMATWRIGHT_ENGINE_PDFTOPPM="$HOME/miniforge/envs/ocr/bin/pdftoppm"
-export FORMATWRIGHT_ENGINE_PDFTOTEXT="$HOME/miniforge/envs/ocr/bin/pdftotext"
-export FORMATWRIGHT_ENGINE_PDFFONTS="$HOME/miniforge/envs/ocr/bin/pdffonts"
-export FORMATWRIGHT_ENGINE_QPDF="$HOME/miniforge/envs/ocr/bin/qpdf"
-export FORMATWRIGHT_ENGINE_FFMPEG="$HOME/miniforge/envs/ocr/bin/ffmpeg"
-export FORMATWRIGHT_ENGINE_FFPROBE="$HOME/miniforge/envs/ocr/bin/ffprobe"
-export FORMATWRIGHT_ENGINE_TESSERACT="$HOME/miniforge/envs/ocr/bin/tesseract"
+export ANOLE_ENGINE_PDFINFO="$HOME/miniforge/envs/ocr/bin/pdfinfo"
+export ANOLE_ENGINE_PDFTOPPM="$HOME/miniforge/envs/ocr/bin/pdftoppm"
+export ANOLE_ENGINE_PDFTOTEXT="$HOME/miniforge/envs/ocr/bin/pdftotext"
+export ANOLE_ENGINE_PDFFONTS="$HOME/miniforge/envs/ocr/bin/pdffonts"
+export ANOLE_ENGINE_QPDF="$HOME/miniforge/envs/ocr/bin/qpdf"
+export ANOLE_ENGINE_FFMPEG="$HOME/miniforge/envs/ocr/bin/ffmpeg"
+export ANOLE_ENGINE_FFPROBE="$HOME/miniforge/envs/ocr/bin/ffprobe"
+export ANOLE_ENGINE_TESSERACT="$HOME/miniforge/envs/ocr/bin/tesseract"
 # Browser print lane: Chrome for Testing, zero-sudo (never pass --user-data-dir on Linux).
 if [ -x "$HOME/browsers/chrome-linux64/chrome" ]; then
-  export FORMATWRIGHT_ENGINE_MSEDGE="$HOME/browsers/chrome-linux64/chrome"
+  export ANOLE_ENGINE_MSEDGE="$HOME/browsers/chrome-linux64/chrome"
 fi
 
 PY="$HOME/miniforge/envs/ocr/bin/python"
@@ -70,10 +70,10 @@ p=PdfPages(f'{FX}/sample.pdf'); fig,ax=plt.subplots(figsize=(6,4)); ax.text(0.3,
 print('fixtures done')
 PYEOF
 cd "$SRC"
-[ -x target/debug/formatwright ] || cargo build -p formatwright-cli 2>&1 | tail -1
+[ -x target/debug/anole ] || cargo build -p anole-cli 2>&1 | tail -1
 # GW-13 docx->md row: the script has no office fixture generator, so derive
 # sample.docx from sample.md through the app's own md->docx (pandoc) lane.
-[ -f "$FX/sample.docx" ] || ./target/debug/formatwright convert "$FX/sample.md" --to docx --output "$FX/sample.docx" >/dev/null 2>&1 || true
+[ -f "$FX/sample.docx" ] || ./target/debug/anole convert "$FX/sample.md" --to docx --output "$FX/sample.docx" >/dev/null 2>&1 || true
 
 n=0; pass=0; fail=0
 run() {
@@ -81,7 +81,7 @@ run() {
   n=$((n+1))
   local name="$(basename "$src" | sed 's/\..*//')_to_$(echo "$tgt" | tr . _)_$n"
   local res
-  res=$(./target/debug/formatwright convert "$FX/$src" --to "$tgt" --output "$OUT/$name.$tgt" "$@" 2>&1)
+  res=$(./target/debug/anole convert "$FX/$src" --to "$tgt" --output "$OUT/$name.$tgt" "$@" 2>&1)
   local code=$?
   local status
   status=$(printf '%s\n' "$res" | grep -oE "validation: (Pass|Warning|Fail)" | head -1 | cut -d' ' -f2)
@@ -119,8 +119,8 @@ if [ -f "$FX/sample.msg" ]; then
   for t in txt html pdf md; do run sample.msg "$t"; done
 fi
 # PSD / camera-RAW through the discovered ImageMagick engine (opt-in:
-# install ImageMagick user-level and export FORMATWRIGHT_ENGINE_MAGICK).
-if command -v magick >/dev/null 2>&1 || [ -n "${FORMATWRIGHT_ENGINE_MAGICK:-}" ]; then
+# install ImageMagick user-level and export ANOLE_ENGINE_MAGICK).
+if command -v magick >/dev/null 2>&1 || [ -n "${ANOLE_ENGINE_MAGICK:-}" ]; then
   # PIL cannot write PSD; the magick engine itself generates the fixture.
   magick -size 320x240 gradient:blue-red "$FX/sample.psd"
   for t in png jpg tiff; do run sample.psd "$t"; done

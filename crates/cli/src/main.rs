@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use clap::{Parser, Subcommand, ValueEnum};
-use formatwright_core::{
-    ApplicationStateService, BulkJobAction, BulkJobService, ConversionService, EngineIdentity,
-    ErrorCode, ExecutionMilestone, FormatWrightError, JobCreateRequest, JobExecutionService,
+use anole_core::{
+    AnoleError, ApplicationStateService, BulkJobAction, BulkJobService, ConversionService,
+    EngineIdentity, ErrorCode, ExecutionMilestone, JobCreateRequest, JobExecutionService,
     JobRecord, JobSelectionQuery, JobState, MaintenanceService, Plan, PlanRequest, Probe,
     QueueWindowControl, ReportService, SqliteJobStore, StateBundleOptions,
     chain::{ConversionChain, execute_conversion_chain, find_conversion_chain},
@@ -19,6 +18,7 @@ use formatwright_core::{
     plan_metadata_clean, prepare_conversion, resolve_output_path, staged_output_candidates,
     structured_format_hint, verify_engine_pack, verify_engine_pack_with_keyring,
 };
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -28,7 +28,7 @@ static ERROR_OUTPUT_ALREADY_RENDERED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "formatwright",
+    name = "anole",
     version,
     about = "Local-first file conversion with explainable plans and validation"
 )]
@@ -577,7 +577,7 @@ async fn main() -> ExitCode {
 }
 
 #[allow(clippy::too_many_lines)]
-async fn run(cli: Cli) -> Result<(), FormatWrightError> {
+async fn run(cli: Cli) -> Result<(), AnoleError> {
     match cli.command {
         Command::Doctor => {
             let report = doctor().await;
@@ -630,23 +630,23 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
             } else if input
                 .extension()
                 .and_then(|value| value.to_str())
-                .and_then(formatwright_core::inspect::magick_format_id)
+                .and_then(anole_core::inspect::magick_format_id)
                 .is_some()
             {
                 let magick = inspect_engine("magick").await?;
-                formatwright_core::inspect::inspect_magick_image(input, &magick).await?
+                anole_core::inspect::inspect_magick_image(input, &magick).await?
             } else if input
                 .extension()
                 .and_then(|value| value.to_str())
                 .is_some_and(|value| value.eq_ignore_ascii_case("msg"))
             {
-                formatwright_core::msg::inspect_msg(&input).await?
+                anole_core::msg::inspect_msg(&input).await?
             } else if input
                 .extension()
                 .and_then(|value| value.to_str())
                 .is_some_and(|value| value.eq_ignore_ascii_case("mbox"))
             {
-                formatwright_core::mbox::inspect_mbox(&input).await?
+                anole_core::mbox::inspect_mbox(&input).await?
             } else {
                 let ffprobe = inspect_engine("ffprobe").await?;
                 inspect_media(input, &ffprobe).await?
@@ -820,25 +820,25 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                 }
             };
             if dry_run && queue_only {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Plan,
+                    anole_core::Stage::Plan,
                     "--dry-run and --queue-only cannot be combined",
                     "Choose either Plan preview or durable queueing.",
                 ));
             }
             if queue_only && timeout_seconds.is_some() {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Plan,
+                    anole_core::Stage::Plan,
                     "--timeout-seconds applies only to immediate execution",
                     "Remove the timeout when queueing, or execute the conversion immediately.",
                 ));
             }
             if idempotency_key.is_some() && !queue_only {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Plan,
+                    anole_core::Stage::Plan,
                     "--idempotency-key applies only to --queue-only submissions",
                     "Add --queue-only or remove the idempotency key.",
                 ));
@@ -860,11 +860,11 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                 );
             }
 
-            // 内置 EML 导出（formatwright.eml）在 runner 的外部引擎分派之外，
+            // 内置 EML 导出（anole.eml）在 runner 的外部引擎分派之外，
             // 由进程内适配器直接写出 + 验收。
-            if validation_engine.engine_id == formatwright_core::eml::EML_ENGINE_ID {
+            if validation_engine.engine_id == anole_core::eml::EML_ENGINE_ID {
                 let (output_path, report) =
-                    formatwright_core::eml::execute_eml_export(&probe, &plan).await?;
+                    anole_core::eml::execute_eml_export(&probe, &plan).await?;
                 if cli.json {
                     return print_json(&report);
                 }
@@ -1023,11 +1023,11 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                 }
                 JobsCommand::Show { job_id } => {
                     let details = store.get_job_details(job_id)?.ok_or_else(|| {
-                        FormatWrightError::new(
+                        AnoleError::new(
                             ErrorCode::StorageFailed,
-                            formatwright_core::Stage::Store,
+                            anole_core::Stage::Store,
                             format!("Job does not exist: {job_id}"),
-                            "Run `formatwright jobs list` and choose an existing job.",
+                            "Run `anole jobs list` and choose an existing job.",
                         )
                     })?;
                     if cli.json {
@@ -1162,9 +1162,9 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                             std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .map_err(|error| {
-                                    FormatWrightError::new(
+                                    AnoleError::new(
                                         ErrorCode::Internal,
-                                        formatwright_core::Stage::Doctor,
+                                        anole_core::Stage::Doctor,
                                         format!("system clock is before the Unix epoch: {error}"),
                                         "Fix the system clock and retry.",
                                     )
@@ -1172,9 +1172,9 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                                 .as_millis(),
                         )
                         .map_err(|error| {
-                            FormatWrightError::new(
+                            AnoleError::new(
                                 ErrorCode::Internal,
-                                formatwright_core::Stage::Doctor,
+                                anole_core::Stage::Doctor,
                                 format!("system clock overflowed keyring timestamps: {error}"),
                                 "Fix the system clock and retry.",
                             )
@@ -1184,11 +1184,11 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                     None => verify_engine_pack(manifest)?,
                 };
                 if let Some(trust) = &verified.signature_trust
-                    && !matches!(trust, formatwright_core::SignatureTrust::Trusted { .. })
+                    && !matches!(trust, anole_core::SignatureTrust::Trusted { .. })
                 {
-                    return Err(FormatWrightError::new(
+                    return Err(AnoleError::new(
                         ErrorCode::PolicyBlocked,
-                        formatwright_core::Stage::Doctor,
+                        anole_core::Stage::Doctor,
                         format!("engine signature is not trusted: {trust:?}"),
                         "Import a pack signed by a current Anole release key (ADR-0011).",
                     ));
@@ -1289,9 +1289,9 @@ async fn run(cli: Cli) -> Result<(), FormatWrightError> {
                         if cli.json {
                             ERROR_OUTPUT_ALREADY_RENDERED.store(true, Ordering::Relaxed);
                         }
-                        Err(FormatWrightError::new(
+                        Err(AnoleError::new(
                             ErrorCode::StorageFailed,
-                            formatwright_core::Stage::Store,
+                            anole_core::Stage::Store,
                             "The state database failed integrity checks",
                             "Keep the database unchanged and restore a validated backup.",
                         ))
@@ -1392,7 +1392,7 @@ fn queue_stored_plan(
     idempotency_key: Option<&str>,
     state_db: Option<PathBuf>,
     json: bool,
-) -> Result<(), FormatWrightError> {
+) -> Result<(), AnoleError> {
     let database_path = state_db.unwrap_or_else(default_state_db);
     let mut store = open_job_store(&database_path)?;
     let resolved_output = resolve_output_path(plan)?;
@@ -1444,7 +1444,7 @@ fn print_chain(chain: &ConversionChain) {
     }
 }
 
-fn print_chain_json(chain: &ConversionChain) -> Result<(), FormatWrightError> {
+fn print_chain_json(chain: &ConversionChain) -> Result<(), AnoleError> {
     #[derive(serde::Serialize)]
     struct ChainJson {
         chained: bool,
@@ -1479,7 +1479,7 @@ async fn execute_chain_stored(
     chain: &ConversionChain,
     timeout_seconds: Option<u64>,
     json: bool,
-) -> Result<(), FormatWrightError> {
+) -> Result<(), AnoleError> {
     let cancellation = CancellationToken::new();
     let signal_token = cancellation.clone();
     tokio::spawn(async move {
@@ -1521,7 +1521,7 @@ async fn execute_stored_plan(
     state_db: Option<PathBuf>,
     timeout_seconds: Option<u64>,
     json: bool,
-) -> Result<(), FormatWrightError> {
+) -> Result<(), AnoleError> {
     let database_path = state_db.unwrap_or_else(default_state_db);
     let mut store = open_job_store(&database_path)?;
     let reports = ReportService::new(default_reports_directory(&database_path));
@@ -1577,12 +1577,12 @@ async fn run_image_batch(
     pause_after: Option<usize>,
     state_db: Option<PathBuf>,
     json: bool,
-) -> Result<(), FormatWrightError> {
+) -> Result<(), AnoleError> {
     let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
     if !matches!(target.as_str(), "jpg" | "jpeg" | "png" | "webp" | "avif") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
-            formatwright_core::Stage::Plan,
+            anole_core::Stage::Plan,
             format!("Image batch target is unsupported: {target}"),
             "Choose JPG, PNG, WebP, or AVIF.",
         ));
@@ -1591,52 +1591,52 @@ async fn run_image_batch(
         || quality.is_some_and(|value| !(1..=100).contains(&value))
         || (target == "png" && quality.is_some())
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
-            formatwright_core::Stage::Plan,
+            anole_core::Stage::Plan,
             "Image batch settings are outside the supported target contract",
             "Use width 1–16384, quality 1–100, and omit quality for PNG.",
         ));
     }
     let input_root = input_root.canonicalize().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
-            formatwright_core::Stage::Inspect,
+            anole_core::Stage::Inspect,
             format!("Input directory is unavailable: {}", input_root.display()),
             "Choose a readable local directory.",
         )
         .with_diagnostic(error.to_string())
     })?;
     if !input_root.is_dir() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
-            formatwright_core::Stage::Inspect,
+            anole_core::Stage::Inspect,
             "Batch input is not a directory",
             "Choose a directory containing images.",
         ));
     }
     std::fs::create_dir_all(output_root).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
-            formatwright_core::Stage::Store,
+            anole_core::Stage::Store,
             format!("Cannot create output directory: {}", output_root.display()),
             "Choose a writable output directory.",
         )
         .with_diagnostic(error.to_string())
     })?;
     let output_root = output_root.canonicalize().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
-            formatwright_core::Stage::Store,
+            anole_core::Stage::Store,
             "Cannot resolve the image batch output directory",
             "Choose a writable local directory.",
         )
         .with_diagnostic(error.to_string())
     })?;
     if output_root == input_root {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
-            formatwright_core::Stage::Plan,
+            anole_core::Stage::Plan,
             "Batch output directory cannot equal the input directory",
             "Choose a separate output root.",
         ));
@@ -1661,9 +1661,9 @@ async fn run_image_batch(
     let mut skipped = enumerator_skipped;
     for input in inputs {
         let relative = input.strip_prefix(&input_root).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
-                formatwright_core::Stage::Plan,
+                anole_core::Stage::Plan,
                 "Enumerated image escaped the batch root",
                 "Report this internal error.",
             )
@@ -1676,15 +1676,15 @@ async fn run_image_batch(
             &mut reserved_names,
         )?;
         if output.exists() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::OutputConflict,
-                formatwright_core::Stage::Plan,
+                anole_core::Stage::Plan,
                 format!("Batch output already exists: {}", output.display()),
                 "Choose an empty output directory or another conflict policy.",
             ));
         }
         let probe = match inspect_media(&input, &ffprobe).await {
-            Ok(probe) if probe.format.kind == formatwright_core::FormatKind::Image => probe,
+            Ok(probe) if probe.format.kind == anole_core::FormatKind::Image => probe,
             Ok(_) | Err(_) => {
                 skipped = skipped.saturating_add(1);
                 continue;
@@ -1704,9 +1704,9 @@ async fn run_image_batch(
         };
         if let Some(parent) = output.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
-                    formatwright_core::Stage::Store,
+                    anole_core::Stage::Store,
                     format!("Cannot create batch directory: {}", parent.display()),
                     "Choose a writable output directory.",
                 )
@@ -1802,9 +1802,9 @@ async fn run_image_batch(
                     JobState::Warning => warning = warning.saturating_add(1),
                     JobState::Failed => failed = failed.saturating_add(1),
                     _ => {
-                        return Err(FormatWrightError::new(
+                        return Err(AnoleError::new(
                             ErrorCode::Internal,
-                            formatwright_core::Stage::Store,
+                            anole_core::Stage::Store,
                             "Report persistence produced a non-terminal batch state",
                             "Run jobs recover and inspect the affected job.",
                         ));
@@ -1862,7 +1862,7 @@ async fn run_image_batch(
 fn enumerate_image_inputs(
     input_root: &Path,
     output_root: &Path,
-) -> Result<(Vec<PathBuf>, usize, usize), FormatWrightError> {
+) -> Result<(Vec<PathBuf>, usize, usize), AnoleError> {
     let mut directories = vec![input_root.to_owned()];
     let mut inputs = Vec::new();
     let mut discovered = 0_usize;
@@ -1870,9 +1870,9 @@ fn enumerate_image_inputs(
     while let Some(directory) = directories.pop() {
         let mut entries = std::fs::read_dir(&directory)
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Inspect,
+                    anole_core::Stage::Inspect,
                     format!("Cannot enumerate directory: {}", directory.display()),
                     "Check directory permissions and retry.",
                 )
@@ -1880,9 +1880,9 @@ fn enumerate_image_inputs(
             })?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Inspect,
+                    anole_core::Stage::Inspect,
                     "Cannot read a directory entry",
                     "Check directory permissions and retry.",
                 )
@@ -1892,9 +1892,9 @@ fn enumerate_image_inputs(
         for entry in entries.into_iter().rev() {
             let path = entry.path();
             let file_type = entry.file_type().map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
-                    formatwright_core::Stage::Inspect,
+                    anole_core::Stage::Inspect,
                     format!("Cannot inspect directory entry: {}", path.display()),
                     "Check filesystem permissions and retry.",
                 )
@@ -1937,14 +1937,14 @@ fn unique_batch_output(
     relative_input: &Path,
     target_extension: &str,
     reserved: &mut HashSet<String>,
-) -> Result<PathBuf, FormatWrightError> {
+) -> Result<PathBuf, AnoleError> {
     let stem = relative_input
         .file_stem()
         .and_then(|value| value.to_str())
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
-                formatwright_core::Stage::Plan,
+                anole_core::Stage::Plan,
                 "Batch input filename is not valid Unicode",
                 "Rename the file and retry.",
             )
@@ -1965,9 +1965,9 @@ fn unique_batch_output(
             .join(format!("{stem}.from-{source_extension}.{target_extension}"));
         key = batch_output_key(&output);
         if !reserved.insert(key) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::OutputConflict,
-                formatwright_core::Stage::Plan,
+                anole_core::Stage::Plan,
                 format!("Batch outputs collide at: {}", output.display()),
                 "Rename duplicate source stems or choose another output directory.",
             ));
@@ -1996,13 +1996,13 @@ fn is_document_path(path: &Path) -> bool {
         })
 }
 
-async fn wait_for_start_gate(path: &Path) -> Result<(), FormatWrightError> {
+async fn wait_for_start_gate(path: &Path) -> Result<(), AnoleError> {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     while !path.is_file() {
         if tokio::time::Instant::now() >= deadline {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::ResourceExhausted,
-                formatwright_core::Stage::Store,
+                anole_core::Stage::Store,
                 "Timed out waiting for the queue start gate",
                 "Create the test gate file or run jobs run without --start-gate.",
             ));
@@ -2012,14 +2012,14 @@ async fn wait_for_start_gate(path: &Path) -> Result<(), FormatWrightError> {
     Ok(())
 }
 
-fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, FormatWrightError> {
+fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, AnoleError> {
     if let Some(parent) = database_path.parent()
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent).map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::StorageFailed,
-                formatwright_core::Stage::Store,
+                anole_core::Stage::Store,
                 format!("Cannot create state directory: {}", parent.display()),
                 "Choose a writable state database path.",
             )
@@ -2037,19 +2037,19 @@ fn transition_stored_job(
     next_state: JobState,
     code: &str,
     cleanup_staged: bool,
-) -> Result<JobRecord, FormatWrightError> {
+) -> Result<JobRecord, AnoleError> {
     let job = store.get_job(job_id)?.ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
-            formatwright_core::Stage::Store,
+            anole_core::Stage::Store,
             format!("Job does not exist: {job_id}"),
-            "Run `formatwright jobs list` and choose an existing job.",
+            "Run `anole jobs list` and choose an existing job.",
         )
     })?;
     if !allowed_states.contains(&job.state) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
-            formatwright_core::Stage::Store,
+            anole_core::Stage::Store,
             format!("Job action is not valid while the job is {:?}", job.state),
             "Refresh the job and choose an action allowed for its current state.",
         ));
@@ -2060,7 +2060,7 @@ fn transition_stored_job(
     store.transition(job_id, next_state, code)
 }
 
-fn print_job_action(job: &JobRecord, json: bool) -> Result<(), FormatWrightError> {
+fn print_job_action(job: &JobRecord, json: bool) -> Result<(), AnoleError> {
     if json {
         print_json(job)
     } else {
@@ -2088,11 +2088,11 @@ fn init_tracing(json: bool) {
     }
 }
 
-fn print_json(value: &impl serde::Serialize) -> Result<(), FormatWrightError> {
+fn print_json(value: &impl serde::Serialize) -> Result<(), AnoleError> {
     let rendered = serde_json::to_string_pretty(value).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
-            formatwright_core::Stage::Commit,
+            anole_core::Stage::Commit,
             "Unable to serialize command output",
             "Report this internal error.",
         )
@@ -2102,7 +2102,7 @@ fn print_json(value: &impl serde::Serialize) -> Result<(), FormatWrightError> {
     Ok(())
 }
 
-fn print_probe(probe: &formatwright_core::Probe) {
+fn print_probe(probe: &anole_core::Probe) {
     println!("input: {}", probe.artifact.display_path);
     println!(
         "detected: {} ({:?}, confidence {:.0}%)",
@@ -2127,7 +2127,7 @@ fn print_probe(probe: &formatwright_core::Probe) {
     }
 }
 
-fn print_plan(plan: &formatwright_core::Plan) {
+fn print_plan(plan: &anole_core::Plan) {
     println!("plan: {}", plan.plan_hash);
     println!("target: {}", plan.target_format);
     if let Some(output) = &plan.output_path {
@@ -2185,9 +2185,7 @@ fn default_state_db() -> PathBuf {
     #[cfg(windows)]
     {
         if let Some(root) = env::var_os("LOCALAPPDATA") {
-            return PathBuf::from(root)
-                .join("FormatWright")
-                .join("jobs.sqlite3");
+            return PathBuf::from(root).join("Anole").join("jobs.sqlite3");
         }
     }
 
@@ -2197,17 +2195,15 @@ fn default_state_db() -> PathBuf {
             return PathBuf::from(root)
                 .join("Library")
                 .join("Application Support")
-                .join("FormatWright")
+                .join("Anole")
                 .join("jobs.sqlite3");
         }
     }
 
     if let Some(root) = env::var_os("XDG_DATA_HOME") {
-        return PathBuf::from(root)
-            .join("formatwright")
-            .join("jobs.sqlite3");
+        return PathBuf::from(root).join("anole").join("jobs.sqlite3");
     }
-    PathBuf::from(".formatwright-jobs.sqlite3")
+    PathBuf::from(".anole-jobs.sqlite3")
 }
 
 fn default_reports_directory(database_path: &Path) -> PathBuf {

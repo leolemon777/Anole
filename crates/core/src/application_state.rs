@@ -16,7 +16,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use crate::domain::ValidationReport;
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::maintenance::{MaintenanceService, RestorePreflightReport};
 use crate::preset::PresetLibrary;
 
@@ -466,7 +466,7 @@ impl ApplicationStateService {
             ));
         }
         let stage = tempfile::Builder::new()
-            .prefix(".formatwright-state-backup-")
+            .prefix(".anole-state-backup-")
             .tempdir_in(&self.layout.root_directory)
             .map_err(state_io_error)?;
         let portable_database = stage.path().join("jobs.sqlite3");
@@ -594,7 +594,7 @@ impl ApplicationStateService {
         }
         fs::create_dir_all(&self.layout.root_directory).map_err(state_io_error)?;
         let stage = tempfile::Builder::new()
-            .prefix(".formatwright-state-restore-")
+            .prefix(".anole-state-restore-")
             .tempdir_in(&self.layout.root_directory)
             .map_err(state_io_error)?;
         let stage_root = stage.path().to_path_buf();
@@ -1641,8 +1641,8 @@ fn current_unix_seconds() -> Result<u64> {
         })
 }
 
-fn state_error(message: impl Into<String>) -> FormatWrightError {
-    FormatWrightError::new(
+fn state_error(message: impl Into<String>) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Store,
         message,
@@ -1651,12 +1651,12 @@ fn state_error(message: impl Into<String>) -> FormatWrightError {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn state_io_error(error: std::io::Error) -> FormatWrightError {
+fn state_io_error(error: std::io::Error) -> AnoleError {
     state_error("Unable to read or persist application state").with_diagnostic(error.to_string())
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn state_zip_error(error: zip::result::ZipError) -> FormatWrightError {
+fn state_zip_error(error: zip::result::ZipError) -> AnoleError {
     state_error("Application-state bundle is not a valid supported ZIP archive")
         .with_diagnostic(error.to_string())
 }

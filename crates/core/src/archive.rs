@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use flate2::read::GzDecoder;
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde_json::{Value, json};
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -14,7 +14,7 @@ use crate::domain::{
     PlanStep, Probe, ProbeEvidence, ReportRedaction, SCHEMA_VERSION, StreamKind, StreamProbe,
     ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
@@ -117,7 +117,7 @@ impl ArchiveEntry {
             || candidate.is_absolute()
             || self.name.contains(':')
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Inspect,
                 format!("Archive entry has an unsafe path: {}", self.name),
@@ -201,7 +201,7 @@ pub(crate) fn read_7z_entries(path: &Path) -> Result<Vec<ArchiveEntry>> {
         .map_err(|error| input_error(path, error))?;
     let mut entries = Vec::new();
     let mut total: u64 = 0;
-    let mut rejected: Option<FormatWrightError> = None;
+    let mut rejected: Option<AnoleError> = None;
     reader
         .for_each_entries(|entry, data| {
             let mut name = entry.name().replace('\\', "/");
@@ -237,7 +237,7 @@ pub(crate) fn read_7z_entries(path: &Path) -> Result<Vec<ArchiveEntry>> {
 
 fn enforce_archive_limits(entry_count: usize, total_bytes: u128) -> Result<()> {
     if entry_count > MAX_ARCHIVE_ENTRIES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "Archive exceeds the 10,000-entry alpha limit",
@@ -245,7 +245,7 @@ fn enforce_archive_limits(entry_count: usize, total_bytes: u128) -> Result<()> {
         ));
     }
     if total_bytes > u128::from(MAX_ARCHIVE_TOTAL_BYTES) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "Archive expanded size exceeds the 2 GiB alpha limit",
@@ -265,8 +265,8 @@ pub(crate) fn entry_manifest_digest(entries: &[ArchiveEntry]) -> String {
     format!("blake3:{}", blake3::hash(joined.as_bytes()).to_hex())
 }
 
-fn input_error(path: &Path, error: impl std::fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_error(path: &Path, error: impl std::fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Unable to read archive {}", path.display()),
@@ -294,7 +294,7 @@ pub async fn inspect_archive(path: impl AsRef<Path>) -> Result<Probe> {
             _ => read_targz_entries(&owned)?,
         };
         let total: u64 = entries.iter().map(|entry| entry.size).sum();
-        Ok::<_, FormatWrightError>((entries, total))
+        Ok::<_, AnoleError>((entries, total))
     })
     .await
     .map_err(|error| worker_error(&error))??;
@@ -343,7 +343,7 @@ pub async fn inspect_archive(path: impl AsRef<Path>) -> Result<Probe> {
         metadata: BTreeMap::new(),
         warnings: Vec::new(),
         evidence: ProbeEvidence {
-            engine_id: "formatwright.archive-inspector".to_owned(),
+            engine_id: "anole.archive-inspector".to_owned(),
             engine_version: env!("CARGO_PKG_VERSION").to_owned(),
             engine_binary_sha256: None,
         },
@@ -352,8 +352,8 @@ pub async fn inspect_archive(path: impl AsRef<Path>) -> Result<Probe> {
     })
 }
 
-fn worker_error(error: &tokio::task::JoinError) -> FormatWrightError {
-    FormatWrightError::new(
+fn worker_error(error: &tokio::task::JoinError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Internal,
         Stage::Inspect,
         "Archive inspection worker failed",
@@ -362,8 +362,8 @@ fn worker_error(error: &tokio::task::JoinError) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message.to_owned(),
@@ -408,8 +408,8 @@ pub fn plan_archive_conversion(
             "Archive conversion must be between zip, tar.gz, and 7z",
         ));
     }
-    if engine.engine_id != "formatwright.archive" {
-        return Err(FormatWrightError::new(
+    if engine.engine_id != "anole.archive" {
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The archive Plan was given the wrong engine",
@@ -428,7 +428,7 @@ pub fn plan_archive_conversion(
     let step = PlanStep {
         step_id: "step-1".to_owned(),
         capability_id: format!(
-            "formatwright.archive.{}-to-{}.native",
+            "anole.archive.{}-to-{}.native",
             probe.format.id, normalized_target
         ),
         engine: engine.clone(),
@@ -538,7 +538,7 @@ where
     header.set_gid(0);
     header.set_cksum();
     builder.append_data(header, name, data).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Unable to append an entry to the tar.gz output",
@@ -590,7 +590,7 @@ pub(crate) fn repack_targz_to_zip(input: &Path, output: &Path) -> Result<()> {
                 .start_file(name, options)
                 .map_err(|error| output_error(output, error))?;
             std::io::copy(&mut entry, &mut writer).map_err(|error| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::ExecutionFailed,
                     Stage::Execute,
                     "Unable to copy an entry into the ZIP output",
@@ -599,7 +599,7 @@ pub(crate) fn repack_targz_to_zip(input: &Path, output: &Path) -> Result<()> {
                 .with_diagnostic(error.to_string())
             })?;
         } else {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Execute,
                 format!("Archive entry {name} is a link or device, not a regular file"),
@@ -657,8 +657,8 @@ pub(crate) fn repack_7z_to_zip(input: &Path, output: &Path) -> Result<()> {
     let mut total: u64 = 0;
     let mut count: usize = 0;
     // The 7z callback returns its own error type, so the first typed
-    // FormatWrightError is captured here and surfaced after the iteration.
-    let mut failure: Option<FormatWrightError> = None;
+    // AnoleError is captured here and surfaced after the iteration.
+    let mut failure: Option<AnoleError> = None;
     reader
         .for_each_entries(|entry, data| {
             if failure.is_some() {
@@ -710,8 +710,8 @@ pub(crate) fn repack_7z_to_zip(input: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-fn output_error(path: &Path, error: impl std::fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn output_error(path: &Path, error: impl std::fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Execute,
         format!("Unable to write archive {}", path.display()),
@@ -881,7 +881,7 @@ pub(crate) fn repack_targz_to_7z(input: &Path, output: &Path) -> Result<()> {
                 .push_archive_entry(record, Some(cursor))
                 .map_err(|error| output_error(output, error))?;
         } else {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Execute,
                 format!("Archive entry {name} is a link or device, not a regular file"),
@@ -903,7 +903,7 @@ pub(crate) fn repack_7z_to_targz(input: &Path, output: &Path) -> Result<()> {
     let out = File::create(output).map_err(|error| output_error(output, error))?;
     let encoder = flate2::write::GzEncoder::new(out, flate2::Compression::default());
     let mut builder = tar::Builder::new(encoder);
-    let mut failure: Option<FormatWrightError> = None;
+    let mut failure: Option<AnoleError> = None;
     let mut buffer = Vec::new();
     reader
         .for_each_entries(|entry, data| {
@@ -1078,14 +1078,14 @@ mod tests {
         let input = directory.path().join("bundle.zip");
         write_zip(&input, &[("a.txt", "alpha")]);
         let probe = inspect_archive(&input).await.expect("zip inspection");
-        let engine = formatwright_engine_sdk::EngineIdentity {
-            engine_id: "formatwright.archive".to_owned(),
+        let engine = anole_engine_sdk::EngineIdentity {
+            engine_id: "anole.archive".to_owned(),
             version: "test".to_owned(),
             binary_path: std::path::PathBuf::from("self.exe"),
             binary_sha256: "0".repeat(64),
             manifest_sha256: None,
             build_configuration: None,
-            certification: formatwright_engine_sdk::Certification::Experimental,
+            certification: anole_engine_sdk::Certification::Experimental,
         };
         let request = crate::domain::PlanRequest {
             target_format: "tar.gz".to_owned(),
@@ -1096,7 +1096,7 @@ mod tests {
         assert_eq!(plan.target_format, "tar.gz");
         assert_eq!(
             plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::ContainerOnly
+            anole_engine_sdk::LossClass::ContainerOnly
         );
         assert!(
             plan.validators

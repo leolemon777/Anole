@@ -88,7 +88,7 @@ Clean-VM 认证证据（VOC 4.2 / R-008·R-009 Closed）已有专属脚本与文
 
 **方案：**
 1. 负责人完成证书采购（DECISION-1）；密钥进 CI secrets 的路线沿用 updater 密钥的教训：**只经 `printf | gh secret set`，绝不经 cmd shim**（见实现笔记 2026-09-03 事故）。
-2. `release-candidate.yml` 增加签名步骤：`signtool sign /fd SHA256 /tr <TSA> /td SHA256` 对 `formatwright-desktop.exe`、NSIS 安装器、uninstaller 依次签名；签名后 `signtool verify /pa /all` 断言。
+2. `release-candidate.yml` 增加签名步骤：`signtool sign /fd SHA256 /tr <TSA> /td SHA256` 对 `anole-desktop.exe`、NSIS 安装器、uninstaller 依次签名；签名后 `signtool verify /pa /all` 断言。
 3. `docs/release/WINDOWS_PACKAGING.md` 与 `RELEASE_CHECKLIST.md` 增加签名档位列；`SHA256SUMS` 签名后重生成。
 
 **验收：**
@@ -160,10 +160,10 @@ Clean-VM 认证证据（VOC 4.2 / R-008·R-009 Closed）已有专属脚本与文
 
 ### E-05 文件夹右键整夹转换
 
-**现状：** `explorer-verbs.json` 仅有 `Directory\shell\FormatWright` Open-in；`ShellConvertCoordinator` 不接受目录输入。拖目录进窗口可以整夹批量（FolderPreview + 磁盘预算 + 原子入队），右键不行。
+**现状：** `explorer-verbs.json` 仅有 `Directory\shell\Anole` Open-in；`ShellConvertCoordinator` 不接受目录输入。拖目录进窗口可以整夹批量（FolderPreview + 磁盘预算 + 原子入队），右键不行。
 
 **方案：**
-1. `explorer-verbs.json` / `windows-explorer-hooks.nsh` 增加 `Directory\shell\FormatWright.ConvertTo…` 系列动词（推荐目标集合与文件类一致：图片夹→JPG/WebP、PDF 夹→PNG 等；枚举哪几个动词在实现前以「文件夹内容主体类型」抽样建议定稿——不静默全注册 17 个，避免菜单爆炸，**定稿清单实现前给负责人过目**）。
+1. `explorer-verbs.json` / `windows-explorer-hooks.nsh` 增加 `Directory\shell\Anole.ConvertTo…` 系列动词（推荐目标集合与文件类一致：图片夹→JPG/WebP、PDF 夹→PNG 等；枚举哪几个动词在实现前以「文件夹内容主体类型」抽样建议定稿——不静默全注册 17 个，避免菜单爆炸，**定稿清单实现前给负责人过目**）。
 2. `shell_convert.rs`：目录输入放行,新增 `classify_directory_for_convert`（浅层枚举上限如 10,000 项防深目录卡死）→ 按多数可转类型选目标 → 复用桌面 FolderPreview 的磁盘预检与原子入队；异构不可转文件**显式列入 skipped 清单**（toast + Jobs 页可见），不静默失败。
 3. 右键整夹 = 批准语义（与单文件 Convert to X 同等例外，KD-2 沿用），但仍走持久队列 + 验证 + no-clobber。
 
@@ -179,7 +179,7 @@ Clean-VM 认证证据（VOC 4.2 / R-008·R-009 Closed）已有专属脚本与文
 **现状：** 17 个 verb 写死在 `explorer-verbs.json`，NSIS 安装时静态注册 HKLM；用户不能改默认（VOC 2.3「改一次，右键跟着变」未达）。
 
 **方案：**
-1. 注册职责迁移：NSIS 只保留 Open-in 两把键（回退保底）；全部 Convert verbs 改由**应用首启/设置页写入 HKCU**（`HKCU\Software\Classes\<ext>\shell\FormatWright.*`），增删改即时生效。
+1. 注册职责迁移：NSIS 只保留 Open-in 两把键（回退保底）；全部 Convert verbs 改由**应用首启/设置页写入 HKCU**（`HKCU\Software\Classes\<ext>\shell\Anole.*`），增删改即时生效。
 2. Settings 页新增「右键菜单」区：每个动词可改目标格式/绑定预设（默认「小 JPG」「PDF 每页 PNG」等 PresetLibrary 预设）、可启停、可恢复默认；导出/导入随 PresetLibrary 现有通道。
 3. E-02 的 Win11 顶层菜单从同一数据源读取（避免两套配置）。
 

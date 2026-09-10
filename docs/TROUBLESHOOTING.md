@@ -5,7 +5,7 @@
 
 ## Start with Doctor
 
-Run `formatwright doctor --json` or open **Engines** in the desktop app. A missing engine is not downloaded automatically. Import a reviewed local pack, configure an exact `FORMATWRIGHT_ENGINE_<NAME>` path before startup, or install the engine through its official distribution channel.
+Run `anole doctor --json` or open **Engines** in the desktop app. A missing engine is not downloaded automatically. Import a reviewed local pack, configure an exact `ANOLE_ENGINE_<NAME>` path before startup, or install the engine through its official distribution channel.
 
 If an imported pack becomes invalid, restore it at the recorded path or import an intact compatible pack. Anole rejects wrong architecture/protocol, missing license files, path escapes, tampered binaries, and a second manifest claiming an already registered executable name.
 
@@ -31,11 +31,11 @@ The currently tested development fallback is libheif `heif-convert`. A libvips b
 
 ## Interrupted jobs and partial files
 
-Run `formatwright jobs recover --state-db PATH` after an abnormal CLI exit. Desktop startup performs the equivalent interruption step automatically. Recovery deletes only deterministic staged files belonging to known job IDs and never the selected destination.
+Run `anole jobs recover --state-db PATH` after an abnormal CLI exit. Desktop startup performs the equivalent interruption step automatically. Recovery deletes only deterministic staged files belonging to known job IDs and never the selected destination.
 
 ## Database integrity and restore
 
-Run `formatwright --state-db PATH maintenance integrity-check` before attempting state repair. The check covers SQLite pages, foreign keys, migrations, queue reservations/events, and stored Plan hashes. Do not delete or recreate the database after a read error.
+Run `anole --state-db PATH maintenance integrity-check` before attempting state repair. The check covers SQLite pages, foreign keys, migrations, queue reservations/events, and stored Plan hashes. Do not delete or recreate the database after a read error.
 
 Create a portable copy with `maintenance backup BACKUP.sqlite3`; an existing backup path is refused. `maintenance restore BACKUP.sqlite3` only validates and migrates a temporary copy. Stop queue execution, close other Anole processes, and add `--yes` only after preflight succeeds. A confirmed restore first stores a pre-restore safety snapshot under `backups`. A schema newer than the running application is intentionally refused; install an equal or newer Anole release instead of forcing a downgrade.
 

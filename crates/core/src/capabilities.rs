@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::doctor::{EngineDiscoveryPolicy, inspect_engine_with_policy};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 const KNOWN_TARGETS: [&str; 25] = [
     "jpg", "png", "webp", "avif", "tiff", "bmp", "mp4", "mp3", "m4a", "wav", "gif", "pdf", "docx",
@@ -169,7 +169,7 @@ pub async fn ensure_route_available(
     let snapshot = capability_snapshot_for_input(input, policy).await;
     let normalized = normalize_target(target);
     let route = snapshot.route(&normalized).cloned().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("Unknown target format: {normalized}"),
@@ -190,12 +190,7 @@ pub async fn ensure_route_available(
             "Open Engines and install or import the required verified pack.",
         )
     };
-    Err(FormatWrightError::new(
-        code,
-        Stage::Plan,
-        route.message,
-        action,
-    ))
+    Err(AnoleError::new(code, Stage::Plan, route.message, action))
 }
 
 pub(crate) fn supported_targets(input: Option<&str>) -> BTreeSet<&'static str> {
@@ -211,8 +206,8 @@ pub(crate) fn supported_targets(input: Option<&str>) -> BTreeSet<&'static str> {
         "html" | "htm" => &["pdf", "docx", "epub", "md"],
         "md" | "markdown" | "txt" | "text" => &["pdf", "docx", "epub"],
         "zip" => &["tar.gz", "7z"],
-        // EML/MSG 邮件导出走内置适配器（formatwright.eml /
-        // formatwright.msg）；pdf/docx/epub 由主链路经 html→* 完成。
+        // EML/MSG 邮件导出走内置适配器（anole.eml /
+        // anole.msg）；pdf/docx/epub 由主链路经 html→* 完成。
         "eml" | "msg" => &["txt", "html", "md"],
         // C3：MBOX 聚合。txt/html/md 纯内置；pdf = 逐封 html→pdf lane + qpdf 合并。
         "mbox" => &["txt", "html", "pdf", "md"],

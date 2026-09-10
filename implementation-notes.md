@@ -8,7 +8,7 @@
 - Core suite natively: 214 passed / 0 failed - the Windows symlink-privilege failure class does not exist here.
 
 ### OCR gap CLOSED (G-24)
-- e2e on Linux: image -> txt validation Pass (OCR_TEXT_NONEMPTY); pdf-ocr validation Pass with the extracted text matching the fixture exactly (OCR TEST ELECTRIC 440010147700). Engine resolution via FORMATWRIGHT_ENGINE_TESSERACT; chi-sim available for Chinese documents.
+- e2e on Linux: image -> txt validation Pass (OCR_TEXT_NONEMPTY); pdf-ocr validation Pass with the extracted text matching the fixture exactly (OCR TEST ELECTRIC 440010147700). Engine resolution via ANOLE_ENGINE_TESSERACT; chi-sim available for Chinese documents.
 
 ### Archive family complete
 - tar.gz <-> 7z joins zip <-> tar.gz and zip <-> 7z: all three containers now interconvert in memory with manifest conservation. Windows e2e: tar.gz -> 7z -> tar.gz round trip byte-exact.
@@ -38,7 +38,7 @@
 - **G-24 OCR**:
   - Image -> txt operation-free route: png/jpg/jpeg -> txt via tesseract (`tesseract <in> stdout -l eng --psm 3`; stdout mode avoids tesseract's auto `.txt` suffix). New `ocr.rs` (`plan_image_ocr`, `plan_pdf_ocr`, `validate_ocr_output`). Step arguments use `ocr_mode` (not `operation`) so the image lane stays off the qpdf operation dispatch. Acceptance: `OCR_TEXT_NONEMPTY` (required; at least one alphanumeric token). `OCR_CONFIDENCE` was descoped (tesseract does not print per-word confidence to stdout by default).
   - `pdf-ocr` operation: per page `pdftoppm -f N -l N -r 150 -png` into a staging tempdir, tesseract per page, concatenated txt. Acceptance: `OCR_PAGE_COVERAGE` (processed pages == pdfinfo page count, required) + `OCR_TEXT_NONEMPTY`.
-  - doctor discovery list + `FORMATWRIGHT_ENGINE_TESSERACT` env (generic env plumbing already existed). CLI: `--operation pdf-ocr`; images just use `--to txt`.
+  - doctor discovery list + `ANOLE_ENGINE_TESSERACT` env (generic env plumbing already existed). CLI: `--operation pdf-ocr`; images just use `--to txt`.
 - **G-25 pdf-metadata**: `apply_pdf_metadata(input_bytes, title, author)` performs a PDF incremental update in-process (zero new deps): parses the last `startxref`, locates the old trailer, copies `/Root`, appends a new `/Info` object + one-entry xref subsection + new trailer with `/Prev` and `/Info` pointing at the new object. Acceptance: `PDF_METADATA_TITLE`/`PDF_METADATA_AUTHOR` (required, pdfinfo-observed) + page-count conservation. CLI `--metadata-title/--metadata-author`. `PlanRequest` gained `metadata_title`/`metadata_author` (serde default; exhaustive literals in cli/main.rs and planner.rs tests updated).
 - **7z archive**: `sevenz-rust = "0.6"` (workspace + core). archive.rs: `.7z` magic `37 7A BC AF 27 1C` recognition, `read_7z_entries` (drains entries through a counting discard writer; directory names normalized to trailing `/` so ZIP manifests stay comparable), `repack_zip_to_7z` / `repack_7z_to_zip`. Planning/capabilities/workflow/runner extended; acceptance reuses `ARCHIVE_ENTRY_COUNT`/`ARCHIVE_ENTRY_MANIFEST`.
 
@@ -52,13 +52,13 @@
 - `target
 un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (unchanged baseline; two of the +tests belong to the parallel document agent).
 - `targetmt-fix.bat`: FMT_CLEAN; clippy zero warnings for the files touched here (document.rs warnings belong to the parallel wave).
-- E2E (debug CLI, engines via FORMATWRIGHT_ENGINE_*):
+- E2E (debug CLI, engines via ANOLE_ENGINE_*):
   - pdf-metadata on a soffice-produced 1-page PDF: `pass` with `PDF_OPS_PAGE_COUNT`, `PDF_METADATA_TITLE`, `PDF_METADATA_AUTHOR` all pass; `pdfinfo` independently reports `Title: ELECTRIC Title 440010147700`, `Author: Anole e2e`, `Pages: 1`; `qpdf --check` reports no syntax errors.
   - zip -> 7z -> zip round trip: both legs pass `ARCHIVE_ENTRY_COUNT`/`ARCHIVE_ENTRY_MANIFEST`; python zipfile confirms identical (name,size) inventory.
 - **OCR e2e pending tesseract install** (`E:\DevCaches\Tesseract-OCR	esseract.exe` not present). Rerun after install:
-  - `set FORMATWRIGHT_ENGINE_TESSERACT=E:\DevCaches\Tesseract-OCR	esseract.exe`
-  - image lane: `formatwright convert ocr.png --to txt --output ocr.txt` (PIL fixture: white 800x300 PNG containing `OCR TEST ELECTRIC 440010147700`).
-  - pdf lane: `formatwright convert scan.pdf --operation pdf-ocr --to txt --output scan.txt`.
+  - `set ANOLE_ENGINE_TESSERACT=E:\DevCaches\Tesseract-OCR	esseract.exe`
+  - image lane: `anole convert ocr.png --to txt --output ocr.txt` (PIL fixture: white 800x300 PNG containing `OCR TEST ELECTRIC 440010147700`).
+  - pdf lane: `anole convert scan.pdf --operation pdf-ocr --to txt --output scan.txt`.
   - Expect `OCR_TEXT_NONEMPTY` pass; pdf lane additionally `OCR_PAGE_COVERAGE`.
 
 ### Risks / Follow-up
@@ -76,8 +76,8 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 - **API polish** (subagent + main): malformed JSON bodies now answer the structured {code,stage,message,action} shape; CORS layer (incl. OPTIONS preflight) added so website/demo.html can drive the loopback API from file://.
 - **G-34** (subagent): CI fmt collapsed to the Linux job, macOS runs the SBOM script, and doctor's known_install_location generalized to macOS Chromium bundle layouts (+2 tests).
 - **G-35**: website/demo.html (receipt-style API demo, curl-verified contract).
-- **LibreOffice 26.2.4** installed to E:\DevCaches\LibreOffice (MSI administrative image, no admin rights) with FORMATWRIGHT_ENGINE_SOFFICE pointing at soffice.com (console shim - soffice.exe hangs GUI-substyle on --version). Runner office filter map extended for ODF/RTF flavors. ODT->PDF e2e: LibreOffice-generated ODT converts with validation Warning and a verified text layer. Note: an administrative-image soffice is fine for headless conversion, but a normal installation is still the supported posture for releases.
-- Updater release keypair rotated (strong random password stored beside the key, both git-ignored); website repo/download links now point at github.com/leolemon777/FormatWright.
+- **LibreOffice 26.2.4** installed to E:\DevCaches\LibreOffice (MSI administrative image, no admin rights) with ANOLE_ENGINE_SOFFICE pointing at soffice.com (console shim - soffice.exe hangs GUI-substyle on --version). Runner office filter map extended for ODF/RTF flavors. ODT->PDF e2e: LibreOffice-generated ODT converts with validation Warning and a verified text layer. Note: an administrative-image soffice is fine for headless conversion, but a normal installation is still the supported posture for releases.
+- Updater release keypair rotated (strong random password stored beside the key, both git-ignored); website repo/download links now point at github.com/leolemon777/Anole.
 
 ### Verification
 - core 211 passed + 4 symlink baseline; fmt clean; clippy zero warnings; server 13/13; frontend 29/29; desktop rebuilt and running. E2E evidence: watermark chars verified independently via pdftotext, target-size nearest-rung Warning, ODT->PDF text layer, demo contract curl-verified.
@@ -114,7 +114,7 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 - **G-10 EPUB target** (`5387c70`/`659cbac`): md/html → epub via Pandoc; OCF magic detection distinguishes EPUB from DOCX prefixes; validation = EPUB_PACKAGE_OPENS/TARGET_FORMAT/CONTENT_DOCUMENTS/TEXT_COVERAGE(required, ≥80%)/TEXT_FIDELITY(Warning — nav/toc repeats chapter titles, same rationale class as EDGE_PDF_TEXT_FIDELITY). E2E: 2-chapter md → 9-entry publication, pandoc reads back complete.
 - **G-30 text slice** (`c494208`): .txt/.text → 'plain' format riding the GFM reader (Pandoc has no plain reader; every plain doc is valid Markdown); routes pdf/docx/epub. ODT/RTF deferred — they need ODF/RTF package inspection, not a whitelist.
 - **G-13 knobs core+CLI** (`7ac5c21`): PlanRequest.video_crf(0-51)/video_preset(allowlist)/audio_bitrate_kbps(8-320) flow into mp4+audio plans and replace the hardcoded `-preset medium -crf 20`/192k; CLI --video-crf/--video-preset/--audio-bitrate-kbps. E2E proof: VP9→MP4 at 64 kbps measured 64.6 kbps by independent ffprobe. **Desktop UI wiring remains the open G-13 follow-up.**
-- **G-11 archive lane** (`4244c45`): built-in formatwright.archive engine; zip ↔ tar.gz in-memory repack (no extraction, deterministic mtime 0, traversal paths rejected, links/devices refused); validation = ENTRY_COUNT + name:size manifest digest. Added tar crate; flate2 promoted from transitive. E2E: 3-entry zip → tar.gz → zip round trip byte-identical.
+- **G-11 archive lane** (`4244c45`): built-in anole.archive engine; zip ↔ tar.gz in-memory repack (no extraction, deterministic mtime 0, traversal paths rejected, links/devices refused); validation = ENTRY_COUNT + name:size manifest digest. Added tar crate; flate2 promoted from transitive. E2E: 3-entry zip → tar.gz → zip round trip byte-identical.
 - **ADR-0013 + G-12** (`1c87a36`/`4903ffc`): PlanRequest.operation/inputs/page_range (serde-default); pdf-merge (joint fingerprint) & pdf-extract via qpdf --empty --pages; MEASURED page-count conservation (PDF_OPS_PAGE_COUNT) via post-execution pdfinfo; verbatim `\\?\` prefixes stripped for qpdf (external_process_path). qpdf 12.4.1 installed to E:\DevCaches with engine override. E2E: 3+2→5 pages Pass; '2-3' extract = exactly source pages 2-3 by pdftotext.
 - **G-01 sandbox** (`aadaa7b`): scripts/test_browser_print_sandbox.ps1 + docs/testing/BROWSER_PRINT_SANDBOX.md; GW-10 matrix caveat cleared. Two pre-existing main bugs fixed en route: structured_format_hint swallowed every '<'-prefixed file (CLI inspect of doctype HTML/SVG died as XML), and is_document_path missed svg/epub/txt.
 
@@ -154,9 +154,9 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 
 ### Decisions Made
 - Title-bar drag fix: Tauri's `data-tauri-drag-region` only fires when the event target is the attributed element itself (no ancestor/child walk). The old markup attributed only the content-width `.c95-window__title` span, so after enlarging the window most of the title bar (the `header` padding area and the SVG icon) was undraggable. A stray `-webkit-app-region: drag` (an Electron-ism, inert in WebView2) had masked the gap in review. Fix: attribute the whole `c95-window__titlebar` header, `pointer-events: none` on the title icon (both themes), `user-select: none` on the titlebar. Window control buttons remain unaffected (no attribute on them), and double-click maximize now works on the whole bar via Tauri's built-in behavior.
-- Local engine provisioning (machine config, not repo): Poppler 26.02.0 installed to `E:\DevCaches\poppler-26.02.0` from the same pinned poppler-windows archive as the starter-pack script (sha256 `993e4a…cda5` verified), user PATH extended, and per-engine `FORMATWRIGHT_ENGINE_PDFINFO/PDFTOPPM/PDFTOTEXT/PDFFONTS` overrides set. The overrides matter: Git for Windows ships an Xpdf 4.00 `pdftotext` whose `-v` exits 99, which doctor (correctly) rejects; env overrides outrank PATH so the real Poppler wins regardless of PATH order.
+- Local engine provisioning (machine config, not repo): Poppler 26.02.0 installed to `E:\DevCaches\poppler-26.02.0` from the same pinned poppler-windows archive as the starter-pack script (sha256 `993e4a…cda5` verified), user PATH extended, and per-engine `ANOLE_ENGINE_PDFINFO/PDFTOPPM/PDFTOTEXT/PDFFONTS` overrides set. The overrides matter: Git for Windows ships an Xpdf 4.00 `pdftotext` whose `-v` exits 99, which doctor (correctly) rejects; env overrides outrank PATH so the real Poppler wins regardless of PATH order.
 - Debug desktop build: the Windows resource map requires `dist/engine-packs/windows-x86_64/starter/` to exist; an empty directory is a supported degraded state (`bundled_manifest_paths` returns an empty list without `bundle.json`), so no 100+ MB starter-pack download was needed for a system-discovery machine. Release builds must run `prepare/build_windows_starter_pack.ps1` instead.
-- README gained an `Engines` section: why nothing is bundled (license/supply-chain, links to engines/README + ADR-0011/0012), the discovery order (pack > `FORMATWRIGHT_ENGINE_*` > PATH > canonical locations), a per-engine acquisition table, and the starter-pack expectation for releases.
+- README gained an `Engines` section: why nothing is bundled (license/supply-chain, links to engines/README + ADR-0011/0012), the discovery order (pack > `ANOLE_ENGINE_*` > PATH > canonical locations), a per-engine acquisition table, and the starter-pack expectation for releases.
 
 ### Verification
 - Desktop rebuild (`tsc -b` + `vite build` + `tauri build --debug --no-bundle`) green; app relaunched.
@@ -175,7 +175,7 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 - "可编辑矢量 PDF" is a *validated* product claim, not a marketing one: independent Poppler utilities must prove the text layer and font embedding before commit.
 
 ### Decisions Made
-- Engine id `msedge`, resolved pack > `FORMATWRIGHT_ENGINE_MSEDGE` > PATH > canonical vendor install locations (`doctor.rs::known_install_location`), the latter three under `Development` policy only. Doctor never launches the browser: version comes from the versioned install directory on Windows, else `unknown`.
+- Engine id `msedge`, resolved pack > `ANOLE_ENGINE_MSEDGE` > PATH > canonical vendor install locations (`doctor.rs::known_install_location`), the latter three under `Development` policy only. Doctor never launches the browser: version comes from the versioned install directory on Windows, else `unknown`.
 - Routing gained a lane concept (`capabilities.rs::route_engine_lanes`): HTML→PDF prefers the browser lane `[msedge, pdfinfo, pdftoppm, pdftotext, pdffonts]` and falls back to the existing Pandoc lane; SVG→PDF is browser-lane only; Markdown→PDF is unchanged. Route availability is satisfied when *any* lane is fully available.
 - Plan (`edge_pdf.rs::plan_edge_print_to_pdf`): 5 steps — Edge vector print (`LossClass::None`), pdfinfo structural, pdftoppm render, pdftotext text-layer, pdffonts embedding — with `text_must_remain_extractable` as a plan constraint.
 - Execution (`runner.rs::execute_edge_print_plan`): staged workspace with isolated `--user-data-dir`, `--host-resolver-rules=MAP * ~NOTFOUND` as network-deny reinforcement, 180 s print timeout + process-tree termination, `office_staged_work_path` staging, no-clobber commit, scheduler treats `msedge` as `SerialEngine`.
@@ -188,8 +188,8 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 - Desktop UI/CLI surfaces unchanged: no new target id (`pdf` exists), capability snapshot picks up the lane automatically; no `PlanRequest` field added, so plan/JSON schemas are untouched.
 
 ### Verification
-- `cargo check -p formatwright-core --locked` ✓; `cargo clippy -p formatwright-core --all-targets` zero warnings ✓; `cargo fmt --check` clean for every touched file ✓; `cargo test -p formatwright-core --lib` 181 passed (4 pre-existing failures: symlink-privilege `os error 1314` tests in `job_store`/`application`, reproduced independent of this branch) ✓; schema contract suite 9/9 ✓; `scripts/check_repository.py` reports only the pre-existing `capabilities/main.json` allowlist error (present on `main`).
-- **End-to-end sandbox evidence (2026-08-31, dev build, Windows)**: `formatwright convert carton.html --to pdf` — a real 291-line HTML/SVG carton-drawing fixture — routed to the browser lane (doctor resolved `msedge` 152.0.4191.53 via canonical install location, Poppler 26.02.0 via PATH), completed in ~10 s with `validation: Pass`. Independent re-inspection of the committed PDF: 1 page at 420×293 mm, 0 raster image objects, 5 embedded font subsets (Arial/Arial-Bold/MicrosoftYaHei±Bold/SimSun), 789 extractable characters including the watermark, barcode digits, and the Chinese company name. The plan hash and every required validator (`EDGE_PDF_OPENS/PAGE_COUNT/PAGE_SIZES/ALL_PAGES_RENDER/TEXT_EXTRACTABLE/FONTS_EMBEDDED`) passed before commit.
+- `cargo check -p anole-core --locked` ✓; `cargo clippy -p anole-core --all-targets` zero warnings ✓; `cargo fmt --check` clean for every touched file ✓; `cargo test -p anole-core --lib` 181 passed (4 pre-existing failures: symlink-privilege `os error 1314` tests in `job_store`/`application`, reproduced independent of this branch) ✓; schema contract suite 9/9 ✓; `scripts/check_repository.py` reports only the pre-existing `capabilities/main.json` allowlist error (present on `main`).
+- **End-to-end sandbox evidence (2026-08-31, dev build, Windows)**: `anole convert carton.html --to pdf` — a real 291-line HTML/SVG carton-drawing fixture — routed to the browser lane (doctor resolved `msedge` 152.0.4191.53 via canonical install location, Poppler 26.02.0 via PATH), completed in ~10 s with `validation: Pass`. Independent re-inspection of the committed PDF: 1 page at 420×293 mm, 0 raster image objects, 5 embedded font subsets (Arial/Arial-Bold/MicrosoftYaHei±Bold/SimSun), 789 extractable characters including the watermark, barcode digits, and the Chinese company name. The plan hash and every required validator (`EDGE_PDF_OPENS/PAGE_COUNT/PAGE_SIZES/ALL_PAGES_RENDER/TEXT_EXTRACTABLE/FONTS_EMBEDDED`) passed before commit.
 - Build environment note: this machine's MSVC 14.51 install lacks the CRT headers; compilation required `LIB`/`INCLUDE` for onecore libs + SDK 10.0.22621.0 (plus the bundled vc15 headers from `SDK/ScopeCppSDK` for `libsqlite3-sys`'s C build — a machine-specific workaround, not a repo change).
 
 ### Bug fixed en route (pre-existing, main)
@@ -269,7 +269,7 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 - `defaultPlanConstraints` resets quality/width/dpi/colorMode to null on new input and shell convert.
 - Capability snapshot keeps a pending wanted target; unavailable wanted clears pending and does not jump to `firstRecommended`.
 - Success stays on Convert; `setTab("reports")` remains only for explicit report browsing.
-- Empty-state cards probe `C:\formatwright-probe.pdf` / `.mkv` through the existing snapshot command (extension-only).
+- Empty-state cards probe `C:\anole-probe.pdf` / `.mkv` through the existing snapshot command (extension-only).
 - Drop folders go through `classify_desktop_drop_path` (same local-disk rules as shell).
 - Explorer verbs come from `explorer-verbs.json` via `scripts/generate_explorer_verbs.ps1`.
 
@@ -291,7 +291,7 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 
 ### Decisions Made
 - Snapshot includes certification threading, Gate U host-side negatives, convert-page honesty, `--shell-convert`, NSIS/dev Convert verbs, VOC backlog, and the daily-use spec.
-- **Explorer / clean-VM test-contract migration is PR-02, not this snapshot.** `scripts/test_windows_explorer_integration.ps1` and `scripts/test_clean_vm_certification.ps1` still encode Open-in / navigation-only (including the existing `FormatWrightConvert` key-name mistake). Do not flip them to Convert = 1 Job + Pass + source hash here.
+- **Explorer / clean-VM test-contract migration is PR-02, not this snapshot.** `scripts/test_windows_explorer_integration.ps1` and `scripts/test_clean_vm_certification.ps1` still encode Open-in / navigation-only (including the existing `AnoleConvert` key-name mistake). Do not flip them to Convert = 1 Job + Pass + source hash here.
 
 ### Changes From Spec
 - None in this snapshot. PR-01b (pending-clear / pin wanted), PR-03 (success CTA), PR-04 (empty-state cards), PR-05 (`classify_desktop_drop_path`), and PR-06 (800ms ingest) stay later.
@@ -333,7 +333,7 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 
 ### Spec Interpretation
 - Gate U requires automated negatives for missing pack, hash tamper, version incompatibility, revoke, half-install, failed upgrade, and malicious PATH.
-- `formatwright_compatibility` is a hard install/verify bound, not documentation.
+- `anole_compatibility` is a hard install/verify bound, not documentation.
 
 ### Decisions Made
 - Enforce `[minimum, maximum_exclusive)` against `CARGO_PKG_VERSION` during `verify_engine_pack`.
@@ -398,13 +398,13 @@ un-tests.bat`: 222 passed + the 4 pre-existing symlink os-error-1314 failures (u
 
 The authoritative checklist, long-term module design, 12-week route and maintenance cadence live in `docs/MASTER_EXECUTION_PLAN.md`.
 
-## 2026-09-03 — Rebrand FormatWright → Anole
+## 2026-09-03 — Rebrand Anole → Anole
 
 Name and mascot decided by the owner: **Anole** (the color-changing "American chameleon", 5 letters, clean in the converter category) with mascot direction A "The Color Shift". Brand assets live in `branding/` (candidates + `branding/final/`: icon light/dark, logo, horizontal lockups, favicon ladder, PNG exports).
 
 **Swapped this pass (user-visible surface):** README/website/governance docs/docs tree (guarded line-level script with an identifier allow-list), core/cli/server/engine-sdk user-visible messages and evidence strings, desktop window titles/`productName`/i18n/dialog filters, Explorer context-menu labels (`Open in Anole`, registry **key names unchanged**), JSON-Schema titles, SBOM generators, crate `description`/`authors`, and the release workflow's installer filename (now `Anole_0.1.0_x64-setup.exe`, matching the new `productName`).
 
-**Deliberately kept (technical identifiers, own follow-up pass):** crate/binary names (`formatwright*`), `formatwright_core::` paths, `FormatWrightError`/`FormatWrightCompatibility`, `.join("FormatWright")` state-database dirs, `FORMATWRIGHT_ENGINE_*` env vars, `...\shell\FormatWright` + `FormatWright.To*` registry verbs, tauri identifier `local.formatwright.desktop`, repo/GitHub name and updater URL.
+**Deliberately kept (technical identifiers, own follow-up pass):** crate/binary names (`anole*`), `anole_core::` paths, `AnoleError`/`AnoleCompatibility`, `.join("Anole")` state-database dirs, `ANOLE_ENGINE_*` env vars, `...\shell\Anole` + `Anole.To*` registry verbs, tauri identifier `local.anole.desktop`, repo/GitHub name and updater URL.
 
 Verified: `cargo check` (core/cli/server/engine-sdk) clean; `core --lib` 244 passed / 4 failed = the known Windows reparse/symlink baseline; engine-sdk 11 passed; residual-string audit shows only the intended technical identifiers. Trademark screening (Nice 9/42) is still owed before external promotion.
 
@@ -417,25 +417,25 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 - Regenerated the release keypair via the direct CLI path (`npx pnpm@11.16.0 --dir apps/desktop tauri signer generate --password <fresh token_urlsafe(24)> --ci`); password written with `printf '%s'` (32 bytes, **no trailing newline** — the old file carried one, which would also have poisoned secret-setting via stdin redirect).
 - Pinned the new pubkey in `apps/desktop/src-tauri/tauri.conf.json` (commit `2a39f1d`). Safe window: v0.1.0 unreleased, zero installed copies, and the old key never successfully signed anything.
 - Re-set `TAURI_DEV_UPDATER_KEY` (base64-wrapped private key, single line) and `TAURI_DEV_UPDATER_PASSWORD` (32 chars) via `printf '%s' "$(tr -d '\r\n' < file)" | gh secret set` — both secrets guaranteed whitespace-clean.
-- Broken pair retained at `target/updater-keys/formatwright-release.key{,.pub}.broken-20260903` for forensics; test keys removed.
+- Broken pair retained at `target/updater-keys/anole-release.key{,.pub}.broken-20260903` for forensics; test keys removed.
 
 ### Verification
 - Local end-to-end BEFORE pushing: `tauri signer sign` with the exact CI env-var path (`TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) succeeds with the new pair; throwaway-key control proved the harness and the shim corruption both reproduce deterministically.
 - Negative controls on the old key (token / empty / literal `%PW%`, env and argv transports) all fail — pair confirmed dead.
-- Rehearsal run 5 (`33773232889`): the password fix WORKED (run moved past secret-key decode) but died at `failed to decode pubkey: Missing encoded key in public key` — the follow-up fix double-encoded the pinned value: `tauri signer generate --ci` writes the `.pub` file itself base64-wrapped, so the config value must be `base64(decode(.pub))`, not `base64(.pub)`. Corrected value re-verified structurally against the known-good old format (2-line raw, `RW`-prefixed key line) before pushing. **Rehearsal run 6 (`33774981779`) GREEN** — updater signing, checksums, unsigned-claim guard all passed; artifact `formatwright-windows-unsigned-alpha` (338,696,333 bytes) uploaded. B2's release-candidate rehearsal is closed; next is B3 (tag v0.1.0, release publishing).
+- Rehearsal run 5 (`33773232889`): the password fix WORKED (run moved past secret-key decode) but died at `failed to decode pubkey: Missing encoded key in public key` — the follow-up fix double-encoded the pinned value: `tauri signer generate --ci` writes the `.pub` file itself base64-wrapped, so the config value must be `base64(decode(.pub))`, not `base64(.pub)`. Corrected value re-verified structurally against the known-good old format (2-line raw, `RW`-prefixed key line) before pushing. **Rehearsal run 6 (`33774981779`) GREEN** — updater signing, checksums, unsigned-claim guard all passed; artifact `anole-windows-unsigned-alpha` (338,696,333 bytes) uploaded. B2's release-candidate rehearsal is closed; next is B3 (tag v0.1.0, release publishing).
 
 ### Risks / Follow-up
 - Never generate signing keys through `cmd //c`/`.cmd` shims on this machine; always the direct npx/CLI path, and always verify by signing a scratch file before the key is trusted.
-- The `dev` keypair (`formatwright-updater.key`, empty password) was also shim-generated and is likewise undecryptable — it only ever backed earlier failed rehearsals; regenerate on demand if a test-only pair is needed again.
+- The `dev` keypair (`anole-updater.key`, empty password) was also shim-generated and is likewise undecryptable — it only ever backed earlier failed rehearsals; regenerate on demand if a test-only pair is needed again.
 - UPDATER.md still says "dev keypair (empty password)" — accurate as intent, but both pairs' file format notes now assume `--ci` base64-wrapped storage (tauri's own format since the CLI writes it that way).
 
 ## 2026-09-04 — B3 release day: Anole v0.1.0 published
 
 ### Shipped
 - `.github/workflows/release.yml` (tag-triggered): rehearsal-proven Windows build + application SBOM (`generate_sbom.py` → `dist/sbom.spdx.json`, attached as `Anole-0.1.0-sbom.spdx.json`), updater `latest.json` (signature read from the bundle `.sig`, URL pointing at the release asset), `SHA256SUMS` (installer + sig + portable exe + SBOM + latest.json), and `gh release create` with the full asset set.
-- `.github/workflows/pages.yml` + Pages enabled (build_type=workflow): site live at https://leolemon777.github.io/FormatWright/ ; download CTA now `data-gh="/releases/latest"` (also fixed a duplicated attribute on that anchor).
+- `.github/workflows/pages.yml` + Pages enabled (build_type=workflow): site live at https://leolemon777.github.io/Anole/ ; download CTA now `data-gh="/releases/latest"` (also fixed a duplicated attribute on that anchor).
 - Release notes: `docs/release/v0.1.0_notes.md` (中英, Unsigned Alpha SmartScreen caveat).
-- Tag `v0.1.0` on `9bdc8bf` → Release workflow green (`33826664551`, 18m27s): https://github.com/leolemon777/FormatWright/releases/tag/v0.1.0 with 6 assets (installer 330,623,750 B, .sig, portable exe, SHA256SUMS, SBOM, latest.json). `latest.json` and installer downloads verified HTTP 200; updater signature decodes as a minisign signature from the release key.
+- Tag `v0.1.0` on `9bdc8bf` → Release workflow green (`33826664551`, 18m27s): https://github.com/leolemon777/Anole/releases/tag/v0.1.0 with 6 assets (installer 330,623,750 B, .sig, portable exe, SHA256SUMS, SBOM, latest.json). `latest.json` and installer downloads verified HTTP 200; updater signature decodes as a minisign signature from the release key.
 
 ### Issues hit
 - First release run (`33825453296`) failed at checksums: the workflow wrote `Anole-$version-x64-setup.exe` (hyphens) but the bundle is `Anole_0.1.0_x64-setup.exe` (underscores). Fixed with `${version}` forms (`9bdc8bf`) and the tag was re-pointed (delete + recreate) to pick up the fix.
@@ -476,10 +476,10 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 ### Design
 - ffprobe cannot demux PSD or camera-RAW, so the new `magick` engine is both decoder and inspector (engine-as-prober, pdfinfo precedent): `magick identify -format "%m %w %h\n"` builds the Probe (newline mandatory — multi-layer PSD prints unseparated frame records), and conversion pins the composite frame with the `input[0]` spec (a bare PSD input fans out to `output-0.png/output-1.png` side files on single-image writers). The raster output then validates through the normal ffprobe media checks; the workflow tuple's validation engine must be **ffprobe**, not magick (heif-lane precedent).
 - Inputs: psd/dng/cr2/cr3/arw/nef/orf/rw2/pef/raf → png/jpg/tiff directly. **TIFF joined the chain intermediate whitelist** (lossless pivot, png's peer), so RAW reaches webp/avif/pdf/txt/bmp through one-hop chains.
-- Engine posture: ImageMagick 7.1.2-31 portable at `E:\DevCaches\ImageMagick` (Apache-2.0, packable later), discovered via `FORMATWRIGHT_ENGINE_MAGICK`/PATH; never bundled for now. dcraw 9.28 was compiled locally (cl.exe + NO_JASPER/NO_JPEG/NO_LCMS + ftello/fseeko/getc_unlocked shims) as a reference but the single magick lane covers both C1 RAW and PSD waves.
+- Engine posture: ImageMagick 7.1.2-31 portable at `E:\DevCaches\ImageMagick` (Apache-2.0, packable later), discovered via `ANOLE_ENGINE_MAGICK`/PATH; never bundled for now. dcraw 9.28 was compiled locally (cl.exe + NO_JASPER/NO_JPEG/NO_LCMS + ftello/fseeko/getc_unlocked shims) as a reference but the single magick lane covers both C1 RAW and PSD waves.
 
 ### Verification
-- e2e probes: psd→png/jpg/tiff, dng→tiff/png, cr2→png/jpg, chain dng→webp (via tiff) — all pass; `formatwright inspect sample.psd` now reports `psd (Image)` (the CLI inspect path routes magick-family extensions to the magick probe).
+- e2e probes: psd→png/jpg/tiff, dng→tiff/png, cr2→png/jpg, chain dng→webp (via tiff) — all pass; `anole inspect sample.psd` now reports `psd (Image)` (the CLI inspect path routes magick-family extensions to the magick probe).
 - **Windows matrix 82/82** (71 prior + 11 magick rows incl. one raw→tiff→webp chain row). One earlier run showed 26 OutputConflict failures — a cancelled matrix run left a zombie writer racing the rerun's numbered outputs; clean rerun green.
 - core `--lib` 251 passed / 4 known symlink failures; workspace fmt/clippy/cargo-deny clean. Route figure: **252 canonical reachable = 133 direct + 119 chained** (`scripts/count_routes.py`), README badge/body updated.
 
@@ -492,7 +492,7 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 ## 2026-09-04 — C2: Outlook MSG input via the built-in CFB adapter
 
 ### Design
-- New `formatwright.msg` builtin engine (`msg.rs`): the `cfb` crate (0.14, MIT) reads the compound document; root `__substg1.0_<tag><type>` streams supply transport headers (0x007D), subject (0x0037), sender (0x0C1A), submit FILETIME (0x0039 → hand-rolled RFC 2822), plain body (0x1000), HTML body (0x1013). A **single-part EML is synthesized** (body-describing transport headers dropped, our own Content-Type appended) and the entire EML pipeline is reused: RFC 2047 decoding, script/remote-resource sanitization, renderers, validation receipts. Direct targets txt/html; pdf/docx/epub compose through the html chain hop. Non-CFB or payload-less containers fail closed (`InputInvalid`).
+- New `anole.msg` builtin engine (`msg.rs`): the `cfb` crate (0.14, MIT) reads the compound document; root `__substg1.0_<tag><type>` streams supply transport headers (0x007D), subject (0x0037), sender (0x0C1A), submit FILETIME (0x0039 → hand-rolled RFC 2822), plain body (0x1000), HTML body (0x1013). A **single-part EML is synthesized** (body-describing transport headers dropped, our own Content-Type appended) and the entire EML pipeline is reused: RFC 2047 decoding, script/remote-resource sanitization, renderers, validation receipts. Direct targets txt/html; pdf/docx/epub compose through the html chain hop. Non-CFB or payload-less containers fail closed (`InputInvalid`).
 - Unit fixtures are synthesized with the cfb **writer** (structurally faithful root property streams); the e2e fixture is a real Outlook export (msg-extractor's multi-to.msg).
 
 ### Bugs found by the work
@@ -512,7 +512,7 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 ## 2026-09-05 — C3: whole-mailbox MBOX export (the rival-absent combo)
 
 ### Design
-- Built-in `formatwright.mbox` (`mbox.rs`): mboxrd split on envelope `From_` lines (one-level `>From` unescape; fail-closed with no envelope line, non-UTF-8, >1000 mails, or 256 MiB), every mail parsed through the shared EML pipeline.
+- Built-in `anole.mbox` (`mbox.rs`): mboxrd split on envelope `From_` lines (one-level `>From` unescape; fail-closed with no envelope line, non-UTF-8, >1000 mails, or 256 MiB), every mail parsed through the shared EML pipeline.
 - **txt/html**: all mails rendered with `==== Anole Mail i/N ====` separators; checks = target format + every separator in the output + text nonempty (+ script-free for html).
 - **pdf**: per-mail sanitized HTML packets (separator + subject header inside) → each rides the html→pdf lane via the chain's prepare/execute pattern (own plans + receipts) → qpdf `--empty --pages … 1-z` merge → acceptance proves **page conservation** (pdfinfo: sum of per-mail pages == merged pages) and **every separator in the merged text layer** (pdftotext). The runner dispatch boxes the mbox→execute_plan→mbox recursion edge.
 
@@ -533,7 +533,7 @@ Rehearsal runs 2-4 (`release-candidate.yml`, workflow_dispatch) all failed at up
 
 ### Fixes the Linux run itself surfaced
 1. **Nested-HTML drift (real bug)**: mbox per-mail packets embedded `render_html`'s full `<html>` document inside another `<html>` — on engine paths without a browser lane, html→pdf falls back to the pandoc lane whose DOCX intermediate failed semantic-token conservation. Windows never saw it (browser lane skips the DOCX hop). Fix: embed only the extracted `<body>` fragment (`ab28800`).
-2. Linux matrix script: CfT-chrome `FORMATWRIGHT_ENGINE_MSEDGE` export, PSD fixture via magick (PIL cannot write PSD), build without `--offline` (fresh cfb dep), out-dir cleanup (stale numbered outputs caused 30 OutputConflict), email fixtures via `newline=''` CRLF writer (shell heredoc had eaten the escapes).
+2. Linux matrix script: CfT-chrome `ANOLE_ENGINE_MSEDGE` export, PSD fixture via magick (PIL cannot write PSD), build without `--offline` (fresh cfb dep), out-dir cleanup (stale numbered outputs caused 30 OutputConflict), email fixtures via `newline=''` CRLF writer (shell heredoc had eaten the escapes).
 
 ### Verification (Linux, via LAN)
 - **Core `--lib`: 255 passed / 0 failed** — includes the Windows-impossible symlink class and the mbox/MSG engine-dependent e2e (qpdf/poppler/pandoc/soffice 24.2.7.2/magick 7.1.2-31 all discovered; conda imagemagick install automated in the verify script).
@@ -574,7 +574,7 @@ exclusively fine between runs) — consistent with a Defender/indexer race on th
 freshly written copy that the build script immediately re-opens. Workaround:
 `.github/workflows/build-e2e-binary.yml` (manual `workflow_dispatch`, commit
 `173e277`) builds the overlay binary on `windows-latest` and uploads it as the
-`formatwright-desktop-e2e` artifact, with an in-CI assertion that the
+`anole-desktop-e2e` artifact, with an in-CI assertion that the
 `remote-debugging-port` overlay is embedded.
 
 ### Sandbox enablement status (blocked on Leo)
@@ -590,7 +590,7 @@ freshly written copy that the build script immediately re-opens. Workaround:
   no answer yet at the time of this note.
 
 ### Next steps from here
-1. CI artifact → `target/clean-vm/formatwright-desktop-e2e.exe`.
+1. CI artifact → `target/clean-vm/anole-desktop-e2e.exe`.
 2. UAC approval → Sandbox feature on (verify `WindowsSandbox.exe` appears).
 3. Launch `cleanvm.wsb`, run `run-certification.ps1`, capture artifacts.
 4. Manual checklist incl. in-sandbox adapter disable for the offline phase.
@@ -606,7 +606,7 @@ freshly written copy that the build script immediately re-opens. Workaround:
   (network wait → winget pwsh7 + Node → cleanliness asserts → the certification
   suite). `run-certification.ps1` re-validated (PARSE-OK) after adding the
   network-wait guard; `.wsb` XML validated.
-- CI artifact landed: `formatwright-desktop-e2e.exe` (21,862,912 B,
+- CI artifact landed: `anole-desktop-e2e.exe` (21,862,912 B,
   `remote-debugging-port` overlay verified, sha256
   `e1db7d08abea295ffa2189a15e61057ce184d5d7aff403181dfc5196fd6c1f59`) — the
   portable exe correctly does NOT embed engine packs; it shares the engine
@@ -637,7 +637,7 @@ E-06 was deliberately deferred (see risks).
    store is single-use by design). qpdf lanes keep their existing hand-off.
 3. **E-05 directory verbs**: registered 2 Directory verbs only
    (folder → JPG / WebP) pending DECISION-5; generator asserts updated 17→19
-   and the generator's stale "Open in FormatWright" template drift was fixed
+   and the generator's stale "Open in Anole" template drift was fixed
    to "Open in Anole". Folder convert = one approval (KD-2), but the full
    folder-batch safety chain (mapping preview, per-file plan checks, skipped
    list, disk budget, no-clobber fresh output root `<name>-anole-<target>`)
@@ -657,12 +657,12 @@ E-06 was deliberately deferred (see risks).
    declared for native controls.
 
 ### Verification (this machine, MSVC env via target/*.bat)
-- `cargo test -p formatwright-core --lib`: **273 passed / 0 failed**
+- `cargo test -p anole-core --lib`: **273 passed / 0 failed**
   (4 known symlink/reparse privilege failures excluded as the documented
   baseline; they fail identically on unmodified main).
-- `cargo test -p formatwright-desktop --lib`: **34 passed / 0 failed**
+- `cargo test -p anole-desktop --lib`: **34 passed / 0 failed**
   (new: directory shell-convert acceptance, output-root reservation).
-- `cargo test -p formatwright-core --test schema_contracts`: **9 passed**
+- `cargo test -p anole-core --test schema_contracts`: **9 passed**
   (application-settings v2 contract included).
 - Frontend: `tsc -b` clean, vitest **29 passed** (progress type extended).
 - `cargo clippy --workspace --all-targets -- -D warnings`: **0 errors**;
@@ -797,7 +797,7 @@ since the Meadowlark/chicago95 rework — before this week's changes:
   WebView baseline rerun moves to R-011 rather than being silently claimed.
 
 Build evidence: `tauri build --debug --no-bundle` with the accessibility
-overlay completed; `target\debug\formatwright-desktop.exe` boots with
+overlay completed; `target\debug\anole-desktop.exe` boots with
 `--remote-debugging-port=9337` reachable.
 
 ## 2026-09-07 — R-011 fixed: accessibility baseline restored on the chicago95 DOM
@@ -911,10 +911,10 @@ Executed under the download policy (Linux executor only; Leo approved list B):
   conda env) reconstructed the Directory/Component/File tree
   (`scripts/rebuild_libreoffice_tree_from_msi.py`); the x64 VC runtime DLLs
   destined for System32 were relocated into `program/` instead.
-- **Pack**: `formatwright-document` v26.2.6, executable `soffice` →
+- **Pack**: `anole-document` v26.2.6, executable `soffice` →
   `program/soffice.com`, 19,476-file SPDX SBOM, MPL-2.0 + MSVC-redist
   notices, PROVENANCE with the exact unpack method. `engines verify` green.
-- **Real conversion**: `FORMATWRIGHT_ENGINE_SOFFICE=<pack>/program/soffice.com`
+- **Real conversion**: `ANOLE_ENGINE_SOFFICE=<pack>/program/soffice.com`
   converts a minimal docx fixture to PDF (validation: Warning — same lane
   behavior as the system LibreOffice), and `pdftotext` recovers the exact
   source text. The plan hash differs from the system-engine run, proving the
@@ -1038,10 +1038,10 @@ E-11). This wave produced it on the Windows host:
   restored byte-for-byte.
 - **Smoke-script repairs surfaced by the run** (the script had not
   been executed since the rebrand and the OCR pack): UIA window-name
-  assertion `'FormatWright'` → `'Anole'` (window title; the
-  `Registry` verb key name `FormatWright` is intentionally
+  assertion `'Anole'` → `'Anole'` (window title; the
+  `Registry` verb key name `Anole` is intentionally
   unchanged as technical layer), and the installed-pack identity
-  list updated to include `formatwright-ocr`. Local dev-machine
+  list updated to include `anole-ocr`. Local dev-machine
   HKCU verb keys left over from earlier dev-run registrations had
   to be removed first (the smoke requires a verb-clean machine and
   asserts pre-absence).
@@ -1107,7 +1107,7 @@ and golden-workflows.toml (status planned). Matrix scripts (Windows
 + Linux) gained docx/html/pdf/eml/msg/mbox → md rows (and png→md on
 Linux where OCR engines exist).
 
-Verification: formatwright-core `cargo test --lib` = 281 passed +
+Verification: anole-core `cargo test --lib` = 281 passed +
 4 known symlink-privilege failures (baseline shape preserved; +8 new
 tests across capabilities/document/eml/ocr/pdf). Local Windows matrix
 run and workspace clippy/CI rehearsal noted below in the delivery
@@ -1125,11 +1125,11 @@ matching the pre-existing behavior of every other target.
 
 Delivery summary of the rehearsal session (Leo approved commit after
 rehearsal; heavy work pushed to the macair Linux executor per his
-"记得有ssh" reminder, task copy at `/home/leo/linux-runs/FormatWright/
+"记得有ssh" reminder, task copy at `/home/leo/linux-runs/Anole/
 gw13-rehearsal/` via `git archive HEAD` + working-tree patch):
 
 - **Linux (macair, stable toolchain)**: `cargo clippy --workspace
-  --exclude formatwright-desktop --all-targets --all-features --
+  --exclude anole-desktop --all-targets --all-features --
   -D warnings` = 0; `cargo test` same scope = all green (core
   273 passed / 0 failed; cli/server/engine-sdk suites pass).
   Linux conversion matrix **55/55** (52-route baseline + GW-13's
@@ -1140,7 +1140,7 @@ gw13-rehearsal/` via `git archive HEAD` + working-tree patch):
   `desktopModel.test.ts` vitest = 27/27.
 - **Why desktop is excluded from the Linux rehearsal**: macair has
   no glib/webkit dev libraries and sudo is forbidden, so
-  `formatwright-desktop` cannot build there (glib-sys build script
+  `anole-desktop` cannot build there (glib-sys build script
   failure). GW-13 touches desktop only in TS/JSON, so the Rust-side
   rehearsal is complete; the CI Linux job (which installs desktop
   prerequisites) remains the full-workspace backstop.
@@ -1153,7 +1153,7 @@ Bugs the rehearsal surfaced and fixed
 visible once FW_FIXTURES pointed away from the default directory):
 
 1. The fixture-generating Python heredoc hardcoded
-   `/home/leo/linux-runs/FormatWright/fixtures/` on every open()
+   `/home/leo/linux-runs/Anole/fixtures/` on every open()
    while the bash side honored `FW_FIXTURES` — the two sides read
    and wrote different directories. Fixed: bash exports
    `FW_FIXTURES`, Python reads it via `os.environ`.
@@ -1167,7 +1167,7 @@ visible once FW_FIXTURES pointed away from the default directory):
    10,445-byte fixture.
 
 One operational note: an mbox→pdf matrix line on Linux showed ~2.5
-minutes of formatwright CPU before completing; it passes (and passed
+minutes of anole CPU before completing; it passes (and passed
 in the 2026-09-05 baseline), but the office/html→pdf chain on Linux
 is noticeably slower than Windows — worth remembering if CI timing
 tolerances ever cover this lane.
@@ -1186,14 +1186,14 @@ explorer-verbs.json grew 19 → 25 entries (six ToMd verbs), and the
 baseline-length assertion (plus two hardcoded 19s in
 `scripts/generate_explorer_verbs.ps1` and
 `scripts/test_windows_explorer_integration.ps1`) demanded a manual
-bump. All three updated to 25; `cargo test -p formatwright-desktop
+bump. All three updated to 25; `cargo test -p anole-desktop
 --lib` = 43 passed / 0 failed locally.
 
 Rehearsal-process lesson (now the second instance of the CI-runs-
 what-local-loops-miss rule): the SSH executor cannot build
-`formatwright-desktop` (no glib/webkit dev libs), so its exclusion
+`anole-desktop` (no glib/webkit dev libs), so its exclusion
 from the remote rehearsal must be compensated by a **local**
-`cargo test -p formatwright-desktop --lib` before push — the TS
+`cargo test -p anole-desktop --lib` before push — the TS
 vitest suite does not cover the Rust-side baseline assertions.
 
 ## 2026-09-10 — Leo's hands-on GW-13 test: two UX fixes
@@ -1254,6 +1254,6 @@ default (`default_settings_theme`) was still `"system"` — now
 760×560; the earlier scroll-chain fix already covers short windows.)
 
 Verification: tsc clean, vitest 29/29, `cargo test -p
-formatwright-core --lib application_state` 9/9, `cargo test -p
-formatwright-desktop --lib` 43/43, `check_repository.py` valid
+anole-core --lib application_state` 9/9, `cargo test -p
+anole-desktop --lib` 43/43, `check_repository.py` valid
 (8 schemas), debug exe rebuilt and live-screenshotted at 800×560.

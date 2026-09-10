@@ -25,7 +25,7 @@ engine packs (ADR-0012 release activation remains a separate gate).
   `--user-data-dir`, `--host-resolver-rules` network denial, and a 180 s
   timeout with process-tree termination; identity comes from the versioned
   install directory (no browser subprocess for version probing).
-- Poppler tools resolve by explicit parameter > `FORMATWRIGHT_ENGINE_*` >
+- Poppler tools resolve by explicit parameter > `ANOLE_ENGINE_*` >
   `PATH`; the script pins all four and intentionally leaves msedge to
   ADR-0012 discovery.
 - The Plan records the engine identity, page count/sizes, and Network Deny.

@@ -87,7 +87,7 @@ async fn inline_image(path: &Path, mime_type: &'static str) -> Result<Option<Out
     })
     .await
     .map_err(|error| {
-        crate::error::FormatWrightError::new(
+        crate::error::AnoleError::new(
             crate::error::ErrorCode::Internal,
             crate::error::Stage::Validate,
             "Output preview reader worker failed",

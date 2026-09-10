@@ -2,8 +2,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$Installer = (Join-Path $PSScriptRoot '..\target\release\bundle\nsis\FormatWright_0.1.0_x64-setup.exe'),
-    [string]$CliBinary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Installer = (Join-Path $PSScriptRoot '..\target\release\bundle\nsis\Anole_0.1.0_x64-setup.exe'),
+    [string]$CliBinary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts\windows-explorer-installed-smoke')
 )
 
@@ -47,10 +47,10 @@ function Remove-CheckedTree {
     Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
 }
 
-function Get-FormatWrightProcesses {
+function Get-AnoleProcesses {
     @(
         Get-Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.ProcessName -eq 'formatwright-desktop'
+            $_.ProcessName -eq 'anole-desktop'
         }
     )
 }
@@ -58,11 +58,11 @@ function Get-FormatWrightProcesses {
 function Wait-ForSingleProcess {
     param([datetime]$Deadline)
     do {
-        $processes = @(Get-FormatWrightProcesses)
+        $processes = @(Get-AnoleProcesses)
         if ($processes.Count -eq 1) { return $processes[0] }
         Start-Sleep -Milliseconds 100
     } until ([DateTime]::UtcNow -ge $Deadline)
-    throw "expected exactly one FormatWright process, observed $($processes.Count)"
+    throw "expected exactly one Anole process, observed $($processes.Count)"
 }
 
 function Get-WindowAutomation {
@@ -88,7 +88,7 @@ function Get-WindowAutomation {
         if ($null -ne $window) { return $window }
         Start-Sleep -Milliseconds 100
     } until ([DateTime]::UtcNow -ge $deadline)
-    throw 'FormatWright window did not appear in UI Automation'
+    throw 'Anole window did not appear in UI Automation'
 }
 
 function Get-EditableValues {
@@ -136,7 +136,7 @@ function Start-ExplorerVerb {
     param([string]$Path)
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $Path
-    $start.Verb = 'FormatWright'
+    $start.Verb = 'Anole'
     $start.UseShellExecute = $true
     [Diagnostics.Process]::Start($start)
 }
@@ -197,7 +197,7 @@ startxref
     [IO.File]::WriteAllText($Path, $pdf)
 }
 
-Assert-True (@(Get-FormatWrightProcesses).Count -eq 0) 'FormatWright is already running'
+Assert-True (@(Get-AnoleProcesses).Count -eq 0) 'Anole is already running'
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $cliPath = (Resolve-Path -LiteralPath $CliBinary).Path
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
@@ -209,14 +209,14 @@ $installRoot = Join-Path $casePath 'install'
 $fixtureRoot = Join-Path $casePath 'fixtures 空格'
 New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 $fileFixture = Join-Path $fixtureRoot '名字 with spaces.json'
-Set-Content -LiteralPath $fileFixture -Value '{"formatwright":true}' -Encoding utf8
+Set-Content -LiteralPath $fileFixture -Value '{"anole":true}' -Encoding utf8
 
-$fileKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\FormatWright'
-$directoryKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\FormatWright'
-$siblingKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\FormatWrightSiblingSmoke'
+$fileKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\Anole'
+$directoryKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\Anole'
+$siblingKey = 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\AnoleSiblingSmoke'
 $stateRoots = @(
-    (Join-Path $env:APPDATA 'local.formatwright.desktop'),
-    (Join-Path $env:LOCALAPPDATA 'local.formatwright.desktop')
+    (Join-Path $env:APPDATA 'local.anole.desktop'),
+    (Join-Path $env:LOCALAPPDATA 'local.anole.desktop')
 )
 $stateBefore = @{}
 $isolatedState = @{}
@@ -236,7 +236,7 @@ try {
     $stateIsolated = $true
     foreach ($root in $stateRoots) {
         if (Test-Path -LiteralPath $root) {
-            $isolated = $root + '.formatwright-shell-smoke-' + [Guid]::NewGuid().ToString('N')
+            $isolated = $root + '.anole-shell-smoke-' + [Guid]::NewGuid().ToString('N')
             Move-Item -LiteralPath $root -Destination $isolated
             $isolatedState[$root] = $isolated
         }
@@ -248,7 +248,7 @@ try {
     Assert-True ($installerProcess.ExitCode -eq 0) 'installer returned non-zero'
     $installed = $true
 
-    $executable = Join-Path $installRoot 'formatwright-desktop.exe'
+    $executable = Join-Path $installRoot 'anole-desktop.exe'
     $uninstaller = Join-Path $installRoot 'uninstall.exe'
     Assert-True (Test-Path -LiteralPath $executable -PathType Leaf) 'installed executable missing'
     Assert-True (Test-Path -LiteralPath $uninstaller -PathType Leaf) 'uninstaller missing'
@@ -279,13 +279,13 @@ try {
     $fileValues = Wait-ForEditableValue -Window $window -Expected $fileFixture -Deadline (
         [DateTime]::UtcNow.AddSeconds(30)
     )
-    $database = Join-Path $env:APPDATA 'local.formatwright.desktop\jobs.sqlite3'
+    $database = Join-Path $env:APPDATA 'local.anole.desktop\jobs.sqlite3'
     $jobsAfterColdOpen = & $cliPath '--json' '--state-db' $database 'jobs' 'list' '--limit' '1'
     Assert-True ($LASTEXITCODE -eq 0) 'CLI could not inspect the isolated Desktop database'
     $jobsAfterColdOpenJson = ($jobsAfterColdOpen -join "`n")
     Assert-True ($jobsAfterColdOpenJson.Trim() -eq '[]') 'shell open created a durable Job without approval'
 
-    $engineRoot = Join-Path $env:APPDATA 'local.formatwright.desktop\engines'
+    $engineRoot = Join-Path $env:APPDATA 'local.anole.desktop\engines'
     $installedManifests = @(Get-ChildItem -LiteralPath $engineRoot -Filter 'manifest.json' -File -Recurse)
     Assert-True ($installedManifests.Count -eq 3) 'installed Starter does not contain exactly three engine manifests (pdf/media/ocr)'
     $installedPackIds = @()
@@ -310,13 +310,13 @@ try {
         Assert-True ($LASTEXITCODE -eq 0) "CLI rejected installed Starter pack: $($manifest.engine_id)"
     }
     $installedPackIds = @($installedPackIds | Sort-Object)
-    Assert-True (($installedPackIds -join ',') -ceq 'formatwright-media,formatwright-ocr,formatwright-pdf') 'installed Starter pack identities differ'
+    Assert-True (($installedPackIds -join ',') -ceq 'anole-media,anole-ocr,anole-pdf') 'installed Starter pack identities differ'
 
     $second = Start-ExplorerVerb -Path $fixtureRoot
     $second.WaitForExit(30000) | Out-Null
     Assert-True $second.HasExited 'second instance did not exit'
     Assert-True ($second.ExitCode -eq 0) 'second instance returned non-zero'
-    $processesAfterHotOpen = @(Get-FormatWrightProcesses)
+    $processesAfterHotOpen = @(Get-AnoleProcesses)
     Assert-True ($processesAfterHotOpen.Count -eq 1) 'hot open created another long-lived process'
     Assert-True ($processesAfterHotOpen[0].Id -eq $process.Id) 'hot open replaced the original process'
     $directoryValues = Wait-ForEditableValue -Window $window -Expected $fixtureRoot -Deadline (
@@ -356,7 +356,7 @@ try {
     } until ([DateTime]::UtcNow -ge $convertDeadline)
     Assert-True ($convertJobs.Count -eq 1) "convert expected exactly one job, observed $($convertJobs.Count)"
     Assert-True ($convertJobs[0].state -ceq 'completed' -or $convertJobs[0].state -ceq 'warning') "convert job did not pass: $($convertJobs[0].state)"
-    $reportPath = Join-Path $env:APPDATA ("local.formatwright.desktop\reports\" + $convertJobs[0].id + ".json")
+    $reportPath = Join-Path $env:APPDATA ("local.anole.desktop\reports\" + $convertJobs[0].id + ".json")
     Assert-True (Test-Path -LiteralPath $reportPath -PathType Leaf) "convert ValidationReport missing: $reportPath"
     $report = Get-Content -LiteralPath $reportPath -Raw -Encoding utf8 | ConvertFrom-Json
     Assert-True ($report.status -ceq 'pass' -or $report.status -ceq 'warning') "convert report was not Pass: $($report.status)"
@@ -409,7 +409,7 @@ try {
     if ($null -ne $app -and -not $app.HasExited) {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
     }
-    foreach ($process in @(Get-FormatWrightProcesses)) {
+    foreach ($process in @(Get-AnoleProcesses)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     }
     if ($installed) {

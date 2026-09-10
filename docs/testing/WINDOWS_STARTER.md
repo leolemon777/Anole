@@ -30,8 +30,8 @@ The bundle manifest remained `21f46f92f63ae9fc31a059b3139b4edcf27d2fa9b7b6522fc3
 
 ## Local evidence
 
-- Both generated manifests pass `formatwright engines verify`.
-- A Release desktop startup installed `formatwright-pdf` and `formatwright-media` into the versioned application-data store and wrote one active registry entry for each pack.
+- Both generated manifests pass `anole engines verify`.
+- A Release desktop startup installed `anole-pdf` and `anole-media` into the versioned application-data store and wrote one active registry entry for each pack.
 - The real 15-page ST508S manual converted to PNG at 72 DPI: 15 outputs, 1,974,527 bytes, validation `Pass`.
 - The same manual converted to JPEG at quality 78 and 72 DPI: 15 outputs, 755,647 bytes, validation `Pass`.
 - The pinned Media pack passed the GIF sandbox: 18 frames, 240×136, 1.5 seconds, independent ffprobe validation, source unchanged, and no staged output remaining.
@@ -45,8 +45,8 @@ The PDF run initially exposed R-010: Poppler raster dimensions use ceiling for f
 
 ~~~powershell
 pwsh -NoProfile -File scripts/prepare_windows_starter_pack.ps1
-cargo run -p formatwright-cli -- engines verify dist/engine-packs/windows-x86_64/starter/pdf/manifest.json
-cargo run -p formatwright-cli -- engines verify dist/engine-packs/windows-x86_64/starter/media/manifest.json
+cargo run -p anole-cli -- engines verify dist/engine-packs/windows-x86_64/starter/pdf/manifest.json
+cargo run -p anole-cli -- engines verify dist/engine-packs/windows-x86_64/starter/media/manifest.json
 pnpm --dir apps/desktop tauri build
 pwsh -NoProfile -File scripts/test_gif_sandbox.ps1
 pwsh -NoProfile -File scripts/test_structured_sandbox.ps1
@@ -75,8 +75,8 @@ The starter now carries a third engine pack, `starter/ocr/`:
 - `engines verify starter/ocr/manifest.json`: executables verified, SBOM 97
   files valid. First-launch install + activation verified on 2026-09-07: the
   debug desktop run versioned the pack into the engine store and all three
-  registry entries (`formatwright-ocr`, `-media`, `-pdf`) are active.
-- Real conversions (engine via `FORMATWRIGHT_ENGINE_TESSERACT`):
+  registry entries (`anole-ocr`, `-media`, `-pdf`) are active.
+- Real conversions (engine via `ANOLE_ENGINE_TESSERACT`):
   `convert <png> --to txt` (eng) and `--ocr-language chi_sim` both end
   `validation: Pass` with correct recognized text; fixtures were rendered
   bitmaps with English and Simplified Chinese strings.

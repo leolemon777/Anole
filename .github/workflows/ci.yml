@@ -111,7 +111,7 @@ jobs:
           # ships; the resource map only requires the directory to exist.
           New-Item -ItemType Directory -Force -Path 'dist/engine-packs/windows-x86_64/starter' | Out-Null
       - name: Build accessibility-instrumented desktop
-        run: pnpm --filter @formatwright/desktop exec tauri build --debug --no-bundle --config src-tauri/tauri.accessibility.conf.json
+        run: pnpm --filter @anole/desktop exec tauri build --debug --no-bundle --config src-tauri/tauri.accessibility.conf.json
       - name: Native WebView accessibility smoke
         # The CDP audit needs an interactive window station to host the
         # WebView2 session; headless CI runners cannot provide one, so the

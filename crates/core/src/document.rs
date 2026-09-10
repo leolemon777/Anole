@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde_json::{Value, json};
@@ -15,7 +15,7 @@ use crate::domain::{
     ProbeEvidence, ReportRedaction, SCHEMA_VERSION, StreamKind, StreamProbe, ValidationCheck,
     ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
@@ -106,7 +106,7 @@ pub async fn inspect_document(path: impl AsRef<Path>) -> Result<Probe> {
             }]
         },
         evidence: ProbeEvidence {
-            engine_id: "formatwright.document-inspector".to_owned(),
+            engine_id: "anole.document-inspector".to_owned(),
             engine_version: env!("CARGO_PKG_VERSION").to_owned(),
             engine_binary_sha256: None,
         },
@@ -131,7 +131,7 @@ pub fn plan_markup_to_docx(
         ));
     }
     if pandoc.engine_id != "pandoc" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The document Plan was given the wrong engine",
@@ -139,7 +139,7 @@ pub fn plan_markup_to_docx(
         ));
     }
     if property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Markup contains an external image/resource under deny-all policy",
@@ -218,7 +218,7 @@ pub fn plan_markup_to_epub(
         ));
     }
     if pandoc.engine_id != "pandoc" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The EPUB Plan was given the wrong engine",
@@ -226,7 +226,7 @@ pub fn plan_markup_to_epub(
         ));
     }
     if property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Markup contains an external image/resource under deny-all policy",
@@ -318,7 +318,7 @@ pub fn plan_markup_export(
         ));
     }
     if pandoc.engine_id != "pandoc" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The markup export Plan was given the wrong engine",
@@ -326,7 +326,7 @@ pub fn plan_markup_export(
         ));
     }
     if source == "html" && property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "The HTML document references an external resource under deny-all policy",
@@ -417,7 +417,7 @@ pub fn plan_markup_to_pdf(
         ));
     }
     if property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Markup contains an external image/resource under deny-all policy",
@@ -429,7 +429,7 @@ pub fn plan_markup_to_pdf(
         || pdfinfo.engine_id != "pdfinfo"
         || pdftoppm.engine_id != "pdftoppm"
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The markup-to-PDF Plan was given an incorrect engine",
@@ -793,7 +793,7 @@ fn inspect_document_properties(path: &Path, format: &str) -> Result<BTreeMap<Str
         .metadata()
         .map_err(|error| input_error("Unable to inspect document size", error))?;
     if metadata.len() > MAX_MARKUP_BYTES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "Markup input exceeds the 16 MiB alpha limit",
@@ -835,7 +835,7 @@ fn inspect_docx_properties(path: &Path) -> Result<BTreeMap<String, Value>> {
     let mut archive =
         ZipArchive::new(file).map_err(|error| input_error("Invalid DOCX ZIP package", error))?;
     if bounded_expanded_bytes(&mut archive) > MAX_DOCUMENT_XML_BYTES * 4 {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "DOCX expanded size exceeds the alpha safety limit",
@@ -847,7 +847,7 @@ fn inspect_docx_properties(path: &Path) -> Result<BTreeMap<String, Value>> {
         .iter()
         .all(|name| archive.index_for_name(name).is_some());
     if !required_parts_present {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "DOCX is missing required OPC parts",
@@ -859,7 +859,7 @@ fn inspect_docx_properties(path: &Path) -> Result<BTreeMap<String, Value>> {
         .by_name("word/document.xml")
         .map_err(|error| input_error("Cannot open DOCX document part", error))?;
     if document.size() > MAX_DOCUMENT_XML_BYTES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "DOCX document XML exceeds the alpha safety limit",
@@ -882,7 +882,7 @@ fn inspect_epub_properties(path: &Path) -> Result<BTreeMap<String, Value>> {
     let mut archive =
         ZipArchive::new(file).map_err(|error| input_error("Invalid EPUB ZIP package", error))?;
     if bounded_expanded_bytes(&mut archive) > MAX_DOCUMENT_XML_BYTES * 4 {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             "EPUB expanded size exceeds the alpha safety limit",
@@ -902,7 +902,7 @@ fn inspect_epub_properties(path: &Path) -> Result<BTreeMap<String, Value>> {
                 && archive.index_for_name("META-INF/container.xml").is_some()
         });
     if !first_entry_valid {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "EPUB is missing the OCF mimetype/container parts",
@@ -1087,8 +1087,8 @@ fn artifact_summary(probe: &Probe) -> ArtifactSummary {
     }
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message,
@@ -1096,8 +1096,8 @@ fn unsupported(message: &str) -> FormatWrightError {
     )
 }
 
-fn input_error(message: &str, error: impl std::fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_error(message: &str, error: impl std::fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         message,
@@ -1107,8 +1107,8 @@ fn input_error(message: &str, error: impl std::fmt::Display) -> FormatWrightErro
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn worker_error(error: tokio::task::JoinError) -> FormatWrightError {
-    FormatWrightError::new(
+fn worker_error(error: tokio::task::JoinError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Internal,
         Stage::Inspect,
         "Document inspector worker failed",
@@ -1313,15 +1313,15 @@ mod tests {
         archive.finish().expect("finish DOCX");
     }
 
-    fn pandoc_engine() -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn pandoc_engine() -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: "pandoc".to_owned(),
             version: "3.8".to_owned(),
             binary_path: std::path::PathBuf::from("pandoc.exe"),
             binary_sha256: "0".repeat(64),
             manifest_sha256: None,
             build_configuration: None,
-            certification: formatwright_engine_sdk::Certification::Unverified,
+            certification: anole_engine_sdk::Certification::Unverified,
         }
     }
 
@@ -1378,7 +1378,7 @@ mod tests {
                 .is_err(),
             "pdf target is rejected"
         );
-        let wrong = formatwright_engine_sdk::EngineIdentity {
+        let wrong = anole_engine_sdk::EngineIdentity {
             engine_id: "soffice".to_owned(),
             ..pandoc
         };
@@ -1458,13 +1458,13 @@ mod tests {
 
     #[tokio::test]
     async fn plan_markup_to_epub_builds_a_validated_pandoc_plan() {
-        use formatwright_engine_sdk::Certification;
+        use anole_engine_sdk::Certification;
 
         let directory = tempdir().expect("temporary directory");
         let input = directory.path().join("chapter.md");
         fs::write(&input, "# Title\n\nELECTRIC 440 text").expect("write markdown");
         let probe = inspect_document(&input).await.expect("markdown inspection");
-        let pandoc = formatwright_engine_sdk::EngineIdentity {
+        let pandoc = anole_engine_sdk::EngineIdentity {
             engine_id: "pandoc".to_owned(),
             version: "3.8".to_owned(),
             binary_path: std::path::PathBuf::from("pandoc.exe"),
@@ -1490,7 +1490,7 @@ mod tests {
         );
         assert!(!plan.plan_hash.is_empty(), "plan hash is computed");
 
-        let wrong_engine = formatwright_engine_sdk::EngineIdentity {
+        let wrong_engine = anole_engine_sdk::EngineIdentity {
             engine_id: "soffice".to_owned(),
             ..pandoc
         };

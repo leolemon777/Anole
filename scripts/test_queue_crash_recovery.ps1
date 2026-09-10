@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -24,7 +24,7 @@ function Invoke-Json {
 function Get-StagedPath {
     param([string]$Output, [string]$JobId)
     Join-Path (Split-Path -Parent $Output) (
-        '.formatwright-partial-' + $JobId + '-' + (Split-Path -Leaf $Output)
+        '.anole-partial-' + $JobId + '-' + (Split-Path -Leaf $Output)
     )
 }
 
@@ -106,7 +106,7 @@ Assert-True (
     $inputHash -eq (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash
 ) 'crash/recovery modified the input'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'recovery left staged output files'
 foreach ($code in @('ENGINE_STARTED', 'RECOVERED_AFTER_RESTART', 'JOB_RESUMED', 'VALIDATION_FINISHED')) {
     Assert-True (@($final.events.code) -contains $code) "missing durable event $code"

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [ValidateRange(2, 16)][int]$RunnerCount = 4,
     [ValidateRange(2, 256)][int]$JobCount = 24
@@ -123,7 +123,7 @@ Assert-True ($failed -eq 0) 'contention must not create failed Jobs'
 Assert-True (@($jobs | Where-Object state -eq 'completed').Count -eq $JobCount) 'final state count mismatch'
 Assert-True ($engineStarts -eq $JobCount) 'an engine started more than once for a Job'
 Assert-True ($outputs -eq $JobCount -and $reports -eq $JobCount) 'output/report reconciliation failed'
-Assert-True (@(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.formatwright-partial-*' -File).Count -eq 0) 'partial outputs remain'
+Assert-True (@(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.anole-partial-*' -File).Count -eq 0) 'partial outputs remain'
 
 $result = [ordered]@{
     schema_version = 1

@@ -1,7 +1,7 @@
 use std::fs;
 use std::time::Instant;
 
-use formatwright_core::{
+use anole_core::{
     ExecutionMilestone, JobCreateRequest, JobState, PlanRequest, SqliteJobStore, ValidationStatus,
     execute_plan_observed, inspect_builtin_engine, inspect_structured, plan_structured_conversion,
 };
@@ -23,7 +23,7 @@ async fn converts_and_validates_ten_thousand_structured_files_in_bounded_windows
     fs::create_dir_all(&input_root).expect("input root");
     fs::create_dir_all(&output_root).expect("output root");
     let database = suite.path().join("jobs.sqlite3");
-    let engine = inspect_builtin_engine("formatwright.structured")
+    let engine = inspect_builtin_engine("anole.structured")
         .await
         .expect("built-in structured engine");
 
@@ -122,7 +122,7 @@ async fn converts_and_validates_ten_thousand_structured_files_in_bounded_windows
             #[allow(clippy::manual_is_multiple_of)]
             if completed % 1_000 == 0 {
                 println!(
-                    "FORMATWRIGHT_10000_PROGRESS completed={completed} elapsed_ms={}",
+                    "ANOLE_10000_PROGRESS completed={completed} elapsed_ms={}",
                     execution_started.elapsed().as_millis()
                 );
             }
@@ -156,6 +156,6 @@ async fn converts_and_validates_ten_thousand_structured_files_in_bounded_windows
             .all(|entry| !entry.file_name().to_string_lossy().contains("partial"))
     );
     println!(
-        "FORMATWRIGHT_10000_CONVERSIONS jobs={JOB_COUNT} window={SCHEDULING_WINDOW} planning_ms={planning_ms} execution_ms={execution_ms}"
+        "ANOLE_10000_CONVERSIONS jobs={JOB_COUNT} window={SCHEDULING_WINDOW} planning_ms={planning_ms} execution_ms={execution_ms}"
     );
 }

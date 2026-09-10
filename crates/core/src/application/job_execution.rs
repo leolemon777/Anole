@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use formatwright_engine_sdk::EngineIdentity;
+use anole_engine_sdk::EngineIdentity;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::doctor::{inspect_builtin_engine, inspect_engine};
 use crate::document::inspect_document;
 use crate::domain::{JobState, Plan, Probe, ValidationReport, ValidationStatus};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::inspect::inspect_media;
 use crate::job_store::{EngineThroughputSample, JobDetails, JobRecord, SqliteJobStore};
 use crate::office::inspect_office;
@@ -202,7 +202,7 @@ impl JobExecutionService {
         P: FnMut(QueueProgressUpdate),
     {
         if !(1..=16).contains(&parallel) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Store,
                 "Parallelism must be between 1 and 16",
@@ -210,7 +210,7 @@ impl JobExecutionService {
             ));
         }
         if limit > 256 {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Store,
                 "A scheduling window cannot hydrate more than 256 jobs",
@@ -221,7 +221,7 @@ impl JobExecutionService {
         let mut pending = VecDeque::with_capacity(jobs.len());
         for job in &jobs {
             let details = store.get_job_details(job.id)?.ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::StorageFailed,
                     Stage::Store,
                     format!("Queued job disappeared: {}", job.id),
@@ -381,7 +381,7 @@ impl JobExecutionService {
                     if control.admission_cancelled() || pending.is_empty() {
                         break;
                     }
-                    return Err(FormatWrightError::new(
+                    return Err(AnoleError::new(
                         ErrorCode::ResourceExhausted,
                         Stage::Execute,
                         "No queued job fits within the configured scheduler resource budget",
@@ -400,7 +400,7 @@ impl JobExecutionService {
                 };
                 let outcome = joined
                     .ok_or_else(|| {
-                        FormatWrightError::new(
+                        AnoleError::new(
                             ErrorCode::Internal,
                             Stage::Execute,
                             "Scheduler lost its active worker set",
@@ -408,7 +408,7 @@ impl JobExecutionService {
                         )
                     })?
                     .map_err(|error| {
-                        FormatWrightError::new(
+                        AnoleError::new(
                             ErrorCode::Internal,
                             Stage::Execute,
                             format!("Queue worker stopped unexpectedly: {error}"),
@@ -648,8 +648,8 @@ where
     };
     for stored_step in &details.plan.steps {
         let stored_identity = &stored_step.engine;
-        let current = if stored_identity.engine_id == "formatwright.structured" {
-            inspect_builtin_engine("formatwright.structured").await
+        let current = if stored_identity.engine_id == "anole.structured" {
+            inspect_builtin_engine("anole.structured").await
         } else {
             inspect_engine(&stored_identity.engine_id).await
         };
@@ -774,10 +774,10 @@ async fn inspect_queued_input(
     details: &JobDetails,
     stored_engine: &EngineIdentity,
 ) -> Result<(Probe, EngineIdentity)> {
-    if stored_engine.engine_id == "formatwright.structured" {
+    if stored_engine.engine_id == "anole.structured" {
         return Ok((
             inspect_structured(&details.job.input_path).await?,
-            inspect_builtin_engine("formatwright.structured").await?,
+            inspect_builtin_engine("anole.structured").await?,
         ));
     }
     if stored_engine.engine_id == "pandoc" {
@@ -813,7 +813,7 @@ async fn inspect_queued_input(
 
 fn mark_job_validating(store: &mut SqliteJobStore, job_id: Uuid) -> Result<Option<JobRecord>> {
     let job = store.get_job(job_id)?.ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!("Active job disappeared: {job_id}"),
@@ -842,7 +842,7 @@ mod tests {
     };
     use crate::job_store::SqliteJobStore;
     use crate::structured::{inspect_structured, plan_structured_conversion};
-    use crate::{ErrorCode, FormatWrightError, Stage};
+    use crate::{AnoleError, ErrorCode, Stage};
     use crate::{inspect_builtin_engine, prepare_conversion};
 
     async fn queue_structured_job(
@@ -861,7 +861,7 @@ mod tests {
         panic_worker: bool,
     ) -> uuid::Uuid {
         fs::write(input, r#"[{"id":1,"ok":true}]"#).expect("write JSON");
-        let engine = inspect_builtin_engine("formatwright.structured")
+        let engine = inspect_builtin_engine("anole.structured")
             .await
             .expect("structured engine");
         let probe = inspect_structured(input).await.expect("inspect");
@@ -1178,7 +1178,7 @@ mod tests {
         let observed_control = control.clone();
 
         let error = JobExecutionService::run_window_observed(&mut store, 8, 2, control, |_, _| {
-            Err(FormatWrightError::new(
+            Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 "injected report storage failure",
@@ -1199,7 +1199,7 @@ mod tests {
                 .filter(|entry| entry
                     .file_name()
                     .to_string_lossy()
-                    .contains("formatwright-partial"))
+                    .contains("anole-partial"))
                 .count(),
             0
         );

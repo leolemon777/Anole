@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::job_store::SqliteJobStore;
 
 pub(crate) const DATABASE_SCHEMA_VERSION: i64 = 6;
@@ -361,7 +361,7 @@ pub(crate) fn automatic_snapshot_before_migration(database_path: &Path) -> Resul
 
 fn backup_database(source: &Path, destination: &Path, overwrite: bool) -> Result<BackupReport> {
     if !source.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!("Database does not exist: {}", source.display()),
@@ -370,7 +370,7 @@ fn backup_database(source: &Path, destination: &Path, overwrite: bool) -> Result
     }
     ensure_distinct_paths(source, destination)?;
     if destination.exists() && !overwrite {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Store,
             format!(
@@ -451,7 +451,7 @@ fn online_copy(source: &Path, destination: &Path, mode: CopyMode) -> Result<()> 
                     std::thread::sleep(BACKUP_STEP_PAUSE);
                 }
                 StepResult::Busy | StepResult::Locked => {
-                    return Err(FormatWrightError::new(
+                    return Err(AnoleError::new(
                         ErrorCode::PolicyBlocked,
                         Stage::Store,
                         "SQLite maintenance could not acquire a database lock within 30 seconds",
@@ -460,7 +460,7 @@ fn online_copy(source: &Path, destination: &Path, mode: CopyMode) -> Result<()> 
                     .retryable(true));
                 }
                 _ => {
-                    return Err(FormatWrightError::new(
+                    return Err(AnoleError::new(
                         ErrorCode::StorageFailed,
                         Stage::Store,
                         "SQLite returned an unknown online-backup result",
@@ -480,7 +480,7 @@ fn online_copy(source: &Path, destination: &Path, mode: CopyMode) -> Result<()> 
             })
             .map_err(storage_error)?;
         if !actual_journal_mode.eq_ignore_ascii_case("DELETE") {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::StorageFailed,
                 Stage::Store,
                 format!(
@@ -814,7 +814,7 @@ fn table_exists(connection: &Connection, table: &str) -> Result<bool> {
 
 fn ensure_supported_schema(version: i64) -> Result<()> {
     if version > DATABASE_SCHEMA_VERSION {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!(
@@ -834,7 +834,7 @@ fn query_count(connection: &Connection, sql: &str) -> Result<u64> {
 
 fn open_read_only(path: &Path) -> Result<Connection> {
     if !path.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!("Database does not exist: {}", path.display()),
@@ -854,7 +854,7 @@ fn open_read_only(path: &Path) -> Result<Connection> {
 
 fn open_read_write_existing(path: &Path) -> Result<Connection> {
     if !path.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Store,
             format!("Database does not exist: {}", path.display()),
@@ -935,7 +935,7 @@ fn ensure_distinct_paths(source: &Path, destination: &Path) -> Result<()> {
     let source = canonical_or_absolute_path(source)?;
     let destination = canonical_or_absolute_path(destination)?;
     if paths_equal(&source, &destination) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Store,
             "Backup destination cannot be the live database",
@@ -991,7 +991,7 @@ fn sibling_temporary_path(path: &Path, label: &str) -> Result<PathBuf> {
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
-        .unwrap_or("formatwright.sqlite3");
+        .unwrap_or("anole.sqlite3");
     Ok(parent.join(format!(".{name}.{label}.{}", Uuid::new_v4())))
 }
 
@@ -1006,7 +1006,7 @@ fn parent_directory(path: &Path) -> Result<&Path> {
     if path.file_name().is_some() {
         return Ok(Path::new("."));
     }
-    Err(FormatWrightError::new(
+    Err(AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Store,
         format!("Path has no parent directory: {}", path.display()),
@@ -1082,8 +1082,8 @@ fn prune_automatic_snapshots(
     Ok(())
 }
 
-fn integrity_failure(message: &str, report: &IntegrityReport) -> FormatWrightError {
-    FormatWrightError::new(
+fn integrity_failure(message: &str, report: &IntegrityReport) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Store,
         message,
@@ -1096,8 +1096,8 @@ fn integrity_failure(message: &str, report: &IntegrityReport) -> FormatWrightErr
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn storage_error(error: rusqlite::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn storage_error(error: rusqlite::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Store,
         "SQLite maintenance operation failed",
@@ -1111,8 +1111,8 @@ fn maintenance_error(
     message: impl Into<String>,
     action: impl Into<String>,
     error: impl std::fmt::Display,
-) -> FormatWrightError {
-    FormatWrightError::new(code, Stage::Store, message, action).with_diagnostic(error.to_string())
+) -> AnoleError {
+    AnoleError::new(code, Stage::Store, message, action).with_diagnostic(error.to_string())
 }
 
 #[cfg(test)]

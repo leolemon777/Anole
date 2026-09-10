@@ -451,13 +451,13 @@ Anole 不只告诉用户“转换完成”，还要回答：
 首发命令：
 
 ~~~text
-formatwright inspect INPUT [--json]
-formatwright plan INPUT --to FORMAT [OPTIONS] [--json]
-formatwright convert INPUT --to FORMAT [OPTIONS]
-formatwright batch INPUT_DIR --to FORMAT [OPTIONS]
-formatwright jobs list|show|retry|cancel|resume
-formatwright doctor [--json]
-formatwright engines list|inspect|install
+anole inspect INPUT [--json]
+anole plan INPUT --to FORMAT [OPTIONS] [--json]
+anole convert INPUT --to FORMAT [OPTIONS]
+anole batch INPUT_DIR --to FORMAT [OPTIONS]
+anole jobs list|show|retry|cancel|resume
+anole doctor [--json]
+anole engines list|inspect|install
 ~~~
 
 稳定退出码：
@@ -593,13 +593,13 @@ stateDiagram-v2
 ### 5.7 建议仓库结构
 
 ~~~text
-FormatWright/
+Anole/
   apps/
     desktop/              Tauri 2 + React
   crates/
     core/                 领域模型、规划、执行、验证、队列
     engine-sdk/           引擎能力和插件协议
-    cli/                  formatwright CLI
+    cli/                  anole CLI
     server/               Axum，后续启用
   packages/
     ui/                   可复用 React 组件

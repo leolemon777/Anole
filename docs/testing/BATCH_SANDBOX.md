@@ -27,7 +27,7 @@ The passing fixture promotes GW-03 to Experimental on Windows. The CLI uses dete
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_batch_sandbox.ps1
 ~~~
 

@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::doctor::{inspect_builtin_engine, inspect_engine};
 use crate::document::{inspect_document, validate_docx_output};
 use crate::domain::{Plan, Probe, ValidationCheck, ValidationReport, ValidationStatus};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::inspect::inspect_media;
 use crate::office::{inspect_office, validate_office_pdf_output};
 use crate::pdf::{inspect_pdf, validate_pdf_render};
@@ -42,14 +42,14 @@ impl RevalidationService {
             .map(|step| step.engine.engine_id.as_str())
             .ok_or_else(|| invalid_revalidation_plan("executable step"))?;
         let mut report = match (first_engine, plan.target_format.as_str()) {
-            ("formatwright.structured", _) => {
+            ("anole.structured", _) => {
                 let input = inspect_structured(input_path).await?;
                 ensure_input_matches(&input, plan)?;
                 let output = inspect_structured(output_path).await?;
                 let mut report = validate_structured_output(&input, &output, plan, job_id);
                 append_engine(
                     &mut report,
-                    inspect_builtin_engine("formatwright.structured").await?,
+                    inspect_builtin_engine("anole.structured").await?,
                 );
                 report
             }
@@ -60,7 +60,7 @@ impl RevalidationService {
                 let mut report = validate_docx_output(&input, &output, plan, job_id);
                 append_engine(
                     &mut report,
-                    inspect_builtin_engine("formatwright.document-validator").await?,
+                    inspect_builtin_engine("anole.document-validator").await?,
                 );
                 report
             }
@@ -167,7 +167,7 @@ fn ensure_plan_integrity(plan: &Plan) -> Result<()> {
     if computed == plan.plan_hash {
         return Ok(());
     }
-    Err(FormatWrightError::new(
+    Err(AnoleError::new(
         ErrorCode::InputChanged,
         Stage::Validate,
         "Stored Plan failed its deterministic integrity check",
@@ -180,7 +180,7 @@ fn ensure_input_matches(input: &Probe, plan: &Plan) -> Result<()> {
     if input.artifact.fast_fingerprint == plan.input_fingerprint {
         return Ok(());
     }
-    Err(FormatWrightError::new(
+    Err(AnoleError::new(
         ErrorCode::InputChanged,
         Stage::Validate,
         "The original input changed after this job was planned",
@@ -192,7 +192,7 @@ fn ensure_input_matches(input: &Probe, plan: &Plan) -> Result<()> {
     )))
 }
 
-fn append_engine(report: &mut ValidationReport, engine: formatwright_engine_sdk::EngineIdentity) {
+fn append_engine(report: &mut ValidationReport, engine: anole_engine_sdk::EngineIdentity) {
     if !report.engines.iter().any(|existing| {
         existing.engine_id == engine.engine_id && existing.binary_sha256 == engine.binary_sha256
     }) {
@@ -200,8 +200,8 @@ fn append_engine(report: &mut ValidationReport, engine: formatwright_engine_sdk:
     }
 }
 
-fn invalid_revalidation_plan(field: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_revalidation_plan(field: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Validate,
         format!("Stored Plan is missing its {field}"),
@@ -209,8 +209,8 @@ fn invalid_revalidation_plan(field: &str) -> FormatWrightError {
     )
 }
 
-fn revalidation_io_error(error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn revalidation_io_error(error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         Stage::Validate,
         "Validation-only workspace could not be created",

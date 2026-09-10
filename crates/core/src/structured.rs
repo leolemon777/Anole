@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
@@ -17,11 +17,11 @@ use crate::domain::{
     Plan, PlanRequest, PlanStep, Probe, ProbeEvidence, ReportRedaction, SCHEMA_VERSION, StreamKind,
     StreamProbe, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
-const STRUCTURED_ENGINE_ID: &str = "formatwright.structured";
+const STRUCTURED_ENGINE_ID: &str = "anole.structured";
 const SUPPORTED_FORMATS: [&str; 4] = ["csv", "json", "yaml", "xml"];
 const MAX_STRUCTURED_INPUT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -82,7 +82,7 @@ pub fn structured_format_hint(path: &Path) -> Option<&'static str> {
 pub async fn inspect_structured(path: impl AsRef<Path>) -> Result<Probe> {
     let path = path.as_ref();
     let format = structured_format_hint(path).ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Inspect,
             "The file is not a recognized structured-data format",
@@ -91,7 +91,7 @@ pub async fn inspect_structured(path: impl AsRef<Path>) -> Result<Probe> {
     })?;
     let artifact = identify_artifact(path).await?;
     if artifact.size_bytes > MAX_STRUCTURED_INPUT_BYTES {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ResourceExhausted,
             Stage::Inspect,
             format!(
@@ -123,7 +123,7 @@ pub fn plan_structured_conversion(
 ) -> Result<Plan> {
     let target = normalize_format(&request.target_format);
     if !SUPPORTED_FORMATS.contains(&target.as_str()) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("Structured target is unsupported: {target}"),
@@ -133,7 +133,7 @@ pub fn plan_structured_conversion(
     if probe.format.kind != FormatKind::Data
         || !SUPPORTED_FORMATS.contains(&probe.format.id.as_str())
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "Structured conversion requires CSV, JSON, YAML, or XML input",
@@ -141,7 +141,7 @@ pub fn plan_structured_conversion(
         ));
     }
     if engine.engine_id != STRUCTURED_ENGINE_ID {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The Plan was given the wrong structured-data engine",
@@ -154,7 +154,7 @@ pub fn plan_structured_conversion(
     let has_nulls = property_bool(properties, "has_nulls");
     let has_missing = property_bool(properties, "has_missing");
     if matches!(target.as_str(), "csv" | "xml") && has_nested {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Nested records cannot be flattened implicitly",
@@ -164,7 +164,7 @@ pub fn plan_structured_conversion(
     let scalar_loss = matches!(target.as_str(), "csv" | "xml")
         && (has_non_string_scalars || has_nulls || has_missing);
     if scalar_loss && !request.allow_lossy_data {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "The target cannot preserve scalar, null, and missing-field distinctions",
@@ -227,7 +227,7 @@ pub fn plan_structured_conversion(
     ]);
     let step = PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: format!("formatwright.structured.{}-to-{target}", probe.format.id),
+        capability_id: format!("anole.structured.{}-to-{target}", probe.format.id),
         engine: engine.clone(),
         operation: Operation::Serialize,
         loss_class: if scalar_loss {
@@ -277,7 +277,7 @@ pub(crate) fn convert_structured_file(input: &Path, output: &Path, plan: &Plan) 
     let detected = structured_format_hint(input)
         .ok_or_else(|| invalid_plan("input no longer has a structured format"))?;
     if detected != source_format {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputChanged,
             Stage::Execute,
             "Structured input format changed after planning",
@@ -412,7 +412,7 @@ fn dataset(records: Vec<BTreeMap<String, Value>>) -> Result<Dataset> {
         .iter()
         .any(|record| fields.iter().any(|field| !record.contains_key(field)));
     let canonical = serde_json::to_vec(&records).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Inspect,
             "Unable to compute the structured semantic digest",
@@ -550,7 +550,7 @@ fn read_xml(path: &Path) -> Result<Vec<BTreeMap<String, Value>>> {
                     "apos" => "'",
                     "quot" => "\"",
                     _ => {
-                        return Err(FormatWrightError::new(
+                        return Err(AnoleError::new(
                             ErrorCode::PolicyBlocked,
                             Stage::Inspect,
                             format!("XML entity reference is disabled: &{name};"),
@@ -587,7 +587,7 @@ fn read_xml(path: &Path) -> Result<Vec<BTreeMap<String, Value>>> {
                 depth = depth.saturating_sub(1);
             }
             Ok(Event::DocType(_)) => {
-                return Err(FormatWrightError::new(
+                return Err(AnoleError::new(
                     ErrorCode::PolicyBlocked,
                     Stage::Inspect,
                     "XML document types and external entities are disabled",
@@ -691,7 +691,7 @@ fn write_csv(path: &Path, dataset: &Dataset) -> Result<()> {
 fn write_xml(path: &Path, dataset: &Dataset) -> Result<()> {
     for field in &dataset.fields {
         if !valid_xml_name(field) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::PolicyBlocked,
                 Stage::Execute,
                 format!("Field is not a valid XML element name: {field}"),
@@ -742,7 +742,7 @@ fn scalar_text(value: Option<&Value>) -> Result<String> {
         Some(Value::String(value)) => Ok(value.clone()),
         Some(Value::Bool(value)) => Ok(value.to_string()),
         Some(Value::Number(value)) => Ok(value.to_string()),
-        Some(Value::Array(_) | Value::Object(_)) => Err(FormatWrightError::new(
+        Some(Value::Array(_) | Value::Object(_)) => Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Execute,
             "Nested data reached a flat serializer",
@@ -915,7 +915,7 @@ fn xml_event_name(bytes: &[u8]) -> Result<String> {
 
 fn reject_xml_attributes(event: &BytesStart<'_>) -> Result<()> {
     if event.attributes().next().is_some() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Inspect,
             "XML attributes are outside the records-v1 mapping",
@@ -972,8 +972,8 @@ fn artifact_summary(probe: &Probe) -> ArtifactSummary {
     }
 }
 
-fn input_error(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn input_error(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         message,
@@ -981,8 +981,8 @@ fn input_error(message: &str) -> FormatWrightError {
     )
 }
 
-fn invalid_plan(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn invalid_plan(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::PolicyBlocked,
         Stage::Execute,
         format!("Invalid structured Plan: {message}"),
@@ -990,8 +990,8 @@ fn invalid_plan(message: &str) -> FormatWrightError {
     )
 }
 
-fn parse_error(label: &str, error: impl fmt::Display) -> FormatWrightError {
-    FormatWrightError::new(
+fn parse_error(label: &str, error: impl fmt::Display) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Unable to parse {label}"),
@@ -1001,8 +1001,8 @@ fn parse_error(label: &str, error: impl fmt::Display) -> FormatWrightError {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn io_error(stage: Stage, action: &str, error: std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn io_error(stage: Stage, action: &str, error: std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::StorageFailed,
         stage,
         format!("Unable to {action}"),
@@ -1012,8 +1012,8 @@ fn io_error(stage: Stage, action: &str, error: std::io::Error) -> FormatWrightEr
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn worker_error(stage: Stage, error: tokio::task::JoinError) -> FormatWrightError {
-    FormatWrightError::new(
+fn worker_error(stage: Stage, error: tokio::task::JoinError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Internal,
         stage,
         "Structured parser worker failed",
@@ -1111,7 +1111,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity};
+    use anole_engine_sdk::{Certification, EngineIdentity};
     use tempfile::tempdir;
     use uuid::Uuid;
 
@@ -1153,9 +1153,9 @@ mod tests {
 
     fn engine() -> EngineIdentity {
         EngineIdentity {
-            engine_id: "formatwright.structured".to_owned(),
+            engine_id: "anole.structured".to_owned(),
             version: "test".to_owned(),
-            binary_path: PathBuf::from("formatwright"),
+            binary_path: PathBuf::from("anole"),
             binary_sha256: "00".repeat(32),
             manifest_sha256: None,
             build_configuration: Some("test".to_owned()),

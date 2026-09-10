@@ -13,7 +13,7 @@ This is a real homogeneous structured-data workload, not a synthetic queue proje
 ## Reproduce
 
 ~~~powershell
-cargo test -p formatwright-core --test ten_thousand_conversions --release -- --ignored --nocapture
+cargo test -p anole-core --test ten_thousand_conversions --release -- --ignored --nocapture
 ~~~
 
 The test is ignored during ordinary CI because it deliberately creates 20,000 files and tens of thousands of durable state events. Release candidates run it explicitly.
@@ -21,10 +21,10 @@ The test is ignored during ordinary CI because it deliberately creates 20,000 fi
 ## Recorded result
 
 ~~~text
-FORMATWRIGHT_10000_PROGRESS completed=1000 elapsed_ms=8815
-FORMATWRIGHT_10000_PROGRESS completed=5000 elapsed_ms=43634
-FORMATWRIGHT_10000_PROGRESS completed=10000 elapsed_ms=88111
-FORMATWRIGHT_10000_CONVERSIONS jobs=10000 window=128 planning_ms=48638 execution_ms=88111
+ANOLE_10000_PROGRESS completed=1000 elapsed_ms=8815
+ANOLE_10000_PROGRESS completed=5000 elapsed_ms=43634
+ANOLE_10000_PROGRESS completed=10000 elapsed_ms=88111
+ANOLE_10000_CONVERSIONS jobs=10000 window=128 planning_ms=48638 execution_ms=88111
 test result: ok. 1 passed; finished in 139.65s
 ~~~
 

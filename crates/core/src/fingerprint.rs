@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use crate::domain::ArtifactIdentity;
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 const SAMPLE_BYTES: usize = 1024 * 1024;
 const FULL_FAST_HASH_THRESHOLD: u64 = (SAMPLE_BYTES as u64) * 3;
@@ -20,7 +20,7 @@ pub async fn identify_artifact(path: impl AsRef<Path>) -> Result<ArtifactIdentit
     tokio::task::spawn_blocking(move || identify_artifact_blocking(&path))
         .await
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::Internal,
                 Stage::Inspect,
                 "Artifact identity worker failed",
@@ -33,7 +33,7 @@ pub async fn identify_artifact(path: impl AsRef<Path>) -> Result<ArtifactIdentit
 fn identify_artifact_blocking(path: &Path) -> Result<ArtifactIdentity> {
     ensure_local_filesystem_path(path, Stage::Inspect)?;
     let canonical_path = path.canonicalize().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Cannot resolve input path: {}", path.display()),
@@ -42,7 +42,7 @@ fn identify_artifact_blocking(path: &Path) -> Result<ArtifactIdentity> {
         .with_diagnostic(error.to_string())
     })?;
     let metadata = canonical_path.metadata().map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Cannot read input metadata: {}", path.display()),
@@ -51,7 +51,7 @@ fn identify_artifact_blocking(path: &Path) -> Result<ArtifactIdentity> {
         .with_diagnostic(error.to_string())
     })?;
     if !metadata.is_file() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!("Input is not a regular file: {}", path.display()),
@@ -81,7 +81,7 @@ fn identify_artifact_blocking(path: &Path) -> Result<ArtifactIdentity> {
 pub(crate) fn ensure_local_filesystem_path(path: &Path, stage: Stage) -> Result<()> {
     #[cfg(not(windows))]
     if path.to_string_lossy().starts_with("//") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             stage,
             format!("Network filesystem paths are disabled: {}", path.display()),
@@ -97,7 +97,7 @@ pub(crate) fn ensure_local_filesystem_path(path: &Path, stage: Stage) -> Result<
                 std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _)
             )
     ) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             stage,
             format!("Network filesystem paths are disabled: {}", path.display()),
@@ -110,7 +110,7 @@ pub(crate) fn ensure_local_filesystem_path(path: &Path, stage: Stage) -> Result<
 fn sampled_blake3(path: &Path, size: u64) -> Result<String> {
     let mut file = File::open(path).map_err(|error| io_error(path, &error))?;
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"formatwright-fast-fingerprint-v1");
+    hasher.update(b"anole-fast-fingerprint-v1");
     hasher.update(&size.to_le_bytes());
 
     if size <= FULL_FAST_HASH_THRESHOLD {
@@ -141,7 +141,7 @@ pub async fn full_blake3(path: impl AsRef<Path>) -> Result<String> {
     })
     .await
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Inspect,
             "Full hash worker failed",
@@ -185,8 +185,8 @@ fn hash_reader(
     Ok(())
 }
 
-fn io_error(path: &Path, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn io_error(path: &Path, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::InputInvalid,
         Stage::Inspect,
         format!("Cannot read input: {}", path.display()),
@@ -223,7 +223,7 @@ mod tests {
     #[tokio::test]
     async fn fast_fingerprint_changes_when_sampled_content_changes() {
         let mut file = NamedTempFile::new().expect("temporary file");
-        file.write_all(b"formatwright").expect("write fixture");
+        file.write_all(b"anole").expect("write fixture");
         file.flush().expect("flush fixture");
         let first = identify_artifact(file.path())
             .await

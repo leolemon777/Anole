@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, FormatWrightError>;
+pub type Result<T> = std::result::Result<T, AnoleError>;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -59,7 +59,7 @@ pub enum Stage {
 
 #[derive(Clone, Debug, Deserialize, Error, Serialize)]
 #[error("{code}: {message}")]
-pub struct FormatWrightError {
+pub struct AnoleError {
     pub code: ErrorCode,
     pub stage: Stage,
     pub retryable: bool,
@@ -68,7 +68,7 @@ pub struct FormatWrightError {
     pub diagnostic: Option<String>,
 }
 
-impl FormatWrightError {
+impl AnoleError {
     #[must_use]
     pub fn new(
         code: ErrorCode,

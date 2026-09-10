@@ -35,7 +35,7 @@ The 499-byte fixture is `strukturag/libheif/fuzzing/data/corpus/colors-no-alpha.
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_heic_sandbox.ps1 `
   -Python <python-with-pillow> `
   -HeifConvert <heif-convert.exe> `

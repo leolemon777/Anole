@@ -69,7 +69,7 @@ jobs:
           echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$env:DEV_KEY_PASSWORD" >> $env:GITHUB_ENV
       - name: Build offline NSIS candidate
-        run: pnpm --filter @formatwright/desktop tauri build --bundles nsis
+        run: pnpm --filter @anole/desktop tauri build --bundles nsis
       - name: Authenticode-sign release artifacts (spec E-01)
         # Activates itself once DECISION-1 lands and the signing secret exists;
         # until then the rehearsal stays an explicit unsigned Alpha.
@@ -93,7 +93,7 @@ jobs:
           try {
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODESIGN_PFX))
             $files = @(
-              'target/release/formatwright-desktop.exe',
+              'target/release/anole-desktop.exe',
               'target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe'
             )
             $signtool = Join-Path `
@@ -114,14 +114,14 @@ jobs:
           }
       - name: Generate checksums
         # Runs after signing so SHA256SUMS covers the signed bytes.
-        run: python scripts/generate_checksums.py target/release/formatwright-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
+        run: python scripts/generate_checksums.py target/release/anole-desktop.exe target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
       - name: Assert signature state matches the signing decision
         shell: pwsh
         env:
           CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
         run: |
           $files = @(
-            'target/release/formatwright-desktop.exe',
+            'target/release/anole-desktop.exe',
             'target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe'
           )
           $expectSigned = -not [string]::IsNullOrWhiteSpace($env:CODESIGN_PFX)
@@ -136,10 +136,10 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: formatwright-windows-unsigned-alpha
+          name: anole-windows-unsigned-alpha
           if-no-files-found: error
           path: |
-            target/release/formatwright-desktop.exe
+            target/release/anole-desktop.exe
             target/release/bundle/nsis/Anole_0.1.0_x64-setup.exe
             dist/SHA256SUMS
           retention-days: 14

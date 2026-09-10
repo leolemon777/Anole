@@ -1,7 +1,7 @@
 # Anole Agent 交接说明
 
 - 交接日期：2026-08-15
-- 仓库：`E:\Users\Administrator\Desktop\FormatWright`
+- 仓库：`E:\Users\Administrator\Desktop\Anole`
 - 分支：`main`
 - 当前 HEAD：`ed9afd1 test: certify installed shell and desktop accessibility`
 - 工作树：**有一组尚未提交的 Engine SBOM / Release UI E2E 改动，必须保留**
@@ -120,7 +120,7 @@ Anole 的 Windows 主链路已经从“依赖系统工具且 PDF 无法转换”
 
 `apps/desktop/src/App.tsx` 最后补了显式 `<option value={value}>`，避免不可用选项的 value 混入本地化“— 缺失”文案；Preset 的 color-mode/stream 变更也会使旧 preview 失效。
 
-上面 SHA-256 为 `25679dd0…0859` 的安装器是在这处前端修正之前构建的。当前 `target/release/formatwright-desktop.exe` 又是带 `tauri.release-e2e.conf.json` 远程调试参数的测试构建。因此交接后必须：
+上面 SHA-256 为 `25679dd0…0859` 的安装器是在这处前端修正之前构建的。当前 `target/release/anole-desktop.exe` 又是带 `tauri.release-e2e.conf.json` 远程调试参数的测试构建。因此交接后必须：
 
 1. 先修好并跑通 PNG/JPG Release UI E2E；
 2. 再用标准配置重建 NSIS（不能带 release-e2e 远程调试配置）；
@@ -199,7 +199,7 @@ Anole 的 Windows 主链路已经从“依赖系统工具且 PDF 无法转换”
 ## 7. 建议给下一位 Agent 的启动提示词
 
 ~~~text
-你接手的是 E:\Users\Administrator\Desktop\FormatWright 仓库。先完整阅读：
+你接手的是 E:\Users\Administrator\Desktop\Anole 仓库。先完整阅读：
 1) SPEC_PLAN.md
 2) docs/MASTER_EXECUTION_PLAN.md
 3) docs/AGENT_HANDOFF_2026-08-15.md

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use crate::domain::{
     ArtifactSummary, ChangeSet, NetworkPolicy, Plan, PlanStep, Probe, ReportRedaction,
     SCHEMA_VERSION, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::planner::deterministic_plan_hash;
 
 const POPPLER_UTILITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -43,7 +43,7 @@ pub fn plan_edge_print_to_pdf(
         return Err(unsupported("Browser print input must be HTML or SVG"));
     }
     if property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "Markup contains an external image/resource under deny-all policy",
@@ -56,7 +56,7 @@ pub fn plan_edge_print_to_pdf(
         || pdftotext.engine_id != "pdftotext"
         || pdffonts.engine_id != "pdffonts"
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The browser-print Plan was given an incorrect engine",
@@ -350,7 +350,7 @@ pub(crate) async fn extract_pdf_text(engine: &EngineIdentity, pdf: &Path) -> Res
         .map_err(|_| poppler_timeout("pdftotext"))?
         .map_err(|error| poppler_start_failure("pdftotext", &error))?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "The PDF text-layer validator exited with an error",
@@ -380,7 +380,7 @@ pub(crate) async fn inspect_pdf_font_table(engine: &EngineIdentity, pdf: &Path) 
         .map_err(|_| poppler_timeout("pdffonts"))?
         .map_err(|error| poppler_start_failure("pdffonts", &error))?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "The PDF font-embedding validator exited with an error",
@@ -483,8 +483,8 @@ fn artifact_summary(probe: &Probe) -> ArtifactSummary {
     }
 }
 
-fn unsupported(message: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn unsupported(message: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Unsupported,
         Stage::Plan,
         message,
@@ -492,8 +492,8 @@ fn unsupported(message: &str) -> FormatWrightError {
     )
 }
 
-fn poppler_timeout(name: &str) -> FormatWrightError {
-    FormatWrightError::new(
+fn poppler_timeout(name: &str) -> AnoleError {
+    AnoleError::new(
         ErrorCode::ExecutionFailed,
         Stage::Validate,
         format!("The {name} validator timed out"),
@@ -501,8 +501,8 @@ fn poppler_timeout(name: &str) -> FormatWrightError {
     )
 }
 
-fn poppler_start_failure(name: &str, error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn poppler_start_failure(name: &str, error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::EngineIncompatible,
         Stage::Validate,
         format!("Unable to start the {name} validator"),
@@ -522,7 +522,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::Certification;
+    use anole_engine_sdk::Certification;
     use serde_json::json;
 
     use super::{
@@ -534,8 +534,8 @@ mod tests {
         StreamProbe,
     };
 
-    fn engine(engine_id: &str) -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn engine(engine_id: &str) -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: engine_id.to_owned(),
             version: "test".to_owned(),
             binary_path: PathBuf::from("engine.bin"),
@@ -581,7 +581,7 @@ mod tests {
             metadata: BTreeMap::new(),
             warnings: Vec::new(),
             evidence: ProbeEvidence {
-                engine_id: "formatwright.document-inspector".to_owned(),
+                engine_id: "anole.document-inspector".to_owned(),
                 engine_version: "test".to_owned(),
                 engine_binary_sha256: None,
             },
@@ -625,10 +625,7 @@ mod tests {
         assert_eq!(plan.steps.len(), 5);
         assert_eq!(plan.steps[0].capability_id, "edge.html-to-pdf.vector-print");
         assert_eq!(plan.steps[0].engine.engine_id, "msedge");
-        assert_eq!(
-            plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::None
-        );
+        assert_eq!(plan.steps[0].loss_class, anole_engine_sdk::LossClass::None);
         assert_eq!(plan.steps[4].engine.engine_id, "pdffonts");
         assert!(plan.validators.contains(&"edge.pdf-text-layer".to_owned()));
         assert!(!plan.plan_hash.is_empty());

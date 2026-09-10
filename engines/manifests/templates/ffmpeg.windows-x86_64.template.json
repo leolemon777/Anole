@@ -5,7 +5,7 @@
   "platform": "windows",
   "architecture": "x86_64",
   "protocol_version": 1,
-  "formatwright_compatibility": {
+  "anole_compatibility": {
     "minimum": "0.1.0",
     "maximum_exclusive": "0.2.0"
   },

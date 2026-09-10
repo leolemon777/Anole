@@ -3,21 +3,21 @@
 <p align="center"><img src="branding/final/png/lockup-light.png" width="420" alt="Anole — one file, any form." /></p>
 
 <p align="center">
-  <a href="https://github.com/leolemon777/FormatWright/actions/workflows/ci.yml"><img src="https://github.com/leolemon777/FormatWright/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/leolemon777/FormatWright/releases"><img src="https://img.shields.io/github/v/release/leolemon777/FormatWright?include_prereleases" alt="Release" /></a>
+  <a href="https://github.com/leolemon777/Anole/actions/workflows/ci.yml"><img src="https://github.com/leolemon777/Anole/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/leolemon777/Anole/releases"><img src="https://img.shields.io/github/v/release/leolemon777/Anole?include_prereleases" alt="Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0" /></a>
-  <a href="https://leolemon777.github.io/FormatWright/"><img src="https://img.shields.io/badge/website-leolemon777.github.io%2FFormatWright-2ea44f" alt="Website" /></a>
+  <a href="https://leolemon777.github.io/Anole/"><img src="https://img.shields.io/badge/website-leolemon777.github.io%2FAnole-2ea44f" alt="Website" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-9cf" alt="Platforms: Windows, Linux" />
   <img src="https://img.shields.io/badge/routes-290%20canonical-orange" alt="290 canonical reachable conversion routes" />
 </p>
 
 **File conversion you can verify.**
 
-Anole (formerly FormatWright) is an open-source, local-first file conversion platform. It is designed to explain the selected conversion path, prefer remuxing or lossless operations when possible, recover safely from interrupted batch jobs, and validate the result instead of treating a zero exit code as proof of success.
+Anole (formerly Anole) is an open-source, local-first file conversion platform. It is designed to explain the selected conversion path, prefer remuxing or lossless operations when possible, recover safely from interrupted batch jobs, and validate the result instead of treating a zero exit code as proof of success.
 
 ## Status
 
-**v0.1.0 Public Beta (Unsigned Alpha) — released 2026-09-04.** Download the Windows x64 installer from the [latest release](https://github.com/leolemon777/FormatWright/releases/latest) (see `SHA256SUMS`; the installer is unsigned, so SmartScreen will warn), or browse the [website](https://leolemon777.github.io/FormatWright/). What shipped: 264 canonical reachable conversion routes (138 direct + 126 chained, counted by `scripts/count_routes.py`; TIFF/BMP/PSD, camera-RAW (DNG/CR2/...), Outlook MSG, and whole-mailbox MBOX→PDF joined post-release), every hop with validation receipts, durable SQLite queue with crash recovery, plan-first approval, sandboxed inputs, CLI + desktop GUI + REST API, tri-platform CI, and a 10,000-job soak evidence trail. Post-v0.1.0, the Markdown export wave added direct HTML/EML/MSG/MBOX/PDF/image-OCR → md routes, bringing the mainline to 290 canonical reachable routes (147 direct + 143 chained). Known gaps: no code-signing certificate yet (v0.1.1 will be signed), OCR needs a host Tesseract on Windows, clean-VM certification evidence is still pending, and macOS has CI coverage only.
+**v0.1.0 Public Beta (Unsigned Alpha) — released 2026-09-04.** Download the Windows x64 installer from the [latest release](https://github.com/leolemon777/Anole/releases/latest) (see `SHA256SUMS`; the installer is unsigned, so SmartScreen will warn), or browse the [website](https://leolemon777.github.io/Anole/). What shipped: 264 canonical reachable conversion routes (138 direct + 126 chained, counted by `scripts/count_routes.py`; TIFF/BMP/PSD, camera-RAW (DNG/CR2/...), Outlook MSG, and whole-mailbox MBOX→PDF joined post-release), every hop with validation receipts, durable SQLite queue with crash recovery, plan-first approval, sandboxed inputs, CLI + desktop GUI + REST API, tri-platform CI, and a 10,000-job soak evidence trail. Post-v0.1.0, the Markdown export wave added direct HTML/EML/MSG/MBOX/PDF/image-OCR → md routes, bringing the mainline to 290 canonical reachable routes (147 direct + 143 chained). Known gaps: no code-signing certificate yet (v0.1.1 will be signed), OCR needs a host Tesseract on Windows, clean-VM certification evidence is still pending, and macOS has CI coverage only.
 
 - Product scope and release gates: [SPEC_PLAN.md](SPEC_PLAN.md)
 - Living completed / pending checklist, architecture, and ordered gates: [docs/MASTER_EXECUTION_PLAN.md](docs/MASTER_EXECUTION_PLAN.md) (see §1.1 progress snapshot)
@@ -52,7 +52,7 @@ The historical engineering milestone log through the alpha phase lives in [imple
 crates/core          Domain, inspection, planning, execution, queue, validation
 crates/core/src/application  Shared use cases (JobExecutionService; ConversionService planned)
 crates/engine-sdk    Engine manifests and versioned adapter protocol
-crates/cli           formatwright command-line interface (thin surface over Core)
+crates/cli           anole command-line interface (thin surface over Core)
 apps/desktop         Tauri desktop application and shared-core workflow surface
 docs/adr             Architecture decisions
 docs/specs           Executable supporting specifications
@@ -66,7 +66,7 @@ test-corpus          Licensed golden corpus manifests and generated fixtures
 
 Anole deliberately ships **without bundled conversion engines**. Third-party binaries carry their own license and supply-chain obligations (GPL/LGPL/MPL components, and Microsoft Edge may not be redistributed at all), so the application discovers engines on the host instead. See [the engine inventory](engines/README.md), [ADR-0011](docs/adr/0011-trusted-engine-signatures-and-release-keyring.md), and [ADR-0012](docs/adr/0012-system-discovered-edge-print-engine.md) for the full rationale.
 
-Discovery order per engine: an activated engine pack, then a `FORMATWRIGHT_ENGINE_<NAME>` environment variable (full path to the executable, e.g. `FORMATWRIGHT_ENGINE_PDFINFO`), then `PATH`, then known vendor install locations (`msedge` only). Discovered engines are reported as `unverified` by design; the doctor never downloads anything.
+Discovery order per engine: an activated engine pack, then a `ANOLE_ENGINE_<NAME>` environment variable (full path to the executable, e.g. `ANOLE_ENGINE_PDFINFO`), then `PATH`, then known vendor install locations (`msedge` only). Discovered engines are reported as `unverified` by design; the doctor never downloads anything.
 
 | Engine | Unlocks | Where to get it |
 |---|---|---|
@@ -95,12 +95,12 @@ Common checks:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
-cargo run -p formatwright-cli -- doctor
-cargo run -p formatwright-cli -- --state-db PATH maintenance integrity-check
+cargo run -p anole-cli -- doctor
+cargo run -p anole-cli -- --state-db PATH maintenance integrity-check
 pnpm --dir apps/desktop test -- --run
 pnpm --dir apps/desktop build
-cargo test -p formatwright-desktop --all-targets
-cargo test -p formatwright-core --test ten_thousand_conversions --release -- --ignored --nocapture
+cargo test -p anole-desktop --all-targets
+cargo test -p anole-core --test ten_thousand_conversions --release -- --ignored --nocapture
 python scripts/generate_sbom.py
 pwsh -File scripts/test_ffmpeg_sandbox.ps1
 pwsh -File scripts/test_large_file.ps1

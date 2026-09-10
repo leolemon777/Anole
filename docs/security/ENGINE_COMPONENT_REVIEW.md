@@ -5,7 +5,7 @@
 - Rule: a component is only `reviewed` with a named signature and date (`ENGINE_SUPPLY_CHAIN.md` §6);
   `sources.json.review_status` may then be promoted by the same signature.
 
-## formatwright-media 9.0 (pack `media`)
+## anole-media 9.0 (pack `media`)
 
 - Build license verdict: **GPL-3.0-or-later**
 - FFmpeg configuration: `--enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-openal --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband`
@@ -62,7 +62,7 @@
 
 Plus 2 non-binary data/license files (poppler share data, notices) - covered by the `poppler-data` row above.
 
-## formatwright-pdf 26.02.0-0 (pack `pdf`)
+## anole-pdf 26.02.0-0 (pack `pdf`)
 
 - Build license verdict: **GPL-2.0-or-later (poppler core)**
 

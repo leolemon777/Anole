@@ -48,7 +48,7 @@ jobs:
 
 ## 上线前需要替换的占位
 
-- `index.html` 底部脚本里的 `REPO_URL = "#"`：改成仓库地址（例如 `https://github.com/owner/FormatWright`），页内所有带 `data-gh` 的 GitHub 链接（含 README `#engines` 锚点）会自动解析。
+- `index.html` 底部脚本里的 `REPO_URL = "#"`：改成仓库地址（例如 `https://github.com/owner/Anole`），页内所有带 `data-gh` 的 GitHub 链接（含 README `#engines` 锚点）会自动解析。
 - 英雄区「下载 v0.1」按钮的 `href="#"`：发布后指向实际安装包地址。
 
 ## 设计与实现说明

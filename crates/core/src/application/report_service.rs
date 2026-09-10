@@ -8,7 +8,7 @@ use tempfile::TempPath;
 use uuid::Uuid;
 
 use crate::domain::{JobState, ValidationReport, ValidationStatus};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::job_store::{JobRecord, SqliteJobStore};
 
 const MAX_REPORT_BYTES: u64 = 16 * 1024 * 1024;
@@ -192,7 +192,7 @@ fn interrupt_after_report_failure(store: &mut SqliteJobStore, job_id: Uuid) -> R
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn report_io_error(error: std::io::Error) -> FormatWrightError {
+fn report_io_error(error: std::io::Error) -> AnoleError {
     report_error(
         "Unable to persist or read ValidationReport",
         "Check the report directory permissions and available storage, then retry.",
@@ -200,8 +200,8 @@ fn report_io_error(error: std::io::Error) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn report_error(message: &str, action: &str) -> FormatWrightError {
-    FormatWrightError::new(ErrorCode::StorageFailed, Stage::Validate, message, action)
+fn report_error(message: &str, action: &str) -> AnoleError {
+    AnoleError::new(ErrorCode::StorageFailed, Stage::Validate, message, action)
 }
 
 fn persist_partial_noclobber(partial: &Path, destination: &Path, backup: &Path) -> Result<()> {

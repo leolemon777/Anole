@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use formatwright_engine_sdk::{
+use anole_engine_sdk::{
     Certification, EngineArchitecture, EngineManifest, EnginePlatform, ManifestLicense,
     ManifestSupplyChain, ReleaseKeyring, SignatureTrust, SupplyChainReviewStatus,
     derive_engine_certification, engine_provenance_message, verify_manifest_signature,
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::doctor::sha256_file;
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 pub const ENGINE_PROTOCOL_VERSION: u32 = 1;
 
@@ -54,7 +54,7 @@ impl VerifiedEnginePack {
 #[must_use]
 pub fn embedded_release_keyring() -> ReleaseKeyring {
     ReleaseKeyring {
-        schema_version: formatwright_engine_sdk::RELEASE_KEYRING_SCHEMA_VERSION,
+        schema_version: anole_engine_sdk::RELEASE_KEYRING_SCHEMA_VERSION,
         keys: Vec::new(),
         revocations: Vec::new(),
     }
@@ -221,7 +221,7 @@ pub fn verify_engine_pack_with_keyring(
         engine_error("Release keyring is invalid".to_owned(), error.to_string())
     })?;
     let mut verified = verify_engine_pack(manifest_path)?;
-    verified.signature_trust = Some(formatwright_engine_sdk::verify_manifest_signature(
+    verified.signature_trust = Some(anole_engine_sdk::verify_manifest_signature(
         &verified.manifest,
         keyring,
         now_unix_ms,
@@ -679,7 +679,7 @@ fn read_json_object(
 
 fn ensure_application_compatible(manifest: &EngineManifest) -> Result<()> {
     if manifest
-        .formatwright_compatibility
+        .anole_compatibility
         .contains(env!("CARGO_PKG_VERSION"))
     {
         return Ok(());
@@ -687,8 +687,8 @@ fn ensure_application_compatible(manifest: &EngineManifest) -> Result<()> {
     Err(engine_error(
         format!(
             "Engine pack requires Anole {}..{}, this application is {}",
-            manifest.formatwright_compatibility.minimum,
-            manifest.formatwright_compatibility.maximum_exclusive,
+            manifest.anole_compatibility.minimum,
+            manifest.anole_compatibility.maximum_exclusive,
             env!("CARGO_PKG_VERSION")
         ),
         "Import a pack built for this Anole version.".to_owned(),
@@ -739,8 +739,8 @@ fn resolve_pack_file(root: &Path, relative: &Path, purpose: &str) -> Result<Path
     Ok(canonical)
 }
 
-fn engine_error(message: String, diagnostic: String) -> FormatWrightError {
-    FormatWrightError::new(
+fn engine_error(message: String, diagnostic: String) -> AnoleError {
+    AnoleError::new(
         ErrorCode::EngineIncompatible,
         Stage::Doctor,
         message,
@@ -755,8 +755,8 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{
-        Capability, EngineArchitecture, EngineManifest, EnginePlatform, FormatWrightCompatibility,
+    use anole_engine_sdk::{
+        AnoleCompatibility, Capability, EngineArchitecture, EngineManifest, EnginePlatform,
         LossClass, ManifestExecutable, ManifestLicense, ManifestRuntimeFile, ManifestSource,
         ManifestSupplyChain, Operation,
     };
@@ -777,7 +777,7 @@ mod tests {
             platform: EnginePlatform::current().expect("supported test platform"),
             architecture: EngineArchitecture::current().expect("supported test architecture"),
             protocol_version: ENGINE_PROTOCOL_VERSION,
-            formatwright_compatibility: FormatWrightCompatibility {
+            anole_compatibility: AnoleCompatibility {
                 minimum: "0.1.0".to_owned(),
                 maximum_exclusive: "0.2.0".to_owned(),
             },
@@ -971,11 +971,11 @@ mod tests {
         assert_eq!(verified.supply_chain_files.len(), 2);
         assert_eq!(
             verified.review_status,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Incomplete
+            anole_engine_sdk::SupplyChainReviewStatus::Incomplete
         );
         assert_eq!(
             verified.certification(),
-            formatwright_engine_sdk::Certification::Unverified
+            anole_engine_sdk::Certification::Unverified
         );
         let store = tempdir().expect("temporary engine store");
         let installed = install_engine_pack(&manifest_path, store.path()).expect("install pack");
@@ -1070,7 +1070,7 @@ mod tests {
 
     #[test]
     fn evaluates_signature_trust_against_a_release_keyring() {
-        use formatwright_engine_sdk::{
+        use anole_engine_sdk::{
             KeyRevocation, ReleaseKey, ReleaseKeyring, ed25519_public_key_hex, sign_manifest,
         };
         const SEED: [u8; 32] = [7; 32];
@@ -1097,7 +1097,7 @@ mod tests {
             .expect("keyring evaluation runs");
         assert_eq!(
             verified.signature_trust,
-            Some(formatwright_engine_sdk::SignatureTrust::Unsigned)
+            Some(anole_engine_sdk::SignatureTrust::Unsigned)
         );
 
         let bytes = fs::read(&manifest_path).expect("read manifest");
@@ -1113,7 +1113,7 @@ mod tests {
             .expect("signed pack verifies");
         assert_eq!(
             trusted.signature_trust,
-            Some(formatwright_engine_sdk::SignatureTrust::Trusted {
+            Some(anole_engine_sdk::SignatureTrust::Trusted {
                 key_id: "release-2026h2".to_owned()
             })
         );
@@ -1131,7 +1131,7 @@ mod tests {
             .expect("file hashes still verify");
         assert_eq!(
             tampered.signature_trust,
-            Some(formatwright_engine_sdk::SignatureTrust::InvalidSignature)
+            Some(anole_engine_sdk::SignatureTrust::InvalidSignature)
         );
 
         let mut revoked = keyring.clone();
@@ -1154,7 +1154,7 @@ mod tests {
             .expect("revoked evaluation runs");
         assert_eq!(
             revoked.signature_trust,
-            Some(formatwright_engine_sdk::SignatureTrust::Revoked {
+            Some(anole_engine_sdk::SignatureTrust::Revoked {
                 key_id: "release-2026h2".to_owned()
             })
         );
@@ -1177,31 +1177,25 @@ mod tests {
         let activated = activate_engine_pack(&manifest_path).expect("activate unsigned pack");
         assert_eq!(
             activated.signature_trust,
-            Some(formatwright_engine_sdk::SignatureTrust::Unsigned)
+            Some(anole_engine_sdk::SignatureTrust::Unsigned)
         );
         assert_eq!(
             activated.review_status,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Missing
+            anole_engine_sdk::SupplyChainReviewStatus::Missing
         );
         assert_eq!(
             activated.certification(),
-            formatwright_engine_sdk::Certification::Unverified
+            anole_engine_sdk::Certification::Unverified
         );
         let (_, trust, review) =
             crate::doctor::registered_engine_provenance("fixture").expect("registered provenance");
-        assert_eq!(
-            trust,
-            Some(formatwright_engine_sdk::SignatureTrust::Unsigned)
-        );
-        assert_eq!(
-            review,
-            formatwright_engine_sdk::SupplyChainReviewStatus::Missing
-        );
+        assert_eq!(trust, Some(anole_engine_sdk::SignatureTrust::Unsigned));
+        assert_eq!(review, anole_engine_sdk::SupplyChainReviewStatus::Missing);
         assert!(embedded_release_keyring().keys.is_empty());
     }
 
     fn write_signed_supply_chain_pack(review_status: &str) -> (tempfile::TempDir, PathBuf) {
-        use formatwright_engine_sdk::sign_manifest;
+        use anole_engine_sdk::sign_manifest;
         const SEED: [u8; 32] = [7; 32];
         let (directory, manifest_path) = create_pack();
         let root = directory.path();
@@ -1257,8 +1251,8 @@ mod tests {
         (directory, manifest_path)
     }
 
-    fn test_release_keyring() -> formatwright_engine_sdk::ReleaseKeyring {
-        use formatwright_engine_sdk::{ReleaseKey, ReleaseKeyring, ed25519_public_key_hex};
+    fn test_release_keyring() -> anole_engine_sdk::ReleaseKeyring {
+        use anole_engine_sdk::{ReleaseKey, ReleaseKeyring, ed25519_public_key_hex};
         const SEED: [u8; 32] = [7; 32];
         const NOW: u64 = 1_800_000_000_000;
         ReleaseKeyring {
@@ -1277,7 +1271,7 @@ mod tests {
 
     #[test]
     fn trusted_signature_promotes_only_after_complete_review() {
-        use formatwright_engine_sdk::SupplyChainReviewStatus;
+        use anole_engine_sdk::SupplyChainReviewStatus;
         const NOW: u64 = 1_800_000_000_000;
         let keyring = test_release_keyring();
         let (_incomplete_dir, incomplete_manifest) = write_signed_supply_chain_pack("incomplete");
@@ -1290,7 +1284,7 @@ mod tests {
         );
         assert_eq!(
             trusted_incomplete.certification(),
-            formatwright_engine_sdk::Certification::Unverified
+            anole_engine_sdk::Certification::Unverified
         );
         assert!(
             trusted_incomplete
@@ -1307,7 +1301,7 @@ mod tests {
         );
         assert_eq!(
             trusted_complete.certification(),
-            formatwright_engine_sdk::Certification::Certified
+            anole_engine_sdk::Certification::Certified
         );
     }
 
@@ -1316,8 +1310,8 @@ mod tests {
         let (_directory, manifest_path) = create_pack();
         let bytes = fs::read(&manifest_path).expect("read manifest");
         let mut value = serde_json::from_slice::<EngineManifest>(&bytes).expect("parse manifest");
-        value.formatwright_compatibility.minimum = "9.0.0".to_owned();
-        value.formatwright_compatibility.maximum_exclusive = "10.0.0".to_owned();
+        value.anole_compatibility.minimum = "9.0.0".to_owned();
+        value.anole_compatibility.maximum_exclusive = "10.0.0".to_owned();
         fs::write(
             &manifest_path,
             serde_json::to_vec_pretty(&value).expect("serialize manifest"),

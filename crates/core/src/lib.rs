@@ -32,6 +32,11 @@ pub mod structured;
 pub mod validation;
 mod workflow;
 
+pub use anole_engine_sdk::{
+    Certification, DoctorReport, EngineHealth, EngineIdentity, LossClass, Operation,
+    SignatureTrust, SupplyChainReviewStatus, derive_engine_certification,
+    engine_provenance_message,
+};
 pub use application::{
     BulkJobService, ConversionRunResult, ConversionService, FolderBatchService, FolderDiskBudget,
     FolderMappingEntry, FolderMappingPlan, JobExecutionService, JobRecoveryService,
@@ -69,13 +74,8 @@ pub use engine_pack::{
     ENGINE_PROTOCOL_VERSION, VerifiedEnginePack, activate_engine_pack, embedded_release_keyring,
     install_engine_pack, load_release_keyring, verify_engine_pack, verify_engine_pack_with_keyring,
 };
-pub use error::{ErrorCode, FormatWrightError, Result, Stage};
+pub use error::{AnoleError, ErrorCode, Result, Stage};
 pub use fingerprint::{full_blake3, identify_artifact};
-pub use formatwright_engine_sdk::{
-    Certification, DoctorReport, EngineHealth, EngineIdentity, LossClass, Operation,
-    SignatureTrust, SupplyChainReviewStatus, derive_engine_certification,
-    engine_provenance_message,
-};
 pub use inspect::inspect_media;
 pub use job_store::{
     BatchRecord, BulkActionReport, BulkJobAction, EngineThroughputSample, IdempotentJobResult,

@@ -1,11 +1,11 @@
 //! MBOX 邮箱聚合输入：解析拆分为逐封 EML，txt/html 直接聚合渲染，
 //! pdf 则逐封渲染→逐封 PDF→qpdf 合并，实现「整个邮箱导出一个 PDF」。
-//! 内置 `formatwright.mbox` 引擎；解析失败 fail-closed。
+//! 内置 `anole.mbox` 引擎；解析失败 fail-closed。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -15,11 +15,11 @@ use crate::domain::{
     ValidationCheck, ValidationReport, ValidationStatus,
 };
 use crate::eml::{self, ParsedEmail};
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::fingerprint::identify_artifact;
 use crate::planner::deterministic_plan_hash;
 
-pub const MBOX_ENGINE_ID: &str = "formatwright.mbox";
+pub const MBOX_ENGINE_ID: &str = "anole.mbox";
 
 const MAX_MBOX_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MBOX_MAILS: usize = 1000;
@@ -39,7 +39,7 @@ pub struct MboxMail {
 /// `InputInvalid`：空邮箱、超限（字节或封数）或任何一封解析失败。
 pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "MBOX input is not valid UTF-8",
@@ -54,7 +54,7 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         .find(|line| !line.trim().is_empty())
         .is_some_and(|line| line.starts_with("From "))
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "The file does not start with an mbox \"From \" envelope line",
@@ -88,7 +88,7 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         messages.push(current.join("\r\n").into_bytes());
     }
     if messages.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "The MBOX file contains no messages",
@@ -96,7 +96,7 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         ));
     }
     if messages.len() > MAX_MBOX_MAILS {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             format!(
@@ -118,7 +118,7 @@ pub fn parse_mbox_file(path: &Path) -> Result<Vec<MboxMail>> {
     if let Ok(metadata) = std::fs::metadata(path)
         && metadata.len() > MAX_MBOX_BYTES
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "MBOX input exceeds the 256 MiB built-in adapter limit",
@@ -126,7 +126,7 @@ pub fn parse_mbox_file(path: &Path) -> Result<Vec<MboxMail>> {
         ));
     }
     let bytes = std::fs::read(path).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Inspect,
             "Unable to read the MBOX file",
@@ -258,7 +258,7 @@ pub fn plan_mbox_export(
 ) -> Result<Plan> {
     let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
     if probe.format.id != "mbox" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MBOX export input must be an mbox mailbox",
@@ -266,7 +266,7 @@ pub fn plan_mbox_export(
         ));
     }
     if !matches!(target.as_str(), "txt" | "html" | "pdf" | "md") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MBOX export target must be txt, html, md, or pdf",
@@ -274,15 +274,15 @@ pub fn plan_mbox_export(
         ));
     }
     if engine.engine_id != MBOX_ENGINE_ID {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The MBOX export Plan was given the wrong engine",
-            "Use the built-in formatwright.mbox adapter.",
+            "Use the built-in anole.mbox adapter.",
         ));
     }
     if stream_property(probe, "has_external_resource") == json!(true) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "A mail in the MBOX references an external resource under deny-all policy",
@@ -294,7 +294,7 @@ pub fn plan_mbox_export(
         .unwrap_or_default();
     let mut steps = vec![PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: format!("formatwright.mbox.mbox-render-{target}.builtin"),
+        capability_id: format!("anole.mbox.mbox-render-{target}.builtin"),
         engine: engine.clone(),
         operation: Operation::Transform,
         loss_class: LossClass::Unknown,
@@ -313,7 +313,7 @@ pub fn plan_mbox_export(
     ];
     if target == "pdf" {
         if qpdf.engine_id != "qpdf" {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Plan,
                 "The MBOX merge step was given the wrong engine",
@@ -389,7 +389,7 @@ pub async fn execute_mbox_export(
     cancellation: tokio_util::sync::CancellationToken,
 ) -> Result<(PathBuf, ValidationReport)> {
     let output = plan.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Execute,
             "MBOX export Plan has no output path",
@@ -397,7 +397,7 @@ pub async fn execute_mbox_export(
         )
     })?;
     if output.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Execute,
             "The MBOX export destination already exists",
@@ -406,7 +406,7 @@ pub async fn execute_mbox_export(
     }
     let mails = parse_mbox_file(&probe.artifact.canonical_path)?;
     let parent = output.parent().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Resolved output path has no parent directory",
@@ -415,7 +415,7 @@ pub async fn execute_mbox_export(
     })?;
     let staging = parent.join(format!(".fw-mbox-{job_id}"));
     std::fs::create_dir(&staging).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             "Unable to create the MBOX staging directory",
@@ -427,7 +427,7 @@ pub async fn execute_mbox_export(
     if let Err(error) = std::fs::remove_dir_all(&staging)
         && outcome.is_ok()
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Commit,
             "Unable to remove the MBOX staging directory",
@@ -555,7 +555,7 @@ async fn execute_mbox_pdf(
     let mut staged_pdfs = Vec::new();
     for (index, _mail) in mails.iter().enumerate() {
         if cancellation.is_cancelled() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Cancelled,
                 Stage::Execute,
                 "MBOX export was cancelled",
@@ -616,7 +616,7 @@ async fn execute_mbox_pdf(
         &extracted,
     );
     if report.status == ValidationStatus::Fail {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "MBOX PDF failed required validation",
@@ -625,7 +625,7 @@ async fn execute_mbox_pdf(
         .with_diagnostic(serde_json::to_string(&report).unwrap_or_default()));
     }
     if output.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The MBOX destination appeared while conversion was running",
@@ -681,7 +681,7 @@ async fn run_qpdf_merge(qpdf: &EngineIdentity, inputs: &[PathBuf], output: &Path
         .kill_on_drop(true)
         .spawn()
         .map_err(|error| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::EngineIncompatible,
                 Stage::Execute,
                 "Unable to start qpdf",
@@ -694,7 +694,7 @@ async fn run_qpdf_merge(qpdf: &EngineIdentity, inputs: &[PathBuf], output: &Path
         stream.read_to_end(&mut stderr).await.ok();
     }
     let status = child.wait().await.map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "Unable to wait for qpdf",
@@ -703,7 +703,7 @@ async fn run_qpdf_merge(qpdf: &EngineIdentity, inputs: &[PathBuf], output: &Path
         .with_diagnostic(error.to_string())
     })?;
     if !status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Execute,
             "qpdf could not merge the per-mail PDFs",
@@ -724,7 +724,7 @@ async fn extract_pdf_text(path: &Path, pdftotext: &EngineIdentity) -> Result<Str
     )
     .await
     .map_err(|_| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::ExecutionFailed,
             Stage::Validate,
             "PDF text extraction timed out",
@@ -733,7 +733,7 @@ async fn extract_pdf_text(path: &Path, pdftotext: &EngineIdentity) -> Result<Str
         .retryable(true)
     })?
     .map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Validate,
             "Unable to start pdftotext",
@@ -742,7 +742,7 @@ async fn extract_pdf_text(path: &Path, pdftotext: &EngineIdentity) -> Result<Str
         .with_diagnostic(error.to_string())
     })?;
     if !output.status.success() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::ValidationFailed,
             Stage::Validate,
             "pdftotext could not read the merged PDF",
@@ -856,8 +856,8 @@ fn check(
     }
 }
 
-fn worker_error(error: &tokio::task::JoinError) -> FormatWrightError {
-    FormatWrightError::new(
+fn worker_error(error: &tokio::task::JoinError) -> AnoleError {
+    AnoleError::new(
         ErrorCode::Internal,
         Stage::Execute,
         "MBOX export worker task failed",
@@ -866,8 +866,8 @@ fn worker_error(error: &tokio::task::JoinError) -> FormatWrightError {
     .with_diagnostic(error.to_string())
 }
 
-fn write_error(error: &std::io::Error) -> FormatWrightError {
-    FormatWrightError::new(
+fn write_error(error: &std::io::Error) -> AnoleError {
+    AnoleError::new(
         ErrorCode::ExecutionFailed,
         Stage::Execute,
         "Unable to write the MBOX export output",
@@ -905,20 +905,20 @@ Content-Type: text/html\r
 <html><body><p>MAIL3TOKEN</p><script>alert(1)</script></body></html>\r
 ";
 
-    fn builtin_engine() -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn builtin_engine() -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: MBOX_ENGINE_ID.to_owned(),
             version: "0.1.0".to_owned(),
-            binary_path: std::path::PathBuf::from("formatwright.exe"),
+            binary_path: std::path::PathBuf::from("anole.exe"),
             binary_sha256: "0".repeat(64),
             manifest_sha256: None,
             build_configuration: None,
-            certification: formatwright_engine_sdk::Certification::Experimental,
+            certification: anole_engine_sdk::Certification::Experimental,
         }
     }
 
-    fn qpdf_engine() -> formatwright_engine_sdk::EngineIdentity {
-        formatwright_engine_sdk::EngineIdentity {
+    fn qpdf_engine() -> anole_engine_sdk::EngineIdentity {
+        anole_engine_sdk::EngineIdentity {
             engine_id: "qpdf".to_owned(),
             ..builtin_engine()
         }

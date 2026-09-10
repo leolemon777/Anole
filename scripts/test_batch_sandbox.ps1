@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -14,12 +14,12 @@ function Assert-True {
     if (-not $Condition) { throw "batch sandbox assertion failed: $Message" }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -56,7 +56,7 @@ $cycle = Join-Path $inputRoot 'level-1\二级\cycle'
 New-Item -ItemType Junction -Path $cycle -Target $inputRoot | Out-Null
 
 $database = Join-Path $casePath 'batch.sqlite3'
-$paused = Invoke-FormatWrightJson -Arguments @(
+$paused = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $database,
     'batch-images', $inputRoot, '--output-dir', $outputRoot,
     '--to', 'webp', '--width', '48', '--quality', '82', '--pause-after', '2'
@@ -68,7 +68,7 @@ Assert-True ($paused.Data.completed -eq 2) 'pause-after did not finish exactly t
 Assert-True ($paused.Data.queued -eq 3 -and $paused.Data.paused) 'pause did not leave three durable queued jobs'
 Assert-True (@(Get-ChildItem -LiteralPath $outputRoot -Recurse -Filter '*.webp' -File).Count -eq 2) 'pause scheduled too many outputs'
 
-$resumed = Invoke-FormatWrightJson -Arguments @(
+$resumed = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $database, 'jobs', 'run', '--limit', '100', '--parallel', '4'
 )
 Assert-True ($resumed.Data.selected -eq 3) 'resume did not select the three queued jobs'
@@ -93,12 +93,12 @@ foreach ($output in $outputs) {
     Assert-True ($stream.codec_name -eq 'webp') 'batch output codec is not WebP'
     Assert-True ($stream.width -eq 48 -and $stream.height -eq 32) 'batch output dimensions are wrong'
 }
-$states = Invoke-FormatWrightJson -Arguments @(
+$states = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $database, 'jobs', 'list', '--limit', '100'
 )
 Assert-True (@($states.Data | Where-Object state -eq 'completed').Count -eq 5) 'durable job states did not reconcile'
 
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'batch-images', $inputRoot, '--output-dir', $outputRoot, '--to', 'webp', '--queue-only'
 )
@@ -109,21 +109,21 @@ $changedOutputRoot = Join-Path $casePath 'changed-output'
 $changedInput = Join-Path $changedInputRoot 'change.png'
 New-TestImage -Path $changedInput -Color 'black'
 $changedDatabase = Join-Path $casePath 'changed.sqlite3'
-$queued = Invoke-FormatWrightJson -Arguments @(
+$queued = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $changedDatabase,
     'batch-images', $changedInputRoot, '--output-dir', $changedOutputRoot,
     '--to', 'webp', '--queue-only'
 )
 Assert-True ($queued.Data.queued -eq 1) 'queue-only did not persist one job'
 New-TestImage -Path $changedInput -Color 'white'
-$changedRun = Invoke-FormatWrightJson -Arguments @(
+$changedRun = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', $changedDatabase, 'jobs', 'run', '--limit', '10'
 )
 Assert-True ($changedRun.Data.blocked -eq 1) 'changed input was not blocked during reinspection'
 Assert-True (@(Get-ChildItem -LiteralPath $changedOutputRoot -Filter '*.webp' -File).Count -eq 0) 'changed input produced output'
 
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'batch suite left staged output files'
 
 $summary = [ordered]@{

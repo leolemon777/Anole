@@ -1,5 +1,5 @@
 [package]
-name = "formatwright-server"
+name = "anole-server"
 description = "Local REST API service exposing Anole planning and conversion"
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-formatwright-core = { path = "../core" }
+anole-core = { path = "../core" }
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true

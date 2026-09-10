@@ -75,19 +75,19 @@ Assert-True ($LASTEXITCODE -eq 0) 'unable to generate changed media fixture'
 $stdout = Join-Path $casePath 'release-gate.stdout.log'
 $stderr = Join-Path $casePath 'release-gate.stderr.log'
 $testName = 'converts_ten_thousand_mixed_files_with_fair_bounded_scheduling'
-& $cargoPath test -p formatwright-core --test mixed_ten_thousand_conversions `
+& $cargoPath test -p anole-core --test mixed_ten_thousand_conversions `
     --release --no-run
 Assert-True ($LASTEXITCODE -eq 0) 'unable to prebuild the mixed release gate'
 $environment = @{
-    FORMATWRIGHT_MIXED_SUITE_ROOT = $suiteRoot
-    FORMATWRIGHT_MIXED_IMAGE_FIXTURE = $imageFixture
-    FORMATWRIGHT_MIXED_MEDIA_FIXTURE = $mediaFixture
-    FORMATWRIGHT_MIXED_CHANGED_IMAGE_FIXTURE = $changedImageFixture
-    FORMATWRIGHT_MIXED_CHANGED_MEDIA_FIXTURE = $changedMediaFixture
-    FORMATWRIGHT_MIXED_MEDIA_PACK_MANIFEST = (Resolve-Path -LiteralPath $mediaPackManifest).Path
+    ANOLE_MIXED_SUITE_ROOT = $suiteRoot
+    ANOLE_MIXED_IMAGE_FIXTURE = $imageFixture
+    ANOLE_MIXED_MEDIA_FIXTURE = $mediaFixture
+    ANOLE_MIXED_CHANGED_IMAGE_FIXTURE = $changedImageFixture
+    ANOLE_MIXED_CHANGED_MEDIA_FIXTURE = $changedMediaFixture
+    ANOLE_MIXED_MEDIA_PACK_MANIFEST = (Resolve-Path -LiteralPath $mediaPackManifest).Path
 }
 $process = Start-Process -FilePath $cargoPath -ArgumentList @(
-    'test', '-p', 'formatwright-core', '--test', 'mixed_ten_thousand_conversions',
+    'test', '-p', 'anole-core', '--test', 'mixed_ten_thousand_conversions',
     '--release', '--', '--ignored', '--exact',
     $testName, '--nocapture'
 ) -Environment $environment -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
@@ -126,7 +126,7 @@ do {
     }
     $partials = @(
         Get-ChildItem -LiteralPath (Join-Path $suiteRoot 'output') `
-            -Filter '.formatwright-partial-*' `
+            -Filter '.anole-partial-*' `
             -File -ErrorAction SilentlyContinue
     )
     $stagedBytes = 0L
@@ -145,10 +145,10 @@ Assert-True ($process.ExitCode -eq 0) (
 )
 
 $resultLine = Get-Content -LiteralPath $stdout | Where-Object {
-    $_.StartsWith('FORMATWRIGHT_MIXED_10000_RESULT ')
+    $_.StartsWith('ANOLE_MIXED_10000_RESULT ')
 } | Select-Object -Last 1
 Assert-True (-not [string]::IsNullOrWhiteSpace($resultLine)) 'Rust result line is missing'
-$core = $resultLine.Substring('FORMATWRIGHT_MIXED_10000_RESULT '.Length) | ConvertFrom-Json
+$core = $resultLine.Substring('ANOLE_MIXED_10000_RESULT '.Length) | ConvertFrom-Json
 Assert-True ($core.jobs -eq 10000 -and $core.completed -eq 10000) 'completion count mismatch'
 Assert-True (
     $core.injected_blocked -eq 20 -and $core.resumed_after_repair -eq 20

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -14,12 +14,12 @@ function Assert-True {
     if (-not $Condition) { throw "image sandbox assertion failed: $Message" }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -56,18 +56,18 @@ Invoke-Ffmpeg @(
     '-frames:v', '1', $pngInput
 )
 $pngHash = (Get-FileHash -LiteralPath $pngInput -Algorithm SHA256).Hash
-$pngProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $pngInput)
+$pngProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $pngInput)
 Assert-True ($pngProbe.Data.format.id -eq 'png') 'PNG format was not normalized'
 Assert-True ($pngProbe.Data.format.kind -eq 'image') 'PNG was not classified as an image'
 
 $webpOutput = Join-Path $casePath 'scaled.webp'
-$webpPlan = Invoke-FormatWrightJson -Arguments @(
+$webpPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $pngInput, '--to', 'webp', '--width', '160', '--quality', '88',
     '--output', $webpOutput
 )
 Assert-True ($webpPlan.Data.target_format -eq 'webp') 'WebP target was not planned'
 Assert-True ($webpPlan.Data.steps[0].arguments.quality -eq '88') 'WebP quality was not explicit'
-$webp = Invoke-FormatWrightJson -Arguments @(
+$webp = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'webp.sqlite3'),
     'convert', $pngInput, '--to', 'webp', '--width', '160', '--quality', '88',
     '--output', $webpOutput
@@ -83,7 +83,7 @@ Invoke-Ffmpeg @(
     '-frames:v', '1', '-q:v', '3', $jpegInput
 )
 $avifOutput = Join-Path $casePath 'photo output.avif'
-$avif = Invoke-FormatWrightJson -Arguments @(
+$avif = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'avif.sqlite3'),
     'convert', $jpegInput, '--to', 'avif', '--quality', '70', '--output', $avifOutput
 )
@@ -92,11 +92,11 @@ $avifFacts = Get-ImageFacts -Path $avifOutput
 Assert-True ($avifFacts.codec_name -eq 'av1') 'independent probe did not detect AV1 in AVIF'
 
 $pngOutput = Join-Path $casePath 'lossless copy.png'
-$pngPlan = Invoke-FormatWrightJson -Arguments @(
+$pngPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $jpegInput, '--to', 'png', '--output', $pngOutput
 )
 Assert-True ($pngPlan.Data.steps[0].loss_class -eq 'lossless') 'decoded image to PNG was not lossless'
-$png = Invoke-FormatWrightJson -Arguments @(
+$png = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'png.sqlite3'),
     'convert', $jpegInput, '--to', 'png', '--output', $pngOutput
 )
@@ -107,35 +107,35 @@ Invoke-Ffmpeg @(
     '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red@0.25:s=128x96:rate=1,format=rgba',
     '-frames:v', '1', $alphaInput
 )
-$alphaProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $alphaInput)
+$alphaProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $alphaInput)
 Assert-True ($alphaProbe.Data.streams[0].properties.pix_fmt -match 'a') 'alpha fixture has no alpha pixel format'
-$alphaJpeg = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$alphaJpeg = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'plan', $alphaInput, '--to', 'jpg'
 )
 Assert-True ($alphaJpeg.Data.code -eq 'POLICY_BLOCKED') 'JPEG silently dropped alpha'
 $alphaWebpOutput = Join-Path $casePath 'transparent.webp'
-$alphaWebp = Invoke-FormatWrightJson -Arguments @(
+$alphaWebp = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'alpha-webp.sqlite3'),
     'convert', $alphaInput, '--to', 'webp', '--output', $alphaWebpOutput
 )
 Assert-True ($alphaWebp.Data.status -eq 'pass') 'WebP did not preserve required alpha'
 
-$badQuality = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$badQuality = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $pngInput, '--to', 'webp', '--quality', '0'
 )
 Assert-True ($badQuality.Data.code -eq 'INPUT_INVALID') 'zero image quality was accepted'
-$badWidth = Invoke-FormatWrightJson -ExpectedExitCodes @(2) -Arguments @(
+$badWidth = Invoke-AnoleJson -ExpectedExitCodes @(2) -Arguments @(
     '--json', 'plan', $pngInput, '--to', 'webp', '--width', '0'
 )
 Assert-True ($badWidth.Data.code -eq 'INPUT_INVALID') 'zero image width was accepted'
 
 $disguised = Join-Path $casePath 'actually-png.bin'
 Copy-Item -LiteralPath $pngInput -Destination $disguised
-$disguisedProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $disguised)
+$disguisedProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $disguised)
 Assert-True ($disguisedProbe.Data.format.id -eq 'png') 'header-first probe missed disguised PNG'
 Assert-True ($disguisedProbe.Data.format.extension_matches -eq $false) 'PNG extension mismatch was missed'
 
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $pngInput, '--to', 'webp', '--output', $webpOutput
 )
@@ -144,7 +144,7 @@ Assert-True (
     $pngHash -eq (Get-FileHash -LiteralPath $pngInput -Algorithm SHA256).Hash
 ) 'conversion modified the PNG input'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'image suite left staged output files'
 
 $summary = [ordered]@{

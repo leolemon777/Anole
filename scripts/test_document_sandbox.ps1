@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts'),
     [string]$Python = '',
     [string]$Pandoc = '',
@@ -24,12 +24,12 @@ function Write-Utf8 {
     [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -51,15 +51,15 @@ function Resolve-ToolPath {
 }
 
 $script:BinaryPath = (Resolve-Path -LiteralPath $Binary).Path
-$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'FORMATWRIGHT_TEST_PYTHON' -CommandName 'python'
-$pandocPath = Resolve-ToolPath -Explicit $Pandoc -EnvironmentName 'FORMATWRIGHT_ENGINE_PANDOC' -CommandName 'pandoc'
-$sofficePath = Resolve-ToolPath -Explicit $Soffice -EnvironmentName 'FORMATWRIGHT_ENGINE_SOFFICE' -CommandName 'soffice'
-$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFINFO' -CommandName 'pdfinfo'
-$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'FORMATWRIGHT_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
-$env:FORMATWRIGHT_ENGINE_PANDOC = $pandocPath
-$env:FORMATWRIGHT_ENGINE_SOFFICE = $sofficePath
-$env:FORMATWRIGHT_ENGINE_PDFINFO = $pdfInfoPath
-$env:FORMATWRIGHT_ENGINE_PDFTOPPM = $pdfToPpmPath
+$pythonPath = Resolve-ToolPath -Explicit $Python -EnvironmentName 'ANOLE_TEST_PYTHON' -CommandName 'python'
+$pandocPath = Resolve-ToolPath -Explicit $Pandoc -EnvironmentName 'ANOLE_ENGINE_PANDOC' -CommandName 'pandoc'
+$sofficePath = Resolve-ToolPath -Explicit $Soffice -EnvironmentName 'ANOLE_ENGINE_SOFFICE' -CommandName 'soffice'
+$pdfInfoPath = Resolve-ToolPath -Explicit $PdfInfo -EnvironmentName 'ANOLE_ENGINE_PDFINFO' -CommandName 'pdfinfo'
+$pdfToPpmPath = Resolve-ToolPath -Explicit $PdfToPpm -EnvironmentName 'ANOLE_ENGINE_PDFTOPPM' -CommandName 'pdftoppm'
+$env:ANOLE_ENGINE_PANDOC = $pandocPath
+$env:ANOLE_ENGINE_SOFFICE = $sofficePath
+$env:ANOLE_ENGINE_PDFINFO = $pdfInfoPath
+$env:ANOLE_ENGINE_PDFTOPPM = $pdfToPpmPath
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
 $casePath = Join-Path ((Resolve-Path -LiteralPath $ArtifactsRoot).Path) (
     'document-suite-' + [Guid]::NewGuid().ToString('N')
@@ -68,7 +68,7 @@ New-Item -ItemType Directory -Path $casePath | Out-Null
 
 $markdown = Join-Path $casePath '说明 document.md'
 Write-Utf8 -Path $markdown -Content @'
-# FormatWright Document
+# Anole Document
 
 本地转换可以验证结果。
 
@@ -77,18 +77,18 @@ Write-Utf8 -Path $markdown -Content @'
 '@
 $sourceHash = (Get-FileHash -LiteralPath $markdown -Algorithm SHA256).Hash
 $docx = Join-Path $casePath '说明 output.docx'
-$plan = Invoke-FormatWrightJson -Arguments @(
+$plan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $markdown, '--to', 'docx', '--output', $docx
 )
 Assert-True ($plan.Data.steps[0].engine.engine_id -eq 'pandoc') 'Pandoc was not selected'
 Assert-True ($plan.Data.steps[0].arguments.sandbox -eq 'true') 'Pandoc sandbox was not explicit'
 Assert-True ($plan.Data.network_policy -eq 'deny') 'network policy was not deny'
-$converted = Invoke-FormatWrightJson -Arguments @(
+$converted = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'markdown.sqlite3'),
     'convert', $markdown, '--to', 'docx', '--output', $docx
 )
 Assert-True ($converted.Data.status -eq 'pass') 'Markdown to DOCX did not validate'
-$docxProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $docx)
+$docxProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $docx)
 Assert-True ($docxProbe.Data.format.id -eq 'docx') 'DOCX package was not detected'
 $docxProperties = $docxProbe.Data.streams[0].properties
 $requiredParts = if ($null -ne $docxProperties.PSObject.Properties['required_parts_present']) {
@@ -112,14 +112,14 @@ try {
 $html = Join-Path $casePath 'simple.html'
 Write-Utf8 -Path $html -Content '<!doctype html><html><body><h1>HTML Heading</h1><p>Simple local text 42.</p></body></html>'
 $htmlDocx = Join-Path $casePath 'simple.docx'
-$htmlResult = Invoke-FormatWrightJson -Arguments @(
+$htmlResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'html.sqlite3'),
     'convert', $html, '--to', 'docx', '--output', $htmlDocx
 )
 Assert-True ($htmlResult.Data.status -eq 'pass') 'HTML to DOCX did not validate'
 
 $markdownPdf = Join-Path $casePath '说明 output.pdf'
-$pdfPlan = Invoke-FormatWrightJson -Arguments @(
+$pdfPlan = Invoke-AnoleJson -Arguments @(
     '--json', 'plan', $markdown, '--to', 'pdf', '--output', $markdownPdf
 )
 Assert-True (@($pdfPlan.Data.steps).Count -eq 4) 'markup PDF Plan did not pin four engine steps'
@@ -127,7 +127,7 @@ Assert-True ($pdfPlan.Data.steps[0].engine.engine_id -eq 'pandoc') 'markup PDF P
 Assert-True ($pdfPlan.Data.steps[1].engine.engine_id -eq 'soffice') 'markup PDF LibreOffice step missing'
 Assert-True ($pdfPlan.Data.steps[2].engine.engine_id -eq 'pdfinfo') 'markup PDF pdfinfo step missing'
 Assert-True ($pdfPlan.Data.steps[3].engine.engine_id -eq 'pdftoppm') 'markup PDF render validation step missing'
-$markdownPdfResult = Invoke-FormatWrightJson -Arguments @(
+$markdownPdfResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'markdown-pdf.sqlite3'),
     'convert', $markdown, '--to', 'pdf', '--output', $markdownPdf
 )
@@ -136,7 +136,7 @@ Assert-True (@($markdownPdfResult.Data.checks | Where-Object { $_.required -and 
 Assert-True (@($markdownPdfResult.Data.checks | Where-Object code -eq 'DOCX_SEMANTIC_TOKEN_DIGEST').Count -eq 1) 'intermediate semantic digest evidence missing'
 
 $htmlPdf = Join-Path $casePath 'simple.pdf'
-$htmlPdfResult = Invoke-FormatWrightJson -Arguments @(
+$htmlPdfResult = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'html-pdf.sqlite3'),
     'convert', $html, '--to', 'pdf', '--output', $htmlPdf
 )
@@ -168,16 +168,16 @@ Assert-True ($LASTEXITCODE -eq 0) 'independent markup PDF pixel validation faile
 
 $remote = Join-Path $casePath 'remote.md'
 Write-Utf8 -Path $remote -Content '# Remote`n`n![pixel](https://example.invalid/pixel.png)'
-$remotePlan = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$remotePlan = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'plan', $remote, '--to', 'docx'
 )
 Assert-True ($remotePlan.Data.code -eq 'POLICY_BLOCKED') 'external resource was not blocked before execution'
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'convert', $markdown, '--to', 'docx', '--output', $docx
 )
 Assert-True ($conflict.Data.code -eq 'OUTPUT_CONFLICT') 'existing DOCX was overwritten'
-$pdfConflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$pdfConflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'pdf-conflict.sqlite3'),
     'convert', $markdown, '--to', 'pdf', '--output', $markdownPdf
 )
@@ -185,21 +185,21 @@ Assert-True ($pdfConflict.Data.code -eq 'OUTPUT_CONFLICT') 'existing markup PDF 
 
 $resumeDatabase = Join-Path $casePath 'pdf-resume.sqlite3'
 $resumeOutput = Join-Path $casePath 'resumed markup.pdf'
-$cancelled = Invoke-FormatWrightJson -ExpectedExitCodes @(130) -Arguments @(
+$cancelled = Invoke-AnoleJson -ExpectedExitCodes @(130) -Arguments @(
     '--json', '--state-db', $resumeDatabase, 'convert', $markdown,
     '--to', 'pdf', '--output', $resumeOutput, '--timeout-seconds', '0'
 )
 Assert-True ($cancelled.Data.code -eq 'CANCELLED') 'markup PDF cancellation failed'
 Assert-True (-not (Test-Path -LiteralPath $resumeOutput)) 'cancelled markup PDF was committed'
-$jobs = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
+$jobs = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'list', '--limit', '10')
 $cancelledJob = @($jobs.Data | Where-Object state -eq 'cancelled')[0]
 Assert-True ($null -ne $cancelledJob) 'cancelled markup PDF job was not durable'
-$null = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
-$resumed = Invoke-FormatWrightJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
+$null = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'retry', $cancelledJob.id)
+$resumed = Invoke-AnoleJson -Arguments @('--json', '--state-db', $resumeDatabase, 'jobs', 'run', '--limit', '1')
 Assert-True ($resumed.Data.warning -eq 1) 'queued markup PDF Plan did not resume to validated Warning'
 Assert-True ((Test-Path -LiteralPath $resumeOutput -PathType Leaf)) 'resumed markup PDF missing'
 Assert-True ($sourceHash -eq (Get-FileHash -LiteralPath $markdown -Algorithm SHA256).Hash) 'source changed'
-Assert-True (@(Get-ChildItem $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0) 'staged DOCX remains'
+Assert-True (@(Get-ChildItem $casePath -Filter '.anole-partial-*' -File).Count -eq 0) 'staged DOCX remains'
 Assert-True (@(Get-ChildItem -LiteralPath $casePath -Force -Directory | Where-Object { $_.Name -like '.fw-*' }).Count -eq 0) 'staged markup PDF workspace remains'
 
 $summary = [ordered]@{

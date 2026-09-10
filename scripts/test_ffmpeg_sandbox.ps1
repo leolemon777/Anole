@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -22,7 +22,7 @@ function Assert-True {
     }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param(
         [Parameter(Mandatory)]
         [string[]]$Arguments,
@@ -32,7 +32,7 @@ function Invoke-FormatWrightJson {
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON command returned empty stdout'
@@ -52,7 +52,7 @@ function Invoke-Ffmpeg {
 function Get-OnlyJob {
     param([Parameter(Mandatory)][string]$Database)
 
-    $response = Invoke-FormatWrightJson -Arguments @(
+    $response = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $Database, 'jobs', 'list'
     )
     $jobs = @($response.Data)
@@ -68,7 +68,7 @@ function Get-StagedPath {
 
     $parent = Split-Path -Parent $Output
     $name = Split-Path -Leaf $Output
-    Join-Path $parent ".formatwright-partial-$JobId-$name"
+    Join-Path $parent ".anole-partial-$JobId-$name"
 }
 
 function Stop-VerifiedProcessTree {
@@ -111,13 +111,13 @@ try {
         $positiveInput
     )
     $positiveInputHash = (Get-FileHash -LiteralPath $positiveInput -Algorithm SHA256).Hash
-    $plan = Invoke-FormatWrightJson -Arguments @(
+    $plan = Invoke-AnoleJson -Arguments @(
         '--json', 'plan', $positiveInput, '--to', 'mp4', '--output', $positiveOutput
     )
     Assert-True ($plan.Data.steps[0].operation -eq 'remux') 'compatible H.264/AAC must remux'
     Assert-True ($plan.Data.steps[0].arguments.video_mode -eq 'copy') 'remux must copy video'
     Assert-True ($plan.Data.steps[0].arguments.audio_mode -eq 'copy') 'remux must copy audio'
-    $conversion = Invoke-FormatWrightJson -Arguments @(
+    $conversion = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $positiveDb, 'convert', $positiveInput,
         '--to', 'mp4', '--output', $positiveOutput
     )
@@ -130,7 +130,7 @@ try {
         $positiveInputHash -eq (Get-FileHash -LiteralPath $positiveInput -Algorithm SHA256).Hash
     ) 'positive conversion modified the input'
     Assert-True (
-        @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+        @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
     ) 'positive conversion left a staged output'
     $probeText = & ffprobe -v error -show_entries format=format_name -of json $positiveOutput 2>$null
     Assert-True ($LASTEXITCODE -eq 0) 'independent ffprobe could not open positive output'
@@ -139,9 +139,9 @@ try {
 
     $conflictOutput = Join-Path $casePath 'existing-output.mp4'
     $conflictDb = Join-Path $casePath 'conflict.sqlite3'
-    [IO.File]::WriteAllText($conflictOutput, 'FORMATWRIGHT-SENTINEL')
+    [IO.File]::WriteAllText($conflictOutput, 'ANOLE-SENTINEL')
     $conflictHash = (Get-FileHash -LiteralPath $conflictOutput -Algorithm SHA256).Hash
-    $conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+    $conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
         '--json', '--state-db', $conflictDb, 'convert', $positiveInput,
         '--to', 'mp4', '--output', $conflictOutput
     )
@@ -154,7 +154,7 @@ try {
 
     $disguisedInput = Join-Path $casePath 'actually-matroska.jpg'
     Copy-Item -LiteralPath $positiveInput -Destination $disguisedInput
-    $disguised = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $disguisedInput)
+    $disguised = Invoke-AnoleJson -Arguments @('--json', 'inspect', $disguisedInput)
     Assert-True ($disguised.Data.format.id -eq 'mkv') 'header-first inspection did not detect MKV'
     Assert-True ($disguised.Data.format.extension_matches -eq $false) 'extension mismatch was missed'
     Assert-True (
@@ -172,7 +172,7 @@ try {
         '-map', '0:v', '-map', '0:a', '-map', '1:0', '-c', 'copy', '-c:s', 'srt',
         $subtitleInput
     )
-    $subtitlePlan = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+    $subtitlePlan = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
         '--json', 'plan', $subtitleInput, '--to', 'mp4'
     )
     Assert-True ($subtitlePlan.Data.code -eq 'POLICY_BLOCKED') 'subtitle was silently dropped'
@@ -189,7 +189,7 @@ try {
 
     $cancelOutput = Join-Path $casePath 'cancelled.mp4'
     $cancelDb = Join-Path $casePath 'cancel.sqlite3'
-    $cancel = Invoke-FormatWrightJson -ExpectedExitCodes @(130) -Arguments @(
+    $cancel = Invoke-AnoleJson -ExpectedExitCodes @(130) -Arguments @(
         '--json', '--state-db', $cancelDb, 'convert', $longInput,
         '--to', 'mp4', '--output', $cancelOutput, '--timeout-seconds', '1'
     )
@@ -248,10 +248,10 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $crashOutput)) 'crashed job committed an output'
     Assert-True (Test-Path -LiteralPath $crashPartial) 'crash did not leave recovery evidence'
 
-    $recovery = Invoke-FormatWrightJson -Arguments @(
+    $recovery = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'recover'
     )
-    $details = Invoke-FormatWrightJson -Arguments @(
+    $details = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'show', $crashJob.id
     )
     Assert-True (@($recovery.Data.interrupted_jobs).Count -eq 1) 'recovery count is wrong'
@@ -262,19 +262,19 @@ try {
     ) 'recovery event is missing'
     Assert-True (-not (Test-Path -LiteralPath $crashPartial)) 'recovery left the staged output'
     Assert-True (-not (Test-Path -LiteralPath $crashOutput)) 'recovery committed a target'
-    $resumed = Invoke-FormatWrightJson -Arguments @(
+    $resumed = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'resume', $crashJob.id
     )
     Assert-True ($resumed.Data.state -eq 'queued') 'resume did not requeue interrupted job'
-    $cancelledQueued = Invoke-FormatWrightJson -Arguments @(
+    $cancelledQueued = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'cancel', $crashJob.id
     )
     Assert-True ($cancelledQueued.Data.state -eq 'cancelled') 'queued cancellation did not persist'
-    $retried = Invoke-FormatWrightJson -Arguments @(
+    $retried = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'retry', $crashJob.id
     )
     Assert-True ($retried.Data.state -eq 'queued') 'retry did not requeue cancelled job'
-    $actionDetails = Invoke-FormatWrightJson -Arguments @(
+    $actionDetails = Invoke-AnoleJson -Arguments @(
         '--json', '--state-db', $crashDb, 'jobs', 'show', $crashJob.id
     )
     foreach ($eventCode in @('JOB_RESUMED', 'USER_CANCELLED', 'JOB_RETRIED')) {

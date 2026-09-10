@@ -38,7 +38,7 @@ Frontend tests in `apps/desktop/src/queueProjection.test.ts` assert:
 ## 4. Real-window procedure
 
 1. Build using the command in section 2.
-2. Launch `target/debug/formatwright-desktop.exe` as a normal Windows desktop application.
+2. Launch `target/debug/anole-desktop.exe` as a normal Windows desktop application.
 3. Verify that the embedded Anole page appears; a localhost error page is a failure.
 4. Invoke **Run 10,000-job benchmark** through the accessible button.
 5. Verify the visible summary, aggregate counts, final batch number, and 100-row preview.

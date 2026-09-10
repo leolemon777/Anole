@@ -32,7 +32,7 @@ The result promotes only the covered media-container slice of GW-12 to Experimen
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_metadata_sandbox.ps1
 ~~~
 

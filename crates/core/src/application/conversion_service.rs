@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use formatwright_engine_sdk::EngineIdentity;
+use anole_engine_sdk::EngineIdentity;
 use tokio_util::sync::CancellationToken;
 
 use crate::domain::{JobState, Plan, PlanRequest, Probe, ValidationReport};
@@ -85,7 +85,7 @@ impl ConversionService {
     {
         ensure_plan_approved(plan, Some(approved_plan_hash))?;
         let output = plan.output_path.as_ref().ok_or_else(|| {
-            crate::FormatWrightError::new(
+            crate::AnoleError::new(
                 ErrorCode::InputInvalid,
                 crate::Stage::Plan,
                 "Immediate conversion requires a resolved output path",

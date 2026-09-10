@@ -33,7 +33,7 @@ Doctor, activated registry paths, Plan `engine.certification`, and ValidationRep
 
 Regression coverage:
 
-- `formatwright_engine_sdk::derive_certification_requires_trusted_signature_and_complete_review`
+- `anole_engine_sdk::derive_certification_requires_trusted_signature_and_complete_review`
 - `engine_pack::activate_applies_embedded_keyring_without_promoting_unsigned_packs`
 - `engine_pack::trusted_signature_promotes_only_after_complete_review`
 - frontend `engine certification display`
@@ -46,10 +46,10 @@ Automated regressions now cover the Gate U failure list on the development host 
 |---|---|
 | Missing pack | `capabilities::backend_reports_missing_pack_for_a_supported_pdf_route`; `doctor::production_policy_ignores_explicit_non_pack_paths` |
 | Hash tamper | `engine_pack::rejects_a_tampered_binary` / runtime / SBOM sidecars |
-| Version incompatible | `engine_pack::rejects_an_incompatible_application_version`; `engine_pack::rejects_a_protocol_mismatch_before_activation`; `FormatWrightCompatibility::contains` |
+| Version incompatible | `engine_pack::rejects_an_incompatible_application_version`; `engine_pack::rejects_a_protocol_mismatch_before_activation`; `AnoleCompatibility::contains` |
 | Revoked / invalid signature | `engine_pack::evaluates_signature_trust_against_a_release_keyring` |
 | Half-install leftover | `engine_pack::leftover_partial_staging_is_not_published`; `engine_registry::leftover_partial_directories_are_not_installed_versions` |
 | Failed upgrade | `engine_registry::failed_upgrade_does_not_move_the_active_pointer` |
 | Malicious PATH / env override | `doctor::production_policy_ignores_development_overrides_and_polluted_paths`; Windows `.cmd`/`.bat` rejection |
 
-`verify_engine_pack` now rejects packs whose `formatwright_compatibility` range does not contain `CARGO_PKG_VERSION`. Leftover `.partial` staging directories are not treated as installed versions and do not become the active pointer.
+`verify_engine_pack` now rejects packs whose `anole_compatibility` range does not contain `CARGO_PKG_VERSION`. Leftover `.partial` staging directories are not treated as installed versions and do not become the active pointer.

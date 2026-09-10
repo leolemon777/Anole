@@ -62,6 +62,100 @@ dependencies = [
 ]
 
 [[package]]
+name = "anole-cli"
+version = "0.1.1"
+dependencies = [
+ "anole-core",
+ "clap",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "anole-core"
+version = "0.1.1"
+dependencies = [
+ "anole-engine-sdk",
+ "blake3",
+ "cfb 0.14.0",
+ "csv",
+ "flate2",
+ "fs2",
+ "image",
+ "jsonschema",
+ "mailparse",
+ "nix",
+ "quick-xml",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sevenz-rust",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "zip 6.0.0",
+]
+
+[[package]]
+name = "anole-desktop"
+version = "0.1.1"
+dependencies = [
+ "anole-core",
+ "base64 0.22.1",
+ "blake3",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "zip 6.0.0",
+]
+
+[[package]]
+name = "anole-engine-sdk"
+version = "0.1.1"
+dependencies = [
+ "ed25519-dalek",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "anole-server"
+version = "0.1.1"
+dependencies = [
+ "anole-core",
+ "axum",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1552,100 +1646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "formatwright-cli"
-version = "0.1.1"
-dependencies = [
- "clap",
- "formatwright-core",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "formatwright-core"
-version = "0.1.1"
-dependencies = [
- "blake3",
- "cfb 0.14.0",
- "csv",
- "flate2",
- "formatwright-engine-sdk",
- "fs2",
- "image",
- "jsonschema",
- "mailparse",
- "nix",
- "quick-xml",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "sevenz-rust",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
- "zip 6.0.0",
-]
-
-[[package]]
-name = "formatwright-desktop"
-version = "0.1.1"
-dependencies = [
- "base64 0.22.1",
- "blake3",
- "formatwright-core",
- "futures-util",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "tokio",
- "tokio-util",
- "uuid",
- "zip 6.0.0",
-]
-
-[[package]]
-name = "formatwright-engine-sdk"
-version = "0.1.1"
-dependencies = [
- "ed25519-dalek",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "formatwright-server"
-version = "0.1.1"
-dependencies = [
- "axum",
- "formatwright-core",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower",
 ]
 
 [[package]]

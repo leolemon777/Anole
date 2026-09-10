@@ -9,7 +9,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$SourcePdf,
-    [string]$DesktopBinary = (Join-Path $PSScriptRoot '..\target\release\formatwright-desktop.exe'),
+    [string]$DesktopBinary = (Join-Path $PSScriptRoot '..\target\release\anole-desktop.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts\desktop-release-conversion'),
     [string[]]$TargetFormats = @('png', 'jpg')
 )
@@ -42,8 +42,8 @@ New-Item -ItemType Directory -Path $casePath | Out-Null
 $input = Join-Path $casePath '输入 PDF 空格.pdf'
 Copy-Item -LiteralPath $sourcePath -Destination $input
 $stateRoots = @(
-    (Join-Path $env:APPDATA 'local.formatwright.desktop'),
-    (Join-Path $env:LOCALAPPDATA 'local.formatwright.desktop')
+    (Join-Path $env:APPDATA 'local.anole.desktop'),
+    (Join-Path $env:LOCALAPPDATA 'local.anole.desktop')
 )
 $formatSummaries = @()
 
@@ -53,12 +53,12 @@ foreach ($format in $TargetFormats) {
     $isolatedState = @{}
     $app = $null
     try {
-        Assert-True (@(Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue).Count -eq 0) "FormatWright is already running before the $format round"
+        Assert-True (@(Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue).Count -eq 0) "Anole is already running before the $format round"
         Assert-True (@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue).Count -eq 0) "port $Port is already in use before the $format round"
 
         foreach ($root in $stateRoots) {
             if (Test-Path -LiteralPath $root) {
-                $isolated = "$root.formatwright-release-conversion-$([Guid]::NewGuid().ToString('N'))"
+                $isolated = "$root.anole-release-conversion-$([Guid]::NewGuid().ToString('N'))"
                 Move-Item -LiteralPath $root -Destination $isolated
                 $isolatedState[$root] = $isolated
             }
@@ -90,7 +90,7 @@ foreach ($format in $TargetFormats) {
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
             $app.WaitForExit(10000) | Out-Null
         }
-        Get-Process -Name 'formatwright-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name 'anole-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
         foreach ($root in $stateRoots) {
             Remove-CheckedTree -Target $root -AllowedParent (Split-Path $root -Parent)

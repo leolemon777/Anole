@@ -20,12 +20,12 @@
    ```
 3. **Record** the `key_id`, `public_key`, creation time, location, and participants in the ceremony log (append a row below; this file is the public record — never paste the seed).
 4. **Back up the seed** 2-of-3: split the hex seed into three shares (e.g. paper + two hardware tokens) such that any two reconstruct it. Store shares in separate locations/controllers.
-5. **Destroy working copies** on the ceremony machine after backups are verified readable (sign a test manifest, verify with `formatwright engines verify --keyring keyring.json`).
+5. **Destroy working copies** on the ceremony machine after backups are verified readable (sign a test manifest, verify with `anole engines verify --keyring keyring.json`).
 6. **Publish** the public keyring entry: embed in the next application release and commit the public keyring to the repository (`keyring.json` is safe to commit; the seed is not).
 7. **Sign packs** on the release machine (seed loaded from one backup for the duration, then wiped):
    ```text
    python release_keyring_tool.py sign --manifest <pack>/manifest.json --seed seed.txt --key-id release-<half-year>
-   formatwright engines verify <pack>/manifest.json --keyring keyring.json   # must print Trusted
+   anole engines verify <pack>/manifest.json --keyring keyring.json   # must print Trusted
    ```
    Rebuild the Starter bundle afterwards so manifest/SBOM/source hashes stay consistent, and re-run the install smoke.
 

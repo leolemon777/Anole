@@ -24,7 +24,7 @@ The passing fixture promotes the covered GW-02 PNG/JPEG → WebP/AVIF path to Ex
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_image_sandbox.ps1
 ~~~
 

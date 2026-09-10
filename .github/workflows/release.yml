@@ -64,7 +64,7 @@ jobs:
           echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$env:DEV_KEY_PASSWORD" >> $env:GITHUB_ENV
       - name: Build offline NSIS installer
-        run: pnpm --filter @formatwright/desktop tauri build --bundles nsis
+        run: pnpm --filter @anole/desktop tauri build --bundles nsis
       - name: Generate application SBOM
         run: python scripts/generate_sbom.py
       - name: Compose updater latest.json
@@ -103,7 +103,7 @@ jobs:
           python scripts/generate_checksums.py `
             "target/release/bundle/nsis/Anole_${version}_x64-setup.exe" `
             "target/release/bundle/nsis/Anole_${version}_x64-setup.exe.sig" `
-            target/release/formatwright-desktop.exe `
+            target/release/anole-desktop.exe `
             "dist/Anole-$version-sbom.spdx.json" `
             dist/latest.json
       - name: Publish GitHub Release
@@ -118,7 +118,7 @@ jobs:
             --notes-file "docs/release/v$($version)_notes.md" `
             "target/release/bundle/nsis/Anole_${version}_x64-setup.exe" `
             "target/release/bundle/nsis/Anole_${version}_x64-setup.exe.sig" `
-            target/release/formatwright-desktop.exe `
+            target/release/anole-desktop.exe `
             dist/SHA256SUMS `
             "dist/Anole-$version-sbom.spdx.json" `
             dist/latest.json

@@ -1,5 +1,5 @@
 [package]
-name = "formatwright-fuzz"
+name = "anole-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -8,8 +8,8 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-formatwright-core = { path = "../crates/core" }
-formatwright-engine-sdk = { path = "../crates/engine-sdk" }
+anole-core = { path = "../crates/core" }
+anole-engine-sdk = { path = "../crates/engine-sdk" }
 libfuzzer-sys = "0.4"
 serde_json = "1"
 tempfile = "3"

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -165,7 +165,7 @@ Assert-True (
 ) 'durable running-state intervals were not bounded and concurrent'
 Assert-True (@(Get-ChildItem -LiteralPath $outputRoot -File).Count -eq 9) 'output count did not reconcile'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Recurse -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'mixed scheduler left staged output files'
 
 $result = [ordered]@{

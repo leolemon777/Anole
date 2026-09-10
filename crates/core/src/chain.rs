@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::capabilities::{normalize_target, required_engines, supported_targets};
 use crate::domain::PlanRequest;
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::runner::{ExecutionResult, execute_plan};
 use crate::workflow::prepare_conversion;
 
@@ -162,7 +162,7 @@ pub async fn execute_conversion_chain(
     cancellation: CancellationToken,
 ) -> Result<ExecutionResult> {
     let final_output = request.output_path.clone().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Chained conversion requires an output path",
@@ -170,7 +170,7 @@ pub async fn execute_conversion_chain(
         )
     })?;
     if final_output.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Commit,
             format!("Output already exists: {}", final_output.display()),
@@ -179,7 +179,7 @@ pub async fn execute_conversion_chain(
     }
     let staging = chain_staging_dir(&final_output, job_id)?;
     if staging.exists() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::OutputConflict,
             Stage::Execute,
             format!(
@@ -190,7 +190,7 @@ pub async fn execute_conversion_chain(
         ));
     }
     std::fs::create_dir(&staging).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Execute,
             format!(
@@ -208,7 +208,7 @@ pub async fn execute_conversion_chain(
     if let Err(cleanup_error) = std::fs::remove_dir_all(&staging)
         && outcome.is_ok()
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::StorageFailed,
             Stage::Commit,
             format!(
@@ -261,7 +261,7 @@ async fn run_chain_segments(
         last_result = Some(result);
     }
     last_result.ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Plan,
             "Conversion chain has no segments",
@@ -272,7 +272,7 @@ async fn run_chain_segments(
 
 fn chain_staging_dir(final_output: &Path, job_id: Uuid) -> Result<PathBuf> {
     let parent = final_output.parent().ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Resolved output path has no parent directory",

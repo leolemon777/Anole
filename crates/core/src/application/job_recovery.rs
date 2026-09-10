@@ -91,9 +91,7 @@ mod tests {
         let candidates = staged_output_candidates(&output, job.id).expect("candidates");
         fs::write(&candidates[0], b"staging").expect("staging");
         fs::write(&output, b"final-output").expect("final output");
-        let unrelated = suite
-            .path()
-            .join(".formatwright-partial-unrelated-output.mp4");
+        let unrelated = suite.path().join(".anole-partial-unrelated-output.mp4");
         fs::write(&unrelated, b"unrelated").expect("unrelated");
 
         let report = JobRecoveryService::cleanup_staging(&mut store, job.id).expect("cleanup");

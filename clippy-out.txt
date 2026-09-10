@@ -164,7 +164,7 @@ warning: this function has too many lines (127/100)
      |
      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_lines
 
-warning: `formatwright-core` (lib) generated 12 warnings (run `cargo clippy --fix --lib -p formatwright-core -- ` to apply 4 suggestions)
+warning: `anole-core` (lib) generated 12 warnings (run `cargo clippy --fix --lib -p anole-core -- ` to apply 4 suggestions)
 warning: found call to `str::trim_start` before `str::split_whitespace`
     --> crates\core\src\pdf.rs:2699:14
      |
@@ -193,5 +193,5 @@ help: ... or use `try_from` and handle the error accordingly
 2724 +         assert!(usize::try_from(startxref_value(&updated)) <= updated.len());
      |
 
-warning: `formatwright-core` (lib test) generated 14 warnings (12 duplicates) (run `cargo clippy --fix --lib -p formatwright-core --tests -- ` to apply 1 suggestion)
+warning: `anole-core` (lib test) generated 14 warnings (12 duplicates) (run `cargo clippy --fix --lib -p anole-core --tests -- ` to apply 1 suggestion)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.72s

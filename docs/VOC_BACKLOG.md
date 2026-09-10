@@ -72,7 +72,7 @@ VOC 里 FileConverter 被骂最多的是「菜单没了」，不是格式少。
 
 ## 第 3 波：中文用户搜得最多的格式（约 1–2 周）
 
-> 2026-09-07 状态：3.3 已实现（E-04：可选 Document pack `formatwright-document` v26.2.6 —— 官方 TDF MSI 在 Linux 执行机 7-Zip 解包 + pymsi 重建目录树，MPL-2.0，19,476 文件 SPDX SBOM；docx/xlsx→PDF 经 pack 自有 soffice.com 真跑通过、`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染；发布 zip（sha256 `44126a49…325369`）已 staged 且哈希 pin 进 `optional_packs.rs`，下载按钮等 v0.1.1 release 挂上资产后激活）。3.4 已实现（E-07：Convert 页专用密码框 + CLI `--password-file`，`plan_hash` 只记 `has_password` 布尔，SQLite/日志/报告字符串扫描零命中；已知偏差：secret 通道走了引擎 argv 而非规格期望的 env，SECURITY.md 如实披露）。3.1/3.2 等 E-03：供应链调查完成（DECISION-2 已拍板 LGPL 自建 image pack + HEVC 专利风险披露），剩余动作（Linux 侧 libheif/libde265 下载、解包验证 import 表、组 pack）等清单 A 批复。
+> 2026-09-07 状态：3.3 已实现（E-04：可选 Document pack `anole-document` v26.2.6 —— 官方 TDF MSI 在 Linux 执行机 7-Zip 解包 + pymsi 重建目录树，MPL-2.0，19,476 文件 SPDX SBOM；docx/xlsx→PDF 经 pack 自有 soffice.com 真跑通过、`pdftotext` 文本回读一致、用户 LibreOffice 配置树零污染；发布 zip（sha256 `44126a49…325369`）已 staged 且哈希 pin 进 `optional_packs.rs`，下载按钮等 v0.1.1 release 挂上资产后激活）。3.4 已实现（E-07：Convert 页专用密码框 + CLI `--password-file`，`plan_hash` 只记 `has_password` 布尔，SQLite/日志/报告字符串扫描零命中；已知偏差：secret 通道走了引擎 argv 而非规格期望的 env，SECURITY.md 如实披露）。3.1/3.2 等 E-03：供应链调查完成（DECISION-2 已拍板 LGPL 自建 image pack + HEVC 专利风险披露），剩余动作（Linux 侧 libheif/libde265 下载、解包验证 import 表、组 pack）等清单 A 批复。
 
 | # | 项 | 验收 | VOC |
 |---|---|---|---|

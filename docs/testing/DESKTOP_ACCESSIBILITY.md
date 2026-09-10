@@ -18,7 +18,7 @@
 The release configuration does not expose a debug port. Build the test-only merge configuration and run the harness:
 
 ```powershell
-pnpm --filter @formatwright/desktop tauri build -- --debug --no-bundle --config src-tauri/tauri.accessibility.conf.json
+pnpm --filter @anole/desktop tauri build -- --debug --no-bundle --config src-tauri/tauri.accessibility.conf.json
 ./scripts/test_desktop_accessibility.ps1
 ```
 

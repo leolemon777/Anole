@@ -25,7 +25,7 @@ This evidence promotes GW-11 to Experimental on Windows. It is not Certified unt
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_structured_sandbox.ps1
 ~~~
 

@@ -17,7 +17,7 @@
 `scripts/test_zero_network.ps1` generates a synthetic local media fixture, asserts the public Plan is network-denied, launches the real CLI and FFmpeg process tree, and samples every observed descendant with `Get-NetTCPConnection` and `Get-NetUDPEndpoint` at 50 ms intervals. It requires a committed validated output and zero observed TCP/UDP endpoints.
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_zero_network.ps1
 ~~~
 

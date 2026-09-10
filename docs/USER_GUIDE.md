@@ -33,32 +33,32 @@ Open **Presets** to name and save the current target, quality, width, DPI, color
 
 **Engines** runs Doctor without downloading anything. The Windows candidate installs its embedded Starter packs into a versioned application-data store on first launch. A local engine pack can also be imported by selecting its `manifest.json`; Anole verifies protocol, platform/architecture, canonical paths, executable/runtime hashes, and declared license files, then copies only declared files into the same store and atomically switches the active registry record. Every pack is re-verified at startup. Doctor, Plan steps, and ValidationReport all show the same derived certification. A trusted signature alone is displayed as “signature trusted, review incomplete”; `Certified` requires that trust **and** a completed human supply-chain review. Hash completeness or a present signature never promote a pack.
 
-For development only, an exact system executable can be selected before startup with `FORMATWRIGHT_ENGINE_<NAME>`, such as `FORMATWRIGHT_ENGINE_FFMPEG` or `FORMATWRIGHT_ENGINE_PDFTOPPM`. Release ignores `PATH` and these overrides; production capability comes only from an activated verified pack.
+For development only, an exact system executable can be selected before startup with `ANOLE_ENGINE_<NAME>`, such as `ANOLE_ENGINE_FFMPEG` or `ANOLE_ENGINE_PDFTOPPM`. Release ignores `PATH` and these overrides; production capability comes only from an activated verified pack.
 
 ## CLI essentials
 
 ~~~text
-formatwright inspect INPUT
-formatwright plan INPUT --to FORMAT --output PATH
-formatwright convert INPUT --to FORMAT --output PATH
-formatwright doctor
-formatwright batch-images INPUT_DIRECTORY --output-dir DIRECTORY --to webp
-formatwright jobs list
-formatwright jobs batches
-formatwright jobs select --state failed --search TEXT
-formatwright jobs selection SELECTION_ID
-formatwright jobs bulk SELECTION_ID --action retry
-formatwright jobs recover
-formatwright jobs run --limit 100
-formatwright engines verify PACK/manifest.json
-formatwright --state-db PATH maintenance status
-formatwright --state-db PATH maintenance backup BACKUP.sqlite3
-formatwright --state-db PATH maintenance bundle-backup BACKUP.fwstate --include-reports
-formatwright --state-db PATH maintenance integrity-check
-formatwright --state-db PATH maintenance restore BACKUP.sqlite3
-formatwright --state-db PATH maintenance bundle-restore BACKUP.fwstate
-formatwright --state-db PATH maintenance bundle-restore BACKUP.fwstate --yes
-formatwright --state-db PATH maintenance compact
+anole inspect INPUT
+anole plan INPUT --to FORMAT --output PATH
+anole convert INPUT --to FORMAT --output PATH
+anole doctor
+anole batch-images INPUT_DIRECTORY --output-dir DIRECTORY --to webp
+anole jobs list
+anole jobs batches
+anole jobs select --state failed --search TEXT
+anole jobs selection SELECTION_ID
+anole jobs bulk SELECTION_ID --action retry
+anole jobs recover
+anole jobs run --limit 100
+anole engines verify PACK/manifest.json
+anole --state-db PATH maintenance status
+anole --state-db PATH maintenance backup BACKUP.sqlite3
+anole --state-db PATH maintenance bundle-backup BACKUP.fwstate --include-reports
+anole --state-db PATH maintenance integrity-check
+anole --state-db PATH maintenance restore BACKUP.sqlite3
+anole --state-db PATH maintenance bundle-restore BACKUP.fwstate
+anole --state-db PATH maintenance bundle-restore BACKUP.fwstate --yes
+anole --state-db PATH maintenance compact
 ~~~
 
 Add `--json` for machine-readable output and `--state-db PATH` for an explicit durable queue. Use `convert --dry-run` to inspect a Plan without running it. `Ctrl+C` requests cancellation and prevents admission of further queued work.

@@ -38,7 +38,7 @@ The overall result intentionally remains Warning because this alpha validator do
 ## Run
 
 ~~~powershell
-cargo build -p formatwright-cli
+cargo build -p anole-cli
 pwsh -NoProfile -File scripts/test_office_sandbox.ps1 `
   -Python <python-with-python-docx-python-pptx-openpyxl-pillow> `
   -Soffice <soffice.com> `

@@ -29,7 +29,7 @@ Schema v4 additionally proves persistent atomic batches, job-level idempotency, 
 ## Recorded Windows evidence
 
 ~~~text
-FORMATWRIGHT_QUEUE_BENCHMARK jobs=10000 create_ms=612 page_size=137 paging_ms=1073
+ANOLE_QUEUE_BENCHMARK jobs=10000 create_ms=612 page_size=137 paging_ms=1073
 test result: ok. 1 passed; finished in 1.73s
 ~~~
 

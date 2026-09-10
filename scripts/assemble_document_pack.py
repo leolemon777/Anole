@@ -1,4 +1,4 @@
-"""Assemble the formatwright-document engine pack from the unpacked
+"""Assemble the anole-document engine pack from the unpacked
 LibreOffice tree (E-04, DECISION-3 a).
 
 Layout mirrors the OCR starter pack: manifest.json + sources.json + SPDX
@@ -71,7 +71,7 @@ def main() -> None:
 
     provenance = OUT / "PROVENANCE.txt"
     provenance.write_text(
-        "FormatWright Windows Document optional pack\n"
+        "Anole Windows Document optional pack\n"
         "LibreOffice version: 26.2.6 (official TDF Windows x86_64 build)\n"
         "Installer URL: " + MSI_URL + "\n"
         "Installer SHA-256: " + MSI_SHA + "\n"
@@ -87,12 +87,12 @@ def main() -> None:
 
     manifest = {
         "schema_version": 1,
-        "engine_id": "formatwright-document",
+        "engine_id": "anole-document",
         "version": VERSION,
         "platform": "windows",
         "architecture": "x86_64",
         "protocol_version": 1,
-        "formatwright_compatibility": {"minimum": "0.1.0", "maximum_exclusive": "0.2.0"},
+        "anole_compatibility": {"minimum": "0.1.0", "maximum_exclusive": "0.2.0"},
         "executables": executables,
         "runtime_files": runtime,
         "source": {
@@ -125,7 +125,7 @@ def main() -> None:
 
     sources = {
         "schema_version": 1,
-        "engine_id": "formatwright-document",
+        "engine_id": "anole-document",
         "version": VERSION,
         "review_status": "incomplete",
         "artifacts": [

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\formatwright.exe'),
+    [string]$Binary = (Join-Path $PSScriptRoot '..\target\debug\anole.exe'),
     [string]$ArtifactsRoot = (Join-Path $PSScriptRoot '..\.artifacts')
 )
 
@@ -14,12 +14,12 @@ function Assert-True {
     if (-not $Condition) { throw "metadata sandbox assertion failed: $Message" }
 }
 
-function Invoke-FormatWrightJson {
+function Invoke-AnoleJson {
     param([string[]]$Arguments, [int[]]$ExpectedExitCodes = @(0))
     $lines = & $script:BinaryPath @Arguments 2>$null
     $exitCode = $LASTEXITCODE
     Assert-True ($ExpectedExitCodes -contains $exitCode) (
-        "unexpected exit code $exitCode for: formatwright " + ($Arguments -join ' ')
+        "unexpected exit code $exitCode for: anole " + ($Arguments -join ' ')
     )
     $text = $lines -join "`n"
     Assert-True (-not [string]::IsNullOrWhiteSpace($text)) 'JSON stdout was empty'
@@ -62,7 +62,7 @@ Invoke-Ffmpeg @(
     $input
 )
 $sourceHash = (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash
-$inputProbe = Invoke-FormatWrightJson -Arguments @('--json', 'inspect', $input)
+$inputProbe = Invoke-AnoleJson -Arguments @('--json', 'inspect', $input)
 $privateKeys = @(
     $inputProbe.Data.metadata.PSObject.Properties |
         Where-Object { $_.Value.classification -in @('private', 'secret') } |
@@ -77,7 +77,7 @@ Assert-True ($privateKeys.Count -ge 3) 'private title/artist/comment were not cl
 Assert-True ($unknownKeys -contains 'CUSTOM_TAG') 'unknown custom metadata was not retained by policy'
 
 $output = Join-Path $casePath 'tagged source.cleaned.mkv'
-$plan = Invoke-FormatWrightJson -Arguments @(
+$plan = Invoke-AnoleJson -Arguments @(
     '--json', 'clean', $input, '--output', $output, '--dry-run'
 )
 Assert-True ($plan.Data.steps[0].operation -eq 'metadata-clean') 'wrong clean operation'
@@ -89,7 +89,7 @@ Assert-True ($plan.Data.constraints.retained_metadata_keys -contains 'CUSTOM_TAG
 Assert-True (-not $plan.Text.Contains('Private title')) 'Plan leaked a removed metadata value'
 Assert-True (-not $plan.Text.Contains('Private artist')) 'Plan leaked a removed metadata value'
 
-$clean = Invoke-FormatWrightJson -Arguments @(
+$clean = Invoke-AnoleJson -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'clean.sqlite3'),
     'clean', $input, '--output', $output
 )
@@ -105,11 +105,11 @@ Assert-True ($independent.streams[0].codec_name -eq 'h264') 'video payload codec
 Assert-True ($independent.streams[1].codec_name -eq 'aac') 'audio payload codec changed'
 Assert-True ($independent.streams[0].width -eq 320 -and $independent.streams[0].height -eq 180) 'dimensions changed'
 
-$inPlace = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$inPlace = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', 'clean', $input, '--output', $input, '--dry-run'
 )
 Assert-True ($inPlace.Data.code -eq 'POLICY_BLOCKED') 'in-place clean was accepted'
-$conflict = Invoke-FormatWrightJson -ExpectedExitCodes @(8) -Arguments @(
+$conflict = Invoke-AnoleJson -ExpectedExitCodes @(8) -Arguments @(
     '--json', '--state-db', (Join-Path $casePath 'conflict.sqlite3'),
     'clean', $input, '--output', $output
 )
@@ -118,7 +118,7 @@ Assert-True (
     $sourceHash -eq (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash
 ) 'metadata cleaning modified the source'
 Assert-True (
-    @(Get-ChildItem -LiteralPath $casePath -Filter '.formatwright-partial-*' -File).Count -eq 0
+    @(Get-ChildItem -LiteralPath $casePath -Filter '.anole-partial-*' -File).Count -eq 0
 ) 'metadata suite left staged output files'
 
 $summary = [ordered]@{

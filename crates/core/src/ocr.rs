@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use formatwright_engine_sdk::{EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -9,7 +9,7 @@ use crate::domain::{
     ArtifactSummary, ChangeSet, NetworkPolicy, Plan, PlanStep, Probe, ReportRedaction,
     SCHEMA_VERSION, ValidationCheck, ValidationReport, ValidationStatus,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::planner::deterministic_plan_hash;
 
 /// Tesseract page segmentation mode for full-page automatic layout.
@@ -19,7 +19,7 @@ pub(crate) const OCR_PDF_DPI: u16 = 150;
 
 fn ensure_tesseract(tesseract: &EngineIdentity) -> Result<()> {
     if tesseract.engine_id != "tesseract" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The OCR Plan was given the wrong engine",
@@ -37,7 +37,7 @@ fn normalize_ocr_language(raw: Option<&str>) -> Result<String> {
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             format!("Unsupported OCR language code: {language:?}"),
@@ -52,7 +52,7 @@ fn ensure_image_probe(probe: &Probe) -> Result<()> {
         probe.format.id.as_str(),
         "png" | "jpg" | "jpeg" | "tiff" | "bmp"
     ) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "Image OCR needs a PNG, JPEG, TIFF, or BMP input",
@@ -81,7 +81,7 @@ pub fn plan_image_ocr(
     ensure_tesseract(tesseract)?;
     let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
     if !matches!(target.as_str(), "txt" | "md") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "Image OCR target must be txt or md",
@@ -123,7 +123,7 @@ pub fn plan_pdf_ocr(
     language: Option<&str>,
 ) -> Result<Plan> {
     if probe.format.id != "pdf" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "PDF OCR needs a PDF input",
@@ -286,8 +286,8 @@ pub(crate) fn validate_ocr_output(
 mod tests {
     use super::{normalize_ocr_language, ocr_text_nonempty, plan_image_ocr};
 
-    fn tesseract_engine() -> formatwright_engine_sdk::EngineIdentity {
-        use formatwright_engine_sdk::{Certification, EngineIdentity};
+    fn tesseract_engine() -> anole_engine_sdk::EngineIdentity {
+        use anole_engine_sdk::{Certification, EngineIdentity};
         EngineIdentity {
             engine_id: "tesseract".to_owned(),
             version: "5.4".to_owned(),
@@ -372,10 +372,7 @@ mod tests {
             !plan.steps[0].arguments.contains_key("operation"),
             "image OCR must not ride the qpdf operation dispatch"
         );
-        assert_eq!(
-            plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::Lossy
-        );
+        assert_eq!(plan.steps[0].loss_class, anole_engine_sdk::LossClass::Lossy);
     }
 
     #[test]

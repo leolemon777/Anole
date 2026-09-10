@@ -1,5 +1,5 @@
 [package]
-name = "formatwright-engine-sdk"
+name = "anole-engine-sdk"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

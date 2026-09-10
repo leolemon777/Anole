@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use formatwright_engine_sdk::{Certification, EngineIdentity, LossClass, Operation};
+use anole_engine_sdk::{Certification, EngineIdentity, LossClass, Operation};
 use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -10,7 +10,7 @@ use crate::domain::{
     ChangeSet, FormatKind, MetadataClassification, NetworkPolicy, Plan, PlanRequest, PlanStep,
     Probe, SCHEMA_VERSION, StreamKind,
 };
-use crate::error::{ErrorCode, FormatWrightError, Result, Stage};
+use crate::error::{AnoleError, ErrorCode, Result, Stage};
 
 /// Builds a deterministic conversion Plan for a supported media target.
 ///
@@ -37,7 +37,7 @@ pub fn plan_conversion(
         "jpg" | "jpeg" | "png" | "webp" | "avif" | "tiff" | "bmp" => {
             plan_image_conversion(probe, request, ffmpeg, &target)
         }
-        _ => Err(FormatWrightError::new(
+        _ => Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("No certified media planner is available for {target}"),
@@ -59,7 +59,7 @@ pub fn plan_heic_conversion(
     heif_convert: &EngineIdentity,
 ) -> Result<Plan> {
     if probe.format.id != "heic" || probe.format.kind != FormatKind::Image {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "The libheif fallback requires HEIC or HEIF image input",
@@ -67,7 +67,7 @@ pub fn plan_heic_conversion(
         ));
     }
     if heif_convert.engine_id != "heif-dec" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The HEIC Plan was given the wrong engine",
@@ -75,7 +75,7 @@ pub fn plan_heic_conversion(
         ));
     }
     if request.width.is_some() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "The libheif fallback does not yet combine HEIC decode with resize",
@@ -91,7 +91,7 @@ pub fn plan_heic_conversion(
         "jpg" | "jpeg" => "jpeg",
         "png" => "png",
         _ => {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Unsupported,
                 Stage::Plan,
                 "HEIC/HEIF fallback output must be JPEG or PNG",
@@ -102,7 +102,7 @@ pub fn plan_heic_conversion(
     let quality = if target == "jpeg" {
         let quality = request.quality.unwrap_or(85);
         if !(1..=100).contains(&quality) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "JPEG quality must be between 1 and 100",
@@ -112,7 +112,7 @@ pub fn plan_heic_conversion(
         Some(quality)
     } else {
         if request.quality.is_some() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "PNG output is lossless and does not accept --quality",
@@ -206,7 +206,7 @@ pub fn plan_magick_conversion(
     if probe.format.kind != FormatKind::Image
         || crate::inspect::magick_format_id(&probe.format.id).is_none()
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "The ImageMagick lane requires a PSD or camera-RAW input",
@@ -214,7 +214,7 @@ pub fn plan_magick_conversion(
         ));
     }
     if magick.engine_id != "magick" {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "The ImageMagick Plan was given the wrong engine",
@@ -222,7 +222,7 @@ pub fn plan_magick_conversion(
         ));
     }
     if request.width.is_some() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "The ImageMagick lane does not combine decode with resize",
@@ -239,7 +239,7 @@ pub fn plan_magick_conversion(
         "png" => "png",
         "tiff" | "tif" => "tiff",
         _ => {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::Unsupported,
                 Stage::Plan,
                 "PSD/RAW conversion output must be PNG, JPEG, or TIFF",
@@ -251,7 +251,7 @@ pub fn plan_magick_conversion(
     let quality = if lossy {
         let quality = request.quality.unwrap_or(92);
         if !(1..=100).contains(&quality) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "JPEG quality must be between 1 and 100",
@@ -261,7 +261,7 @@ pub fn plan_magick_conversion(
         Some(quality)
     } else {
         if request.quality.is_some() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 format!(
@@ -351,7 +351,7 @@ pub fn plan_metadata_clean(
     ffmpeg: &EngineIdentity,
 ) -> Result<Plan> {
     let muxer = metadata_clean_muxer(&probe.format.id).ok_or_else(|| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             format!("Metadata cleaning is not available for {}", probe.format.id),
@@ -362,7 +362,7 @@ pub fn plan_metadata_clean(
         .canonicalize()
         .is_ok_and(|path| path == probe.artifact.canonical_path)
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "In-place metadata cleaning is disabled",
@@ -392,7 +392,7 @@ pub fn plan_metadata_clean(
         .map(|(key, _)| key.clone())
         .collect::<Vec<_>>();
     if let Some(key) = removed_keys.iter().find(|key| !valid_metadata_key(key)) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             format!("Metadata key cannot be represented safely: {key:?}"),
@@ -496,7 +496,7 @@ fn plan_image_conversion(
     requested_target: &str,
 ) -> Result<Plan> {
     if probe.format.kind != FormatKind::Image {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "Image conversion requires a still-image input",
@@ -508,7 +508,7 @@ fn plan_image_conversion(
         .iter()
         .find(|stream| stream.kind == StreamKind::Video)
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "No image payload was detected",
@@ -523,7 +523,7 @@ fn plan_image_conversion(
     if let Some(width) = request.width
         && !(1..=16_384).contains(&width)
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "Image width must be between 1 and 16384 pixels",
@@ -534,7 +534,7 @@ fn plan_image_conversion(
     let quality = if lossy {
         let quality = request.quality.unwrap_or(85);
         if !(1..=100).contains(&quality) {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "Image quality must be between 1 and 100",
@@ -544,7 +544,7 @@ fn plan_image_conversion(
         Some(quality)
     } else {
         if request.quality.is_some() {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 format!(
@@ -562,7 +562,7 @@ fn plan_image_conversion(
         .and_then(serde_json::Value::as_str)
         .is_some_and(pixel_format_has_alpha);
     if source_alpha && matches!(target, "jpeg" | "bmp") {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "JPEG and BMP cannot preserve the input alpha channel",
@@ -690,7 +690,7 @@ fn plan_gif_conversion(
         .iter()
         .find(|stream| stream.kind == StreamKind::Video)
         .ok_or_else(|| {
-            FormatWrightError::new(
+            AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "GIF conversion requires a video stream",
@@ -702,7 +702,7 @@ fn plan_gif_conversion(
     let frames_per_second = request.frames_per_second.unwrap_or(15);
     let loop_count = request.loop_count.unwrap_or(0);
     if duration_millis == Some(0) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "GIF duration must be greater than zero",
@@ -710,7 +710,7 @@ fn plan_gif_conversion(
         ));
     }
     if !(1..=60).contains(&frames_per_second) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "GIF frame rate must be between 1 and 60",
@@ -720,7 +720,7 @@ fn plan_gif_conversion(
     if let Some(width) = request.width
         && !(1..=16_384).contains(&width)
     {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "GIF width must be between 1 and 16384 pixels",
@@ -734,7 +734,7 @@ fn plan_gif_conversion(
         if start_seconds >= input_seconds
             || end_seconds.is_some_and(|end| end > input_seconds + 0.250)
         {
-            return Err(FormatWrightError::new(
+            return Err(AnoleError::new(
                 ErrorCode::InputInvalid,
                 Stage::Plan,
                 "GIF time range is outside the input duration",
@@ -846,7 +846,7 @@ fn plan_mp4_conversion(
 ) -> Result<Plan> {
     let target = "mp4".to_owned();
     if probe.format.kind != FormatKind::Video {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MP4 planning requires an input containing video",
@@ -860,7 +860,7 @@ fn plan_mp4_conversion(
         .filter(|stream| stream.kind == StreamKind::Video)
         .collect();
     if videos.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "No video stream was detected",
@@ -900,7 +900,7 @@ fn plan_mp4_conversion(
             unsupported_subtitles.len(),
             other_streams.len()
         );
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "MP4 cannot preserve every detected stream with the current adapter",
@@ -1070,7 +1070,7 @@ fn plan_audio_conversion(
     target: &str,
 ) -> Result<Plan> {
     if !matches!(probe.format.kind, FormatKind::Video | FormatKind::Audio) {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
             "Audio conversion requires an input containing audio",
@@ -1083,7 +1083,7 @@ fn plan_audio_conversion(
         .filter(|stream| stream.kind == StreamKind::Audio)
         .collect::<Vec<_>>();
     if audios.is_empty() {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::InputInvalid,
             Stage::Plan,
             "No audio stream was detected",
@@ -1091,7 +1091,7 @@ fn plan_audio_conversion(
         ));
     }
     if request.preserve_all_streams && audios.len() > 1 {
-        return Err(FormatWrightError::new(
+        return Err(AnoleError::new(
             ErrorCode::PolicyBlocked,
             Stage::Plan,
             "A single-file audio target cannot preserve every detected audio stream",
@@ -1105,7 +1105,7 @@ fn plan_audio_conversion(
             .copied()
             .find(|stream| stream.index == index)
             .ok_or_else(|| {
-                FormatWrightError::new(
+                AnoleError::new(
                     ErrorCode::InputInvalid,
                     Stage::Plan,
                     format!("Audio stream index {index} does not exist"),
@@ -1308,7 +1308,7 @@ pub(crate) fn deterministic_plan_hash(plan: &Plan) -> Result<String> {
         network_policy: plan.network_policy,
     };
     let bytes = serde_json::to_vec(&material).map_err(|error| {
-        FormatWrightError::new(
+        AnoleError::new(
             ErrorCode::Internal,
             Stage::Plan,
             "Unable to serialize deterministic Plan material",
@@ -1324,7 +1324,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity, Operation};
+    use anole_engine_sdk::{Certification, EngineIdentity, Operation};
     use serde_json::json;
 
     use super::{plan_conversion, plan_metadata_clean};
@@ -1702,7 +1702,7 @@ mod tests {
         assert_eq!(plan.steps[0].arguments["muxer"], "image2");
         assert_eq!(
             plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::Lossless
+            anole_engine_sdk::LossClass::Lossless
         );
         assert_eq!(plan.steps[0].arguments["quality"], "lossless");
     }
@@ -1720,7 +1720,7 @@ mod tests {
         assert_eq!(plan.steps[0].arguments["codec"], "bmp");
         assert_eq!(
             plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::Lossless
+            anole_engine_sdk::LossClass::Lossless
         );
     }
 
@@ -1745,7 +1745,7 @@ mod tests {
         );
         assert_eq!(
             plan.steps[0].loss_class,
-            formatwright_engine_sdk::LossClass::Lossless
+            anole_engine_sdk::LossClass::Lossless
         );
 
         magick_request.target_format = "jpg".to_owned();
