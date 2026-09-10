@@ -292,31 +292,49 @@ pub fn plan_markup_to_epub(
 ///
 /// Returns `Unsupported` for other inputs or targets and `EngineIncompatible`
 /// for a non-pandoc engine.
-pub fn plan_docx_markup_export(
+/// Plans an offline Pandoc markup export from DOCX/HTML to txt/md/html/epub.
+///
+/// # Errors
+///
+/// Returns `Unsupported` for other inputs or targets, `EngineIncompatible`
+/// for a non-pandoc engine, and `PolicyBlocked` when HTML markup references
+/// external resources under the deny-all policy.
+pub fn plan_markup_export(
     probe: &Probe,
     output_path: std::path::PathBuf,
     pandoc: &EngineIdentity,
     target: &str,
 ) -> Result<Plan> {
     let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
-    if probe.format.id != "docx" {
-        return Err(unsupported("Pandoc export input must be a DOCX package"));
+    let source = probe.format.id.clone();
+    if !matches!(source.as_str(), "docx" | "html") {
+        return Err(unsupported(
+            "Pandoc export input must be a DOCX package or an HTML document",
+        ));
     }
     if !matches!(target.as_str(), "txt" | "md" | "html" | "epub") {
         return Err(unsupported(
-            "DOCX export target must be txt, md, html, or epub",
+            "Markup export target must be txt, md, html, or epub",
         ));
     }
     if pandoc.engine_id != "pandoc" {
         return Err(FormatWrightError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
-            "The DOCX export Plan was given the wrong engine",
+            "The markup export Plan was given the wrong engine",
             "Run doctor and use Pandoc.",
         ));
     }
+    if source == "html" && property(probe, "has_external_resource") == json!(true) {
+        return Err(FormatWrightError::new(
+            ErrorCode::PolicyBlocked,
+            Stage::Plan,
+            "The HTML document references an external resource under deny-all policy",
+            "Remove the remote image/link or wait for an explicitly authorized resource-root policy.",
+        ));
+    }
     let arguments = BTreeMap::from([
-        ("source_format".to_owned(), "docx".to_owned()),
+        ("source_format".to_owned(), source.clone()),
         ("target_format".to_owned(), target.clone()),
         ("sandbox".to_owned(), "true".to_owned()),
         ("standalone".to_owned(), "true".to_owned()),
@@ -329,7 +347,7 @@ pub fn plan_docx_markup_export(
     ]);
     let step = PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: format!("pandoc.docx-to-{target}.offline"),
+        capability_id: format!("pandoc.{source}-to-{target}.offline"),
         engine: pandoc.clone(),
         operation: Operation::Transform,
         loss_class: LossClass::Unknown,
@@ -351,9 +369,12 @@ pub fn plan_docx_markup_export(
                 "document structure supported by Pandoc".to_owned(),
             ],
             changed: vec![format!(
-                "DOCX structure is re-serialized through Pandoc's default {target} writer"
+                "{source} structure is re-serialized through Pandoc's default {target} writer"
             )],
-            dropped: vec!["Word-specific layout and active content".to_owned()],
+            dropped: vec![format!(
+                "{}-specific layout and active content",
+                if source == "docx" { "Word" } else { "HTML" }
+            )],
             unknown: vec![
                 "semantic token order may be re-arranged by the Pandoc reader".to_owned(),
             ],
@@ -1305,7 +1326,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plan_docx_markup_export_builds_pandoc_plans_for_all_text_targets() {
+    async fn plan_markup_export_builds_pandoc_plans_for_all_text_targets() {
         let directory = tempdir().expect("temporary directory");
         let input = directory.path().join("report.docx");
         write_minimal_docx(&input);
@@ -1318,7 +1339,7 @@ mod tests {
             ("html", "document.text-extractable"),
             ("epub", "epub.container-valid"),
         ] {
-            let plan = super::plan_docx_markup_export(
+            let plan = super::plan_markup_export(
                 &probe,
                 directory.path().join(format!("out.{target}")),
                 &pandoc,
@@ -1343,7 +1364,7 @@ mod tests {
             .await
             .expect("markdown inspection");
         assert!(
-            super::plan_docx_markup_export(
+            super::plan_markup_export(
                 &markdown_probe,
                 directory.path().join("o.txt"),
                 &pandoc,
@@ -1353,7 +1374,7 @@ mod tests {
             "markdown input is rejected"
         );
         assert!(
-            super::plan_docx_markup_export(&probe, directory.path().join("o.pdf"), &pandoc, "pdf")
+            super::plan_markup_export(&probe, directory.path().join("o.pdf"), &pandoc, "pdf")
                 .is_err(),
             "pdf target is rejected"
         );
@@ -1362,9 +1383,36 @@ mod tests {
             ..pandoc
         };
         assert!(
-            super::plan_docx_markup_export(&probe, directory.path().join("o.txt"), &wrong, "txt")
+            super::plan_markup_export(&probe, directory.path().join("o.txt"), &wrong, "txt")
                 .is_err(),
             "non-pandoc engine is rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_markup_export_accepts_html_input_for_md() {
+        let directory = tempdir().expect("temporary directory");
+        let input = directory.path().join("page.html");
+        fs::write(&input, "<html><body><h1>ELECTRIC 440</h1></body></html>").expect("write html");
+        let probe = inspect_document(&input).await.expect("HTML inspection");
+        assert_eq!(probe.format.id, "html");
+        let pandoc = pandoc_engine();
+        let plan =
+            super::plan_markup_export(&probe, directory.path().join("out.md"), &pandoc, "md")
+                .expect("html->md plan");
+        assert_eq!(plan.target_format, "md");
+        assert_eq!(plan.steps[0].capability_id, "pandoc.html-to-md.offline");
+        assert_eq!(
+            plan.steps[0]
+                .arguments
+                .get("source_format")
+                .map(String::as_str),
+            Some("html")
+        );
+        assert!(
+            plan.validators
+                .iter()
+                .any(|value| value == "document.text-extractable")
         );
     }
 
@@ -1378,7 +1426,7 @@ mod tests {
         let input_probe = inspect_document(&input).await.expect("DOCX inspection");
         let pandoc = pandoc_engine();
         let output = directory.path().join("out.txt");
-        let plan = super::plan_docx_markup_export(&input_probe, output.clone(), &pandoc, "txt")
+        let plan = super::plan_markup_export(&input_probe, output.clone(), &pandoc, "txt")
             .expect("txt plan");
 
         // 空输出 → EXPORT_TEXT_NONEMPTY 必须 Fail。

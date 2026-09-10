@@ -287,6 +287,18 @@ where
         )
         .await;
     }
+    if step.engine.engine_id == "pdftotext" && plan.target_format == "md" {
+        return execute_pdftotext_text_plan(
+            input,
+            plan,
+            job_id,
+            cancellation,
+            &output_path,
+            &partial_path,
+            &mut observer,
+        )
+        .await;
+    }
     if step.engine.engine_id == "pandoc" {
         if plan.target_format == "pdf" {
             return execute_markup_pdf_plan(
@@ -3519,6 +3531,131 @@ where
             ErrorCode::OutputConflict,
             Stage::Commit,
             "The archive destination appeared while running",
+            "Choose another output path.",
+        ));
+    }
+    if let Err(error) = commit_path_no_replace(partial_path, output_path) {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    report.output.display_path = Some(output_path.to_string_lossy().into_owned());
+    Ok(ExecutionResult {
+        output_path: output_path.to_owned(),
+        report,
+    })
+}
+
+/// Executes the PDF → md text export: pdftotext (stdout mode) extracts the
+/// text layer, the result is staged to the partial path, re-inspected as a
+/// document, and accepted through the shared text-export validators.
+#[allow(clippy::too_many_lines)]
+async fn execute_pdftotext_text_plan<F>(
+    input: &Probe,
+    plan: &Plan,
+    job_id: Uuid,
+    cancellation: CancellationToken,
+    output_path: &Path,
+    partial_path: &Path,
+    observer: &mut F,
+) -> Result<ExecutionResult>
+where
+    F: FnMut(ExecutionMilestone) -> Result<()>,
+{
+    let step = plan
+        .steps
+        .first()
+        .ok_or_else(|| invalid_plan_argument("pdftotext step"))?;
+    checked_argument(step, "source_format", &["pdf"])?;
+    checked_argument(step, "target_format", &["md"])?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        Command::new(&step.engine.binary_path)
+            .arg(external_process_path(&input.artifact.canonical_path))
+            .arg("-")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| {
+        FormatWrightError::new(
+            ErrorCode::ExecutionFailed,
+            Stage::Execute,
+            "PDF text extraction timed out",
+            "Check whether the file or storage is responsive.",
+        )
+        .retryable(true)
+    })?
+    .map_err(|error| {
+        FormatWrightError::new(
+            ErrorCode::EngineIncompatible,
+            Stage::Execute,
+            "Unable to start pdftotext",
+            "Run doctor and verify the pdftotext installation.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    if !output.status.success() {
+        cleanup_partial(partial_path);
+        return Err(FormatWrightError::new(
+            ErrorCode::ExecutionFailed,
+            Stage::Execute,
+            "pdftotext could not extract the PDF text layer",
+            "Inspect the input PDF and retry.",
+        )
+        .with_diagnostic(String::from_utf8_lossy(&output.stderr).into_owned()));
+    }
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if cancellation.is_cancelled() {
+        cleanup_partial(partial_path);
+        return Err(FormatWrightError::new(
+            ErrorCode::Cancelled,
+            Stage::Execute,
+            "PDF text export was cancelled",
+            "Retry when ready.",
+        ));
+    }
+    std::fs::write(partial_path, text.as_bytes()).map_err(|error| {
+        cleanup_partial(partial_path);
+        FormatWrightError::new(
+            ErrorCode::StorageFailed,
+            Stage::Execute,
+            "Unable to write the Markdown text output",
+            "Check destination permissions and storage health.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    if let Err(error) = observer(ExecutionMilestone::EngineFinished) {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    if let Err(error) = ensure_input_unchanged(input, Stage::Commit).await {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    let output_probe = match inspect_document(partial_path).await {
+        Ok(probe) => probe,
+        Err(error) => {
+            cleanup_partial(partial_path);
+            return Err(error);
+        }
+    };
+    let mut report = validate_text_export_output(input, &output_probe, plan, job_id);
+    if report.status == ValidationStatus::Fail {
+        cleanup_partial(partial_path);
+        return Err(FormatWrightError::new(
+            ErrorCode::ValidationFailed,
+            Stage::Validate,
+            "MD output failed validation",
+            "Inspect the validation report and adjust the source.",
+        )
+        .with_diagnostic(serde_json::to_string(&report).unwrap_or_default()));
+    }
+    if output_path.exists() {
+        cleanup_partial(partial_path);
+        return Err(FormatWrightError::new(
+            ErrorCode::OutputConflict,
+            Stage::Commit,
+            "The MD destination appeared while running",
             "Choose another output path.",
         ));
     }

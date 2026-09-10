@@ -62,8 +62,9 @@ fn ensure_image_probe(probe: &Probe) -> Result<()> {
     Ok(())
 }
 
-/// Plans a single-image OCR pass (operation-free route png/jpg -> txt): the
-/// recognized text is a new, explicitly lossy artifact.
+/// Plans a single-image OCR pass (operation-free route png/jpg -> txt/md): the
+/// recognized text is a new, explicitly lossy artifact; md wraps the same
+/// text in a Markdown file.
 ///
 /// # Errors
 ///
@@ -74,15 +75,26 @@ pub fn plan_image_ocr(
     output_path: PathBuf,
     tesseract: &EngineIdentity,
     language: Option<&str>,
+    target: &str,
 ) -> Result<Plan> {
     ensure_image_probe(probe)?;
     ensure_tesseract(tesseract)?;
+    let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
+    if !matches!(target.as_str(), "txt" | "md") {
+        return Err(FormatWrightError::new(
+            ErrorCode::Unsupported,
+            Stage::Plan,
+            "Image OCR target must be txt or md",
+            "Choose txt or md for OCR output.",
+        ));
+    }
     let language = normalize_ocr_language(language)?;
     let arguments = BTreeMap::from([
         // `ocr_mode` (not `operation`) keeps this plan off the ADR-0013
         // qpdf dispatch, which routes on the `operation` argument.
         ("ocr_mode".to_owned(), "image".to_owned()),
         ("source_format".to_owned(), probe.format.id.clone()),
+        ("target_format".to_owned(), target.clone()),
         ("language".to_owned(), language),
         ("psm".to_owned(), OCR_PSM.to_string()),
     ]);
@@ -92,6 +104,7 @@ pub fn plan_image_ocr(
         probe,
         output_path,
         tesseract,
+        target.as_str(),
         vec!["ocr.text-nonempty".to_owned()],
     )
 }
@@ -134,6 +147,7 @@ pub fn plan_pdf_ocr(
         probe,
         output_path,
         tesseract,
+        "txt",
         vec![
             "ocr.text-nonempty".to_owned(),
             "ocr.page-coverage".to_owned(),
@@ -148,6 +162,7 @@ fn ocr_plan(
     probe: &Probe,
     output_path: PathBuf,
     tesseract: &EngineIdentity,
+    target: &str,
     validators: Vec<String>,
 ) -> Result<Plan> {
     let step = PlanStep {
@@ -166,7 +181,7 @@ fn ocr_plan(
         plan_id: Uuid::new_v4(),
         plan_hash: String::new(),
         input_fingerprint: probe.artifact.fast_fingerprint.clone(),
-        target_format: "txt".to_owned(),
+        target_format: target.to_owned(),
         constraints: BTreeMap::from([
             ("network".to_owned(), json!("deny")),
             ("external_resources".to_owned(), json!("deny")),
@@ -342,8 +357,14 @@ mod tests {
     fn image_ocr_plan_requires_a_raster_input() {
         let engine = tesseract_engine();
         let probe = image_probe("input.png");
-        let plan = plan_image_ocr(&probe, std::path::PathBuf::from("out.txt"), &engine, None)
-            .expect("plan");
+        let plan = plan_image_ocr(
+            &probe,
+            std::path::PathBuf::from("out.txt"),
+            &engine,
+            None,
+            "txt",
+        )
+        .expect("plan");
         assert_eq!(plan.target_format, "txt");
         assert_eq!(plan.steps[0].engine.engine_id, "tesseract");
         assert_eq!(plan.steps[0].arguments["ocr_mode"], "image");
@@ -354,6 +375,33 @@ mod tests {
         assert_eq!(
             plan.steps[0].loss_class,
             formatwright_engine_sdk::LossClass::Lossy
+        );
+    }
+
+    #[test]
+    fn image_ocr_plan_accepts_md_target() {
+        let engine = tesseract_engine();
+        let probe = image_probe("scan.png");
+        let plan = plan_image_ocr(
+            &probe,
+            std::path::PathBuf::from("out.md"),
+            &engine,
+            None,
+            "md",
+        )
+        .expect("plan");
+        assert_eq!(plan.target_format, "md");
+        assert_eq!(plan.steps[0].arguments["target_format"], "md");
+        assert!(
+            plan_image_ocr(
+                &probe,
+                std::path::PathBuf::from("out.pdf"),
+                &engine,
+                None,
+                "pdf"
+            )
+            .is_err(),
+            "OCR output beyond txt/md must be rejected"
         );
     }
 }

@@ -265,12 +265,12 @@ pub fn plan_mbox_export(
             "Choose a file in mbox/mboxrd format.",
         ));
     }
-    if !matches!(target.as_str(), "txt" | "html" | "pdf") {
+    if !matches!(target.as_str(), "txt" | "html" | "pdf" | "md") {
         return Err(FormatWrightError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
-            "MBOX export target must be txt, html, or pdf",
-            "Choose txt, html, or the whole-mailbox pdf.",
+            "MBOX export target must be txt, html, md, or pdf",
+            "Choose txt, html, md, or the whole-mailbox pdf.",
         ));
     }
     if engine.engine_id != MBOX_ENGINE_ID {
@@ -461,7 +461,7 @@ async fn run_mbox_export(
         ))
         .await
     } else {
-        let rendered = render_mbox(mails, target == "html");
+        let rendered = render_mbox(mails, target);
         tokio::task::spawn_blocking({
             let output = output.to_path_buf();
             let rendered = rendered.clone();
@@ -477,14 +477,22 @@ async fn run_mbox_export(
                 return Err(error);
             }
         };
-        let rendered_text = crate::document::html_text(&rendered)
-            .ok()
-            .unwrap_or_else(|| rendered.clone());
+        let rendered_text = if target == "html" {
+            crate::document::html_text(&rendered)
+                .ok()
+                .unwrap_or_else(|| rendered.clone())
+        } else {
+            rendered.clone()
+        };
         let report = build_mbox_report(
             mails,
             plan,
             job_id,
-            if target == "html" { "html" } else { "plain" },
+            match target {
+                "html" => "html",
+                "md" => "markdown",
+                _ => "plain",
+            },
             &output_probe.format.id,
             output,
             None,
@@ -498,15 +506,16 @@ async fn run_mbox_export(
     }
 }
 
-/// 拼接逐封渲染结果：每封前置分隔标记行，HTML 走同一净化管线。
-fn render_mbox(mails: &[MboxMail], html: bool) -> String {
+/// 拼接逐封渲染结果：每封前置分隔标记行，HTML 走同一净化管线，md 复用
+/// EML 的 `render_md`。
+fn render_mbox(mails: &[MboxMail], target: &str) -> String {
     let total = mails.len();
     mails
         .iter()
         .enumerate()
         .map(|(index, mail)| {
             let separator = mail_separator(index, total);
-            if html {
+            if target == "html" {
                 let body = eml::render_html(&mail.email);
                 if let Some(start) = body.find("<body")
                     && let Some(open_end) = body[start..].find('>')
@@ -520,6 +529,8 @@ fn render_mbox(mails: &[MboxMail], html: bool) -> String {
                     );
                 }
                 format!("<html><body><h3>{separator}</h3>{body}</body></html>")
+            } else if target == "md" {
+                format!("{}\n\n{}", separator, eml::render_md(&mail.email))
             } else {
                 format!("{}\n{}", separator, eml::render_txt(&mail.email))
             }

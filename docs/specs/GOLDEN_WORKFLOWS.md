@@ -383,6 +383,35 @@ Negative tests:
 - Unknown metadata is retained unless an explicit strip-all mode is selected.
 - In-place mutation is not available in v0.1; output uses normal conflict and commit rules.
 
+### GW-13 — Document, email, PDF, and OCR inputs to Markdown
+
+Required fixtures:
+
+- DOCX with headings, lists, and a table.
+- HTML document with nested structure.
+- EML and MSG single mails, plus a multi-mail MBOX (mixed plain/html bodies).
+- Text-layer PDF and a scanned-image PDF.
+- Raster image with printed text.
+
+Expected planning:
+
+- DOCX/HTML route through Pandoc (`--from=docx|html --to=gfm`, sandbox + deny-all).
+- EML/MSG/MBOX route through the built-in Rust adapters; the mailbox keeps per-mail separators.
+- PDF routes through `pdftotext` with `loss_class=Lossy` (text layer only).
+- Images route through the Tesseract OCR lane shared with →txt.
+
+Acceptance:
+
+- Output is non-empty Markdown (`document.text-extractable`).
+- Mail headers survive as a bold field block under an `# subject` heading.
+- Every MBOX mail separator survives into the output text.
+- PDF→md acceptance documents that heading/table structure does not survive.
+
+Negative tests:
+
+- HTML referencing external resources is PolicyBlocked under deny-all.
+- Audio, YouTube URLs, and EXIF-only exports are out of scope (local-first, zero-network).
+
 ## 5. Release aggregation
 
 - Golden fixtures: 100% pass on every supported platform.

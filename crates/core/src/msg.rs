@@ -257,12 +257,12 @@ pub fn plan_msg_export(
             "Choose a message exported by Outlook as .msg.",
         ));
     }
-    if !matches!(target.as_str(), "txt" | "html") {
+    if !matches!(target.as_str(), "txt" | "html" | "md") {
         return Err(FormatWrightError::new(
             ErrorCode::Unsupported,
             Stage::Plan,
-            "MSG export target must be txt or html",
-            "Choose txt or html; other targets compose through chains.",
+            "MSG export target must be txt, html, or md",
+            "Choose txt, html, or md; other targets compose through chains.",
         ));
     }
     if engine.engine_id != MSG_ENGINE_ID {
@@ -364,6 +364,7 @@ pub async fn execute_msg_export(
     let email = parse_msg_file(&probe.artifact.canonical_path)?;
     let rendered = match plan.target_format.as_str() {
         "html" => eml::render_html(&email),
+        "md" => eml::render_md(&email),
         _ => eml::render_txt(&email),
     };
     let write_output = output.clone();

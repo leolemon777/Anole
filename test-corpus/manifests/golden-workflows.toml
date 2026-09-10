@@ -72,3 +72,9 @@ name = "Inspect and metadata clean"
 spec = "docs/specs/GOLDEN_WORKFLOWS.md#gw-12--inspect-and-metadata-clean"
 status = "planned"
 
+[[workflows]]
+id = "GW-13"
+name = "Document, email, PDF, and OCR inputs to Markdown"
+spec = "docs/specs/GOLDEN_WORKFLOWS.md#gw-13--document-email-pdf-and-ocr-inputs-to-markdown"
+status = "planned"
+

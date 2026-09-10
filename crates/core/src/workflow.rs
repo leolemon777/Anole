@@ -4,7 +4,7 @@ use formatwright_engine_sdk::EngineIdentity;
 
 use crate::doctor::{inspect_builtin_engine, inspect_engine};
 use crate::document::{
-    inspect_document, plan_docx_markup_export, plan_markup_to_docx, plan_markup_to_epub,
+    inspect_document, plan_markup_export, plan_markup_to_docx, plan_markup_to_epub,
     plan_markup_to_pdf,
 };
 use crate::domain::{Plan, PlanRequest, Probe};
@@ -63,22 +63,29 @@ pub async fn prepare_conversion(
         let plan = plan_office_document_exchange(&probe, output, &soffice, &target)?;
         return Ok((probe, plan, soffice));
     }
-    // DOCX 输入导出到 txt/md/html/epub 走 pandoc reader。
+    // DOCX/HTML 输入导出到 txt/md/html/epub 走 pandoc reader（html→md 是
+    // Markdown 导出波的直连路由）。
     if matches!(target.as_str(), "txt" | "md" | "html" | "epub")
         && input
             .extension()
             .and_then(|value| value.to_str())
-            .is_some_and(|value| value.eq_ignore_ascii_case("docx"))
+            .is_some_and(|value| {
+                value.eq_ignore_ascii_case("docx")
+                    || value.eq_ignore_ascii_case("html")
+                    || value.eq_ignore_ascii_case("htm")
+            })
     {
         let probe = inspect_document(input).await?;
-        let pandoc = inspect_engine("pandoc").await?;
-        let output = required_output(request, "DOCX markup export")?;
-        let plan = plan_docx_markup_export(&probe, output, &pandoc, &target)?;
-        return Ok((probe, plan, pandoc));
+        if matches!(probe.format.id.as_str(), "docx" | "html") {
+            let pandoc = inspect_engine("pandoc").await?;
+            let output = required_output(request, "Markup export")?;
+            let plan = plan_markup_export(&probe, output, &pandoc, &target)?;
+            return Ok((probe, plan, pandoc));
+        }
     }
-    // C3 MBOX 聚合导出：txt/html 纯内置；pdf = 逐封渲染 → html→pdf lane
+    // C3 MBOX 聚合导出：txt/html/md 纯内置；pdf = 逐封渲染 → html→pdf lane
     // → qpdf 合并（页数守恒验收）。
-    if matches!(target.as_str(), "txt" | "html" | "pdf")
+    if matches!(target.as_str(), "txt" | "html" | "pdf" | "md")
         && input
             .extension()
             .and_then(|value| value.to_str())
@@ -95,9 +102,9 @@ pub async fn prepare_conversion(
         let plan = crate::mbox::plan_mbox_export(&probe, output, &engine, &qpdf, &target)?;
         return Ok((probe, plan, engine));
     }
-    // MSG（Outlook）导出到 txt/html：内置 formatwright.msg 适配器
+    // MSG（Outlook）导出到 txt/html/md：内置 formatwright.msg 适配器
     // （CFB→EML→EML 管线复用），无外部引擎；pdf/docx/epub 经链组合。
-    if matches!(target.as_str(), "txt" | "html")
+    if matches!(target.as_str(), "txt" | "html" | "md")
         && input
             .extension()
             .and_then(|value| value.to_str())
@@ -109,8 +116,8 @@ pub async fn prepare_conversion(
         let plan = crate::msg::plan_msg_export(&probe, output, &engine, &target)?;
         return Ok((probe, plan, engine));
     }
-    // EML 邮件导出到 txt/html：纯 Rust 内置适配器，无外部引擎。
-    if matches!(target.as_str(), "txt" | "html")
+    // EML 邮件导出到 txt/html/md：纯 Rust 内置适配器，无外部引擎。
+    if matches!(target.as_str(), "txt" | "html" | "md")
         && input
             .extension()
             .and_then(|value| value.to_str())
@@ -122,8 +129,24 @@ pub async fn prepare_conversion(
         let plan = crate::eml::plan_eml_export(&probe, output, &engine, &target)?;
         return Ok((probe, plan, engine));
     }
-    if target == "txt" && is_raster_image_path(input) {
-        // Operation-free OCR lane: a raster image routes to tesseract.
+    // PDF → md：Poppler 文本层提取（lossy）。必须在通用 pdf render 分支
+    // 之前拦截，否则会落进 pdftoppm 渲染 plan。
+    if target == "md" && crate::pdf::pdf_format_hint(input)? {
+        let pdfinfo = inspect_engine("pdfinfo").await?;
+        let probe = match request.password.as_deref() {
+            Some(password) if !password.is_empty() => {
+                crate::pdf::inspect_pdf_unlocked(input, &pdfinfo, password).await?
+            }
+            _ => crate::pdf::inspect_pdf(input, &pdfinfo).await?,
+        };
+        let pdftotext = inspect_engine("pdftotext").await?;
+        let output = required_output(request, "PDF text export")?;
+        let plan = crate::pdf::plan_pdf_text_export(&probe, output, &pdftotext, &target)?;
+        return Ok((probe, plan, pdftotext));
+    }
+    if matches!(target.as_str(), "txt" | "md") && is_raster_image_path(input) {
+        // Operation-free OCR lane: a raster image routes to tesseract; md
+        // wraps the same recognized text in a Markdown file.
         let ffprobe = inspect_engine("ffprobe").await?;
         let probe = inspect_media(input, &ffprobe).await?;
         let tesseract = inspect_engine("tesseract").await?;
@@ -133,6 +156,7 @@ pub async fn prepare_conversion(
             output,
             &tesseract,
             request.ocr_language.as_deref(),
+            &target,
         )?;
         return Ok((probe, plan, tesseract));
     }

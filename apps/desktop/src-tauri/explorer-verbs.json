@@ -12,6 +12,12 @@
   "convert": [
     { "assoc": ".pdf", "verb": "FormatWright.ToPng", "target": "png", "label": "Convert to PNG" },
     { "assoc": ".pdf", "verb": "FormatWright.ToJpg", "target": "jpg", "label": "Convert to JPG" },
+    { "assoc": ".pdf", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".docx", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".html", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".htm", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".eml", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
+    { "assoc": ".msg", "verb": "FormatWright.ToMd", "target": "md", "label": "Convert to Markdown" },
     { "assoc": ".png", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },
     { "assoc": ".jpg", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },
     { "assoc": ".jpeg", "verb": "FormatWright.ToWebp", "target": "webp", "label": "Convert to WebP" },

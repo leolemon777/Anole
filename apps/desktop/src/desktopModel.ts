@@ -60,7 +60,8 @@ export function recommendedTargets(path: string): string[] {
   if (["docx", "pptx", "xlsx"].includes(extension)) return ["pdf"];
   if (["xls", "xlsm", "xlsb"].includes(extension)) return [];
   if (["md", "markdown", "html", "htm"].includes(extension)) return ["pdf", "docx"];
-  if (extension === "pdf") return ["png", "jpg"];
+  if (extension === "pdf") return ["png", "jpg", "md"];
+  if (["eml", "msg", "mbox"].includes(extension)) return ["md"];
   if (["csv", "json", "yaml", "yml", "xml"].includes(extension)) {
     return ["json", "csv", "yaml", "xml"];
   }
@@ -87,7 +88,7 @@ export function isDirectoryOutput(input: string, target: string): boolean {
 }
 
 export const SUPPORTED_TARGET_FORMATS: readonly string[] = [
-  "jpg", "png", "webp", "avif", "mp4", "mp3", "m4a", "wav", "gif", "pdf", "docx", "json", "csv", "yaml", "xml",
+  "jpg", "png", "webp", "avif", "mp4", "mp3", "m4a", "wav", "gif", "pdf", "docx", "md", "json", "csv", "yaml", "xml",
 ];
 
 export type TargetRouteAvailability = {
@@ -343,12 +344,13 @@ export function basicModeFailureCopy(
 export type DesktopDropKind = "file" | "directory" | "rejected";
 
 export const SHELL_CONVERT_TARGETS: readonly string[] = [
-  "jpg", "png", "webp", "avif", "mp4", "mp3", "m4a", "wav", "gif", "pdf", "docx", "json", "csv", "yaml", "xml",
+  "jpg", "png", "webp", "avif", "mp4", "mp3", "m4a", "wav", "gif", "pdf", "docx", "md", "json", "csv", "yaml", "xml",
 ];
 
 export function normalizeShellTarget(value: string | null | undefined): string | null {
   const normalized = (value ?? "").trim().replace(/^\./, "").toLowerCase();
   if (normalized === "jpeg") return "jpg";
+  if (normalized === "markdown") return "md";
   if (normalized === "yml") return "yaml";
   return SHELL_CONVERT_TARGETS.includes(normalized) ? normalized : null;
 }

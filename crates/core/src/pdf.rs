@@ -198,6 +198,88 @@ fn pdf_probe_from_details(
     })
 }
 
+/// Plans a PDF → Markdown text export: pdftotext extracts the concatenated
+/// text layer (lossy — headings, tables, and layout do not survive).
+///
+/// # Errors
+///
+/// Returns `Unsupported` for non-PDF probes or non-md targets and
+/// `EngineIncompatible` for a non-pdftotext engine.
+pub fn plan_pdf_text_export(
+    probe: &Probe,
+    output_path: PathBuf,
+    pdftotext: &EngineIdentity,
+    target: &str,
+) -> Result<Plan> {
+    let target = target.trim().trim_start_matches('.').to_ascii_lowercase();
+    if probe.format.id != "pdf" || probe.format.kind != FormatKind::Pdf {
+        return Err(unsupported("PDF text export requires a PDF input"));
+    }
+    if target != "md" {
+        return Err(unsupported("PDF text export supports only md"));
+    }
+    if pdftotext.engine_id != "pdftotext" {
+        return Err(FormatWrightError::new(
+            ErrorCode::EngineIncompatible,
+            Stage::Plan,
+            "PDF text export was given the wrong engine",
+            "Run doctor and use pdftotext.",
+        ));
+    }
+    let page_count = u32::try_from(probe.streams.len()).map_err(|_| {
+        FormatWrightError::new(
+            ErrorCode::ResourceExhausted,
+            Stage::Plan,
+            "PDF page count cannot be represented",
+            "Split the PDF and retry.",
+        )
+    })?;
+    let step = PlanStep {
+        step_id: "step-1".to_owned(),
+        capability_id: "poppler.pdf-to-md.offline".to_owned(),
+        engine: pdftotext.clone(),
+        operation: Operation::Transform,
+        // Text-layer extraction discards structure by construction.
+        loss_class: LossClass::Lossy,
+        arguments: BTreeMap::from([
+            ("source_format".to_owned(), "pdf".to_owned()),
+            ("target_format".to_owned(), "md".to_owned()),
+            ("pages".to_owned(), page_count.to_string()),
+            ("layout".to_owned(), "reading-order".to_owned()),
+        ]),
+        estimated_temporary_bytes: Some(probe.artifact.size_bytes.saturating_mul(2)),
+    };
+    let mut plan = Plan {
+        schema_version: SCHEMA_VERSION,
+        plan_id: Uuid::new_v4(),
+        plan_hash: String::new(),
+        input_fingerprint: probe.artifact.fast_fingerprint.clone(),
+        target_format: "md".to_owned(),
+        constraints: BTreeMap::from([
+            ("network".to_owned(), json!("deny")),
+            ("external_resources".to_owned(), json!("deny")),
+        ]),
+        steps: vec![step],
+        changes: ChangeSet {
+            preserved: vec!["the concatenated text layer in reading order".to_owned()],
+            changed: vec![format!(
+                "the PDF text layer is re-serialized as a Markdown file ({page_count} pages)"
+            )],
+            dropped: vec![
+                "headings, tables, lists, and all layout structure".to_owned(),
+                "images and vector graphics".to_owned(),
+            ],
+            unknown: vec!["reading order of multi-column layouts".to_owned()],
+        },
+        validators: vec!["document.text-extractable".to_owned()],
+        network_policy: NetworkPolicy::Deny,
+        output_path: Some(output_path),
+        estimated_output_bytes: None,
+    };
+    plan.plan_hash = deterministic_plan_hash(&plan)?;
+    Ok(plan)
+}
+
 /// Plans a complete PDF render into an atomically committed page directory.
 ///
 /// # Errors
@@ -2213,13 +2295,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use formatwright_engine_sdk::{Certification, EngineIdentity};
+    use formatwright_engine_sdk::{Certification, EngineIdentity, LossClass};
 
     use super::{
         append_watermark_text_check, build_watermark_pdf, normalized_watermark_text,
         parse_page_details, parse_page_range, plan_pdf_compress, plan_pdf_decrypt,
         plan_pdf_encrypt, plan_pdf_extract, plan_pdf_merge, plan_pdf_render, plan_pdf_rotate,
-        plan_pdf_watermark, poppler_raster_dimension,
+        plan_pdf_text_export, plan_pdf_watermark, poppler_raster_dimension,
     };
     use crate::domain::{
         ArtifactIdentity, FormatDescriptor, FormatKind, PlanRequest, Probe, ProbeEvidence,
@@ -2269,6 +2351,39 @@ mod tests {
             build_configuration: None,
             certification: Certification::Experimental,
         }
+    }
+
+    #[test]
+    fn pdf_text_export_plan_targets_md_with_lossy_text_layer() {
+        let pdftotext = EngineIdentity {
+            engine_id: "pdftotext".to_owned(),
+            binary_path: PathBuf::from("pdftotext"),
+            ..engine()
+        };
+        let plan = plan_pdf_text_export(&probe(), PathBuf::from("out.md"), &pdftotext, "md")
+            .expect("pdf->md plan");
+        assert_eq!(plan.target_format, "md");
+        assert_eq!(plan.steps[0].capability_id, "poppler.pdf-to-md.offline");
+        assert_eq!(plan.steps[0].engine.engine_id, "pdftotext");
+        assert_eq!(plan.steps[0].loss_class, LossClass::Lossy);
+        assert_eq!(plan.steps[0].arguments["pages"], "2");
+        assert!(
+            plan.validators
+                .iter()
+                .any(|value| value == "document.text-extractable")
+        );
+        assert!(
+            plan_pdf_text_export(&probe(), PathBuf::from("out.txt"), &pdftotext, "txt").is_err(),
+            "txt target is rejected (pdf->txt is not a route)"
+        );
+        let wrong = EngineIdentity {
+            engine_id: "pdftoppm".to_owned(),
+            ..pdftotext
+        };
+        assert!(
+            plan_pdf_text_export(&probe(), PathBuf::from("out.md"), &wrong, "md").is_err(),
+            "non-pdftotext engine is rejected"
+        );
     }
 
     #[test]

@@ -1052,3 +1052,122 @@ public v0.1.1 release still waits on the CA decision artifacts
 Document-pack download button with the staged zip).
 
 
+
+## 2026-09-08 — Markdown export wave (GW-13): any-core-format → md
+
+Trigger: Leo reviewed microsoft/markitdown (MIT, ~181k stars) and asked
+for the capability. Scope decision (Leo approved): "薄层全打通" — six
+new direct →md routes on existing engines only; the MarkItDown-specific
+sources that would need new engines (audio transcription, YouTube,
+EXIF, LLM description) are explicitly out of scope (local-first,
+zero-network positioning). pptx/xlsx/odt/odp/rtf/svg reach md only
+through the CLI chain via the PDF pivot (pdf is whitelisted as an
+intermediate), which is coverage, not quality; a native OOXML
+extractor stays a future wave.
+
+Routes added (capabilities.rs + count_routes.py mirrored):
+
+- html/htm → md — Pandoc `--from=html --to=gfm`. The runner already
+  accepted html→md (checked_argument allowed it); only the plan layer
+  gated it. `plan_docx_markup_export` renamed to `plan_markup_export`
+  and generalized to docx|html inputs; capability_id now derives from
+  the probed source (`pandoc.docx-to-md.offline` unchanged for docx,
+  so existing snapshot/plan-hash assertions hold). HTML inputs with
+  external resources are PolicyBlocked, matching plan_markup_to_docx.
+- eml/msg → md — builtin `render_md` (`# subject`, bold From/To/Date
+  block, visible text); `validate_eml_export_output` now expects
+  `markdown` as the observed output format for md.
+- mbox → md — same render_md per mail with the existing separator
+  lines; `MBOX_MAIL_SEPARATORS` acceptance unchanged.
+- pdf → md — new `plan_pdf_text_export` (capability
+  `poppler.pdf-to-md.offline`, engine pdftotext only,
+  `loss_class=Lossy` — headings/tables/layout do not survive;
+  multi-column reading order declared Unknown). Executed by the new
+  `execute_pdftotext_text_plan` (stdout mode, 120s timeout), staged to
+  the partial path, re-inspected as a document, accepted through the
+  shared `validate_text_export_output`. The workflow branch must sit
+  before the generic `pdf_format_hint` render branch.
+- png/jpg/jpeg/tiff/tif/bmp → md — `plan_image_ocr` gained a target
+  parameter (txt|md); same Tesseract lane, recognition text in a .md.
+
+`normalize_target` now maps `markdown` → `md`.
+
+Surfaces: desktop target dropdown gains "md" (filtered per-input by
+capability routes), eml/msg/mbox get `["md"]` recommendations and
+pdf gets md appended, Explorer verbs gain "Convert to Markdown" for
+.pdf/.docx/.html/.htm/.eml/.msg, `normalizeShellTarget` accepts
+`markdown`. Server needed no changes (snapshot-derived).
+
+Route count: 147 direct + 143 chained = 290 reachable routes
+(was 138 + 126 = 264); README badge and Status paragraph updated
+(the v0.1.0 "what shipped" sentence keeps its historical 264).
+
+Docs: GW-13 added to FORMAT_SUPPORT_MATRIX.md, GOLDEN_WORKFLOWS.md,
+and golden-workflows.toml (status planned). Matrix scripts (Windows
++ Linux) gained docx/html/pdf/eml/msg/mbox → md rows (and png→md on
+Linux where OCR engines exist).
+
+Verification: formatwright-core `cargo test --lib` = 281 passed +
+4 known symlink-privilege failures (baseline shape preserved; +8 new
+tests across capabilities/document/eml/ocr/pdf). Local Windows matrix
+run and workspace clippy/CI rehearsal noted below in the delivery
+summary of this session.
+
+Risks / open items: pdf→md is text-layer extraction — the support
+matrix says so explicitly so it is not confused with docx→md's
+structural export. OCR→md runtime evidence depends on a host
+Tesseract (UAC-deferred locally; plan-level tests cover the logic,
+Linux matrix covers the lane). Desktop folder-batch scope shows the
+full target list (unfiltered) — md appears there for any input,
+matching the pre-existing behavior of every other target.
+
+## 2026-09-09 — GW-13 pre-commit rehearsal closed (SSH executor split) + Linux matrix script fixes
+
+Delivery summary of the rehearsal session (Leo approved commit after
+rehearsal; heavy work pushed to the macair Linux executor per his
+"记得有ssh" reminder, task copy at `/home/leo/linux-runs/FormatWright/
+gw13-rehearsal/` via `git archive HEAD` + working-tree patch):
+
+- **Linux (macair, stable toolchain)**: `cargo clippy --workspace
+  --exclude formatwright-desktop --all-targets --all-features --
+  -D warnings` = 0; `cargo test` same scope = all green (core
+  273 passed / 0 failed; cli/server/engine-sdk suites pass).
+  Linux conversion matrix **55/55** (52-route baseline + GW-13's
+  docx→md, pdf→md, png→md — png→md via the conda-env Tesseract).
+- **Windows (local host, engines on E:\DevCaches)**: incremental
+  debug CLI build + conversion matrix **96/96** (90-route baseline
+  + 6 new →md rows); `cargo fmt --all --check` clean; desktop
+  `desktopModel.test.ts` vitest = 27/27.
+- **Why desktop is excluded from the Linux rehearsal**: macair has
+  no glib/webkit dev libraries and sudo is forbidden, so
+  `formatwright-desktop` cannot build there (glib-sys build script
+  failure). GW-13 touches desktop only in TS/JSON, so the Rust-side
+  rehearsal is complete; the CI Linux job (which installs desktop
+  prerequisites) remains the full-workspace backstop.
+- **Not rehearsed locally**: `cargo +1.88.0 check` (macair lacks the
+  pinned toolchain; installing it is a new download) and cargo-deny
+  (no Cargo.toml/lock changes in this wave). Both run in CI.
+
+Bugs the rehearsal surfaced and fixed
+(`scripts/test_conversion_matrix_linux.sh`, both latent, only
+visible once FW_FIXTURES pointed away from the default directory):
+
+1. The fixture-generating Python heredoc hardcoded
+   `/home/leo/linux-runs/FormatWright/fixtures/` on every open()
+   while the bash side honored `FW_FIXTURES` — the two sides read
+   and wrote different directories. Fixed: bash exports
+   `FW_FIXTURES`, Python reads it via `os.environ`.
+2. The GW-13 `docx→md` row needs `sample.docx`, but the Linux
+   script never had a docx generator (Windows relies on a leftover
+   fixture in `target/matrix/fixtures`). Fixed: after the CLI
+   build, the script derives `sample.docx` from `sample.md`
+   through the app's own md→docx (pandoc) lane, `|| true` so a
+   missing pandoc degrades to that row failing instead of killing
+   the run. Verified on macair: rm + regenerate reproduces the
+   10,445-byte fixture.
+
+One operational note: an mbox→pdf matrix line on Linux showed ~2.5
+minutes of formatwright CPU before completing; it passes (and passed
+in the 2026-09-05 baseline), but the office/html→pdf chain on Linux
+is noticeably slower than Windows — worth remembering if CI timing
+tolerances ever cover this lane.

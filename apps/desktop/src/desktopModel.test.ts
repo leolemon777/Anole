@@ -35,9 +35,11 @@ import { messages } from "./i18n";
 describe("desktop workflow model", () => {
   it("recommends content-family targets from a dropped path", () => {
     expect(recommendedTargets("C:\\photos\\image.heic")).toEqual(["jpg", "png"]);
-    expect(recommendedTargets("report.pdf")).toEqual(["png", "jpg"]);
+    expect(recommendedTargets("report.pdf")).toEqual(["png", "jpg", "md"]);
     expect(recommendedTargets("report.docx")).toEqual(["pdf"]);
     expect(recommendedTargets("notes.md")).toEqual(["pdf", "docx"]);
+    expect(recommendedTargets("inbox.eml")).toEqual(["md"]);
+    expect(recommendedTargets("archive.mbox")).toEqual(["md"]);
     expect(recommendedTargets("C:\\\\桌面\\\\新建 XLS 工作表.xls")).toEqual([]);
     expect(recommendedTargets("unknown.bin")).toEqual([]);
   });
@@ -148,6 +150,7 @@ describe("target option views", () => {
     expect(normalizeShellTarget("PNG")).toBe("png");
     expect(normalizeShellTarget(".jpeg")).toBe("jpg");
     expect(normalizeShellTarget("yml")).toBe("yaml");
+    expect(normalizeShellTarget("markdown")).toBe("md");
     expect(normalizeShellTarget("exe")).toBeNull();
     expect(qualityFieldApplies("jpg")).toBe(true);
     expect(qualityFieldApplies("png")).toBe(false);

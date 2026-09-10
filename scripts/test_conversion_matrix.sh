@@ -59,10 +59,14 @@ for s in csv json yaml xml; do for t in csv json yaml xml; do
 done; done
 # markup lanes
 for s in md html txt; do for t in pdf docx epub; do run "sample.$s" "$t"; done; done
+# markdown export wave: docx/html -> md via pandoc
+for s in docx html; do run "sample.$s" md; done
 # office/presentation/vector -> pdf
 for s in svg odt ods odp docx pptx xlsx rtf; do run "sample.$s" pdf; done
 # pdf -> image
 for t in jpg png; do run sample.pdf "$t"; done
+# pdf -> md (Poppler text layer)
+run sample.pdf md
 # raster images
 for s in png jpg; do for t in webp avif tiff bmp pdf; do run "sample.$s" "$t"; done; done
 for s in tiff bmp; do for t in webp avif png pdf; do run "sample.$s" "$t"; done; done
@@ -89,9 +93,9 @@ Content-Type: text/plain
 
 ELECTRIC body 998877.
 ' > "$FX/sample.eml"
-for t in txt html; do run sample.eml "$t"; done
+for t in txt html md; do run sample.eml "$t"; done
 if [ -f "$FX/sample.msg" ] || { cp "/e/Desktop/FormatWright/target/c2-msg/real.msg" "$FX/sample.msg" 2>/dev/null; [ -f "$FX/sample.msg" ]; }; then
-  for t in txt html pdf; do run sample.msg "$t"; done
+  for t in txt html pdf md; do run sample.msg "$t"; done
 fi
 # C3 MBOX aggregation (builtin split; pdf needs the html->pdf lane + qpdf)
 cat > "$FX/sample.mbox" <<'MBOXEOF'
@@ -116,7 +120,7 @@ Content-Type: text/html
 
 <html><body><p>MAIL3TOKEN html body</p><script>alert(1)</script></body></html>
 MBOXEOF
-for t in txt html pdf; do run sample.mbox "$t"; done
+for t in txt html pdf md; do run sample.mbox "$t"; done
 # archives
 run sample.zip tar.gz
 echo "=== matrix summary: $pass pass / $fail fail / $n total ==="

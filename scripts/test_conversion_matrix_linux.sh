@@ -21,28 +21,29 @@ if [ -x "$HOME/browsers/chrome-linux64/chrome" ]; then
 fi
 
 PY="$HOME/miniforge/envs/ocr/bin/python"
+export FW_FIXTURES="$FX"
 "$PY" - <<'PYEOF'
-import json, csv, io, tarfile, zipfile
+import json, csv, io, tarfile, zipfile, os
+FX = os.environ['FW_FIXTURES']
 data = [{"id": 1, "name": "alpha"}, {"id": 2, "name": "beta"}]
-with open('/home/leo/linux-runs/FormatWright/fixtures/sample.csv','w',newline='') as f:
+with open(f'{FX}/sample.csv','w',newline='') as f:
     w = csv.DictWriter(f, fieldnames=['id','name']); w.writeheader(); w.writerows(data)
-json.dump(data, open('/home/leo/linux-runs/FormatWright/fixtures/sample.json','w'))
-open('/home/leo/linux-runs/FormatWright/fixtures/sample.yaml','w').write("- id: 1\n  name: alpha\n- id: 2\n  name: beta\n")
-open('/home/leo/linux-runs/FormatWright/fixtures/sample.md','w').write('# Matrix\n\nELECTRIC 440010147700 content 12345.\n')
-open('/home/leo/linux-runs/FormatWright/fixtures/sample.txt','w').write('Plain matrix ELECTRIC 998877.\n')
-open('/home/leo/linux-runs/FormatWright/fixtures/sample.html','w').write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><p>MATRIX HTML 440010147700</p></body></html>')
-open('/home/leo/linux-runs/FormatWright/fixtures/sample.svg','w').write('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect x="4" y="4" width="292" height="192" fill="none" stroke="black"/><text x="20" y="60" font-size="20">SVG MATRIX 440</text></svg>')
-with zipfile.ZipFile('/home/leo/linux-runs/FormatWright/fixtures/sample.zip','w') as z:
+json.dump(data, open(f'{FX}/sample.json','w'))
+open(f'{FX}/sample.yaml','w').write("- id: 1\n  name: alpha\n- id: 2\n  name: beta\n")
+open(f'{FX}/sample.md','w').write('# Matrix\n\nELECTRIC 440010147700 content 12345.\n')
+open(f'{FX}/sample.txt','w').write('Plain matrix ELECTRIC 998877.\n')
+open(f'{FX}/sample.html','w').write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><p>MATRIX HTML 440010147700</p></body></html>')
+open(f'{FX}/sample.svg','w').write('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect x="4" y="4" width="292" height="192" fill="none" stroke="black"/><text x="20" y="60" font-size="20">SVG MATRIX 440</text></svg>')
+with zipfile.ZipFile(f'{FX}/sample.zip','w') as z:
     z.writestr('a.txt','alpha ELECTRIC'); z.writestr('b/c.txt','charlie matrix')
-with tarfile.open('/home/leo/linux-runs/FormatWright/fixtures/sample.tar.gz','w:gz') as tf:
+with tarfile.open(f'{FX}/sample.tar.gz','w:gz') as tf:
     d=b'tar.gz matrix ELECTRIC 440'; ti=tarfile.TarInfo('cross.txt'); ti.size=len(d)
     tf.addfile(ti, io.BytesIO(d))
 from PIL import Image, ImageDraw
-img = Image.new('RGB',(1240,1754),'white'); ImageDraw.Draw(img).text((100,200),'MATRIX IMAGE 440010147700',fill='black'); img.save('/home/leo/linux-runs/FormatWright/fixtures/sample.png'); img.save('/home/leo/linux-runs/FormatWright/fixtures/sample.jpg',quality=90)
-img.save('/home/leo/linux-runs/FormatWright/fixtures/sample.tiff'); img.save('/home/leo/linux-runs/FormatWright/fixtures/sample.bmp')
-import os
+img = Image.new('RGB',(1240,1754),'white'); ImageDraw.Draw(img).text((100,200),'MATRIX IMAGE 440010147700',fill='black'); img.save(f'{FX}/sample.png'); img.save(f'{FX}/sample.jpg',quality=90)
+img.save(f'{FX}/sample.tiff'); img.save(f'{FX}/sample.bmp')
 def write_crlf(name, text):
-    open(f'/home/leo/linux-runs/FormatWright/fixtures/{name}','w',newline='').write(text.replace('\n', '\r\n'))
+    open(f'{FX}/{name}','w',newline='').write(text.replace('\n', '\r\n'))
 write_crlf('sample.eml', '''From: a@example.org
 To: b@example.org
 Subject: Matrix EML 440010147700
@@ -65,11 +66,14 @@ Body two 552233.
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-p=PdfPages('/home/leo/linux-runs/FormatWright/fixtures/sample.pdf'); fig,ax=plt.subplots(figsize=(6,4)); ax.text(0.3,0.5,'MATRIX PDF 440010147700',fontsize=18); ax.axis('off'); p.savefig(fig); p.close()
+p=PdfPages(f'{FX}/sample.pdf'); fig,ax=plt.subplots(figsize=(6,4)); ax.text(0.3,0.5,'MATRIX PDF 440010147700',fontsize=18); ax.axis('off'); p.savefig(fig); p.close()
 print('fixtures done')
 PYEOF
 cd "$SRC"
 [ -x target/debug/formatwright ] || cargo build -p formatwright-cli 2>&1 | tail -1
+# GW-13 docx->md row: the script has no office fixture generator, so derive
+# sample.docx from sample.md through the app's own md->docx (pandoc) lane.
+[ -f "$FX/sample.docx" ] || ./target/debug/formatwright convert "$FX/sample.md" --to docx --output "$FX/sample.docx" >/dev/null 2>&1 || true
 
 n=0; pass=0; fail=0
 run() {
@@ -92,10 +96,14 @@ run() {
 for s in csv json yaml; do for t in csv json yaml; do [ "$s" = "$t" ] && continue; run "sample.$s" "$t" --allow-lossy-data; done; done
 # markup
 for s in md html txt; do for t in pdf docx epub; do run "sample.$s" "$t"; done; done
+# markdown export wave: docx/html -> md via pandoc
+for s in docx html; do run "sample.$s" md; done
 # vector -> pdf
 run sample.svg pdf
 # pdf -> image
 for t in jpg png; do run sample.pdf "$t"; done
+# pdf -> md (Poppler text layer)
+run sample.pdf md
 # raster
 for s in png jpg; do for t in webp avif tiff bmp; do run "sample.$s" "$t"; done; done
 for s in tiff bmp; do for t in webp avif png; do run "sample.$s" "$t"; done; done
@@ -103,11 +111,12 @@ for s in tiff bmp; do for t in webp avif png; do run "sample.$s" "$t"; done; don
 run sample.png txt
 run sample.tiff txt
 run sample.bmp txt
+run sample.png md
 # email family (builtin adapters + chains; pdf needs the html->pdf lane)
-for t in txt html; do run sample.eml "$t"; done
-for t in txt html pdf; do run sample.mbox "$t"; done
+for t in txt html md; do run sample.eml "$t"; done
+for t in txt html pdf md; do run sample.mbox "$t"; done
 if [ -f "$FX/sample.msg" ]; then
-  for t in txt html pdf; do run sample.msg "$t"; done
+  for t in txt html pdf md; do run sample.msg "$t"; done
 fi
 # PSD / camera-RAW through the discovered ImageMagick engine (opt-in:
 # install ImageMagick user-level and export FORMATWRIGHT_ENGINE_MAGICK).

@@ -201,24 +201,28 @@ pub async fn ensure_route_available(
 pub(crate) fn supported_targets(input: Option<&str>) -> BTreeSet<&'static str> {
     let values: &[&str] = match input.unwrap_or_default() {
         "csv" | "json" | "yaml" | "yml" | "xml" => &["csv", "json", "yaml", "xml"],
-        "pdf" | "heic" | "heif" => &["jpg", "png"],
+        // pdf→md is the Poppler text-layer extraction (lossy, no structure);
+        // rendering targets stay raster-only.
+        "pdf" => &["jpg", "png", "md"],
+        "heic" | "heif" => &["jpg", "png"],
         "docx" => &["pdf", "txt", "md", "html", "epub", "odt"],
         "odt" => &["pdf", "docx"],
         "pptx" | "xlsx" | "ods" | "odp" | "rtf" | "svg" => &["pdf"],
-        "md" | "markdown" | "html" | "htm" | "txt" | "text" => &["pdf", "docx", "epub"],
+        "html" | "htm" => &["pdf", "docx", "epub", "md"],
+        "md" | "markdown" | "txt" | "text" => &["pdf", "docx", "epub"],
         "zip" => &["tar.gz", "7z"],
         // EML/MSG 邮件导出走内置适配器（formatwright.eml /
         // formatwright.msg）；pdf/docx/epub 由主链路经 html→* 完成。
-        "eml" | "msg" => &["txt", "html"],
-        // C3：MBOX 聚合。txt/html 纯内置；pdf = 逐封 html→pdf lane + qpdf 合并。
-        "mbox" => &["txt", "html", "pdf"],
+        "eml" | "msg" => &["txt", "html", "md"],
+        // C3：MBOX 聚合。txt/html/md 纯内置；pdf = 逐封 html→pdf lane + qpdf 合并。
+        "mbox" => &["txt", "html", "pdf", "md"],
         "tar.gz" => &["zip", "7z"],
         "7z" => &["zip", "tar.gz"],
-        "png" | "jpg" | "jpeg" => &["webp", "avif", "tiff", "bmp", "pdf", "txt"],
+        "png" | "jpg" | "jpeg" => &["webp", "avif", "tiff", "bmp", "pdf", "txt", "md"],
         // C1 图像长尾：TIFF/BMP 输入复用 png/jpg 家族的引擎路线
         // （ffmpeg 图像转码、soffice 图转 PDF、tesseract OCR），
         // png 作为无损目标对带 alpha 的源最安全。
-        "tiff" | "tif" | "bmp" => &["webp", "avif", "png", "pdf", "txt"],
+        "tiff" | "tif" | "bmp" => &["webp", "avif", "png", "pdf", "txt", "md"],
         // C1 图像长尾第二波：PSD 与相机 RAW 经发现的 ImageMagick 引擎
         // （Apache-2.0）转 png/jpg/tiff；其余目标经链（tiff 已入白名单）。
         "psd" | "dng" | "cr2" | "cr3" | "arw" | "nef" | "orf" | "rw2" | "pef" | "raf" => {
@@ -265,10 +269,10 @@ pub(crate) fn required_engines(input: Option<&str>, target: &str) -> Vec<String>
     {
         return Vec::new();
     }
-    if matches!(input, "eml" | "msg") && matches!(target.as_str(), "txt" | "html") {
+    if matches!(input, "eml" | "msg") && matches!(target.as_str(), "txt" | "html" | "md") {
         return Vec::new();
     }
-    if input == "mbox" && matches!(target.as_str(), "txt" | "html") {
+    if input == "mbox" && matches!(target.as_str(), "txt" | "html" | "md") {
         return Vec::new();
     }
     if input == "mbox" && target == "pdf" {
@@ -286,7 +290,14 @@ pub(crate) fn required_engines(input: Option<&str>, target: &str) -> Vec<String>
     if input == "pdf" && matches!(target.as_str(), "jpg" | "png") {
         return engine_names(&["pdfinfo", "pdftoppm", "ffprobe"]);
     }
+    // Markdown 导出 = Poppler 文本层提取；只有 pdftotext 一个引擎。
+    if input == "pdf" && target == "md" {
+        return engine_names(&["pdftotext"]);
+    }
     if input == "docx" && matches!(target.as_str(), "txt" | "md" | "html" | "epub") {
+        return engine_names(&["pandoc"]);
+    }
+    if matches!(input, "html" | "htm") && target == "md" {
         return engine_names(&["pandoc"]);
     }
     // 文档互换（docx <-> odt）只需 soffice；结构验收不依赖 Poppler。
@@ -324,7 +335,9 @@ pub(crate) fn required_engines(input: Option<&str>, target: &str) -> Vec<String>
     {
         return engine_names(&["magick", "ffprobe"]);
     }
-    if matches!(input, "png" | "jpg" | "jpeg" | "tiff" | "tif" | "bmp") && target == "txt" {
+    if matches!(input, "png" | "jpg" | "jpeg" | "tiff" | "tif" | "bmp")
+        && matches!(target.as_str(), "txt" | "md")
+    {
         return engine_names(&["ffprobe", "tesseract"]);
     }
     engine_names(&["ffprobe", "ffmpeg"])
@@ -350,6 +363,7 @@ pub(crate) fn normalize_target(target: &str) -> String {
         .as_str()
     {
         "jpeg" => "jpg".to_owned(),
+        "markdown" => "md".to_owned(),
         "yml" => "yaml".to_owned(),
         "tgz" | "taz" => "tar.gz".to_owned(),
         value => value.to_owned(),
@@ -470,6 +484,40 @@ mod tests {
             "document exchange avoids the poppler-only PDF validators"
         );
         assert_eq!(required_engines(Some("odt"), "docx"), ["soffice"]);
+    }
+
+    #[test]
+    fn markdown_export_routes_cover_the_markitdown_sources() {
+        // 直连：html 走 pandoc，邮件族走内置适配器，pdf 走 pdftotext，
+        // 图像走 OCR lane。
+        assert!(supported_targets(Some("html")).contains("md"));
+        assert!(supported_targets(Some("htm")).contains("md"));
+        assert_eq!(required_engines(Some("html"), "md"), ["pandoc"]);
+        for input in ["eml", "msg", "mbox"] {
+            assert!(
+                supported_targets(Some(input)).contains("md"),
+                "{input} -> md"
+            );
+            assert!(
+                required_engines(Some(input), "md").is_empty(),
+                "{input} -> md is builtin"
+            );
+        }
+        assert!(supported_targets(Some("pdf")).contains("md"));
+        assert_eq!(required_engines(Some("pdf"), "md"), ["pdftotext"]);
+        for input in ["png", "jpg", "tiff", "bmp"] {
+            assert!(
+                supported_targets(Some(input)).contains("md"),
+                "{input} -> md"
+            );
+        }
+        assert_eq!(
+            required_engines(Some("png"), "md"),
+            ["ffprobe", "tesseract"]
+        );
+        // markdown 目标别名归一到 md。
+        assert_eq!(super::normalize_target("markdown"), "md");
+        assert_eq!(super::normalize_target(".MD"), "md");
     }
 
     #[test]

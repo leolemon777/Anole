@@ -389,6 +389,31 @@ pub fn render_html(email: &ParsedEmail) -> String {
     )
 }
 
+/// md 导出：`# 主题` 标题 + 加粗头字段块 + 正文文本（Markdown 导出波）。
+#[must_use]
+pub fn render_md(email: &ParsedEmail) -> String {
+    let mut output = String::new();
+    output.push_str("# ");
+    output.push_str(email.subject.as_deref().unwrap_or("Email"));
+    output.push_str("\n\n");
+    for (label, value) in [
+        ("From", &email.from),
+        ("To", &email.to),
+        ("Date", &email.date),
+    ] {
+        if let Some(value) = value {
+            output.push_str("**");
+            output.push_str(label);
+            output.push_str(":** ");
+            output.push_str(value);
+            output.push('\n');
+        }
+    }
+    output.push('\n');
+    output.push_str(&email.visible_text());
+    output
+}
+
 /// 为 EML 输入构建内置 txt/html 导出 Plan（无外部引擎）。
 ///
 /// # Errors
@@ -405,8 +430,8 @@ pub fn plan_eml_export(
     if probe.format.id != "eml" {
         return Err(unsupported("EML export input must be an .eml message"));
     }
-    if !matches!(target.as_str(), "txt" | "html") {
-        return Err(unsupported("EML export target must be txt or html"));
+    if !matches!(target.as_str(), "txt" | "html" | "md") {
+        return Err(unsupported("EML export target must be txt, html, or md"));
     }
     if engine.engine_id != EML_ENGINE_ID {
         return Err(FormatWrightError::new(
@@ -499,6 +524,7 @@ pub async fn execute_eml_export(probe: &Probe, plan: &Plan) -> Result<(PathBuf, 
     let email = parse_eml_file(&probe.artifact.canonical_path)?;
     let rendered = match plan.target_format.as_str() {
         "html" => render_html(&email),
+        "md" => render_md(&email),
         _ => render_txt(&email),
     };
     fs::write(&output, rendered.as_str()).map_err(|error| {
@@ -542,10 +568,10 @@ pub fn validate_eml_export_output(
     rendered_output: &str,
 ) -> ValidationReport {
     let target_format = plan.target_format.clone();
-    let expected_output_format = if target_format == "html" {
-        "html"
-    } else {
-        "plain"
+    let expected_output_format = match target_format.as_str() {
+        "html" => "html",
+        "md" => "markdown",
+        _ => "plain",
     };
     let observed_chars = property(output, "text_characters").as_u64().unwrap_or(0);
     let headers_present =
@@ -671,7 +697,8 @@ mod tests {
 
     use super::{
         EML_ENGINE_ID, contains_remote_reference, inspect_eml_properties, parse_eml_bytes,
-        plan_eml_export, render_html, render_txt, sanitize_html, validate_eml_export_output,
+        plan_eml_export, render_html, render_md, render_txt, sanitize_html,
+        validate_eml_export_output,
     };
     use crate::domain::ValidationStatus;
     use uuid::Uuid;
@@ -803,6 +830,16 @@ mod tests {
         assert!(text.contains("To: Bob <bob@example.org>\n"));
         assert!(text.contains("Subject: Hello\n"));
         assert!(text.contains("\n\nELECTRIC 440 body text"));
+    }
+
+    #[test]
+    fn md_export_renders_subject_heading_and_bold_headers() {
+        let email = parse_eml_bytes(SINGLE_PART.as_bytes()).expect("parse");
+        let md = render_md(&email);
+        assert!(md.starts_with("# Hello\n\n"));
+        assert!(md.contains("**From:** Alice <alice@example.com>\n"));
+        assert!(md.contains("**To:** Bob <bob@example.org>\n"));
+        assert!(md.contains("\n\nELECTRIC 440 body text"));
     }
 
     #[test]
