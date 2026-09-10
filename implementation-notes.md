@@ -1171,3 +1171,27 @@ minutes of formatwright CPU before completing; it passes (and passed
 in the 2026-09-05 baseline), but the office/html→pdf chain on Linux
 is noticeably slower than Windows — worth remembering if CI timing
 tolerances ever cover this lane.
+
+## 2026-09-09 — GW-13 CI red×2 → green: two missed sync points
+
+First push of GW-13 failed "Repository contracts" on all three
+platforms: `scripts/check_repository.py` hardcodes
+`EXPECTED_WORKFLOWS = range(1, 13)` and GW-13 was the first workflow
+added since that guard existed. Fixed to `range(1, 14)` (one line),
+contracts check green locally (8 schemas, 13 golden workflows).
+
+Second push failed the desktop crate test
+`bundled_table_has_nineteen_entries_with_unique_assoc_verb_pairs`:
+explorer-verbs.json grew 19 → 25 entries (six ToMd verbs), and the
+baseline-length assertion (plus two hardcoded 19s in
+`scripts/generate_explorer_verbs.ps1` and
+`scripts/test_windows_explorer_integration.ps1`) demanded a manual
+bump. All three updated to 25; `cargo test -p formatwright-desktop
+--lib` = 43 passed / 0 failed locally.
+
+Rehearsal-process lesson (now the second instance of the CI-runs-
+what-local-loops-miss rule): the SSH executor cannot build
+`formatwright-desktop` (no glib/webkit dev libs), so its exclusion
+from the remote rehearsal must be compensated by a **local**
+`cargo test -p formatwright-desktop --lib` before push — the TS
+vitest suite does not cover the Rust-side baseline assertions.

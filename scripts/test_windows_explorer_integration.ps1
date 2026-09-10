@@ -259,7 +259,7 @@ try {
     Assert-True ($directoryCommand -ceq $expectedCommand) "directory command quoting is invalid: $directoryCommand"
 
     $verbTable = Get-ExplorerVerbTable
-    Assert-True ($verbTable.convert.Count -eq 19) 'verb table does not contain 19 convert entries'
+    Assert-True ($verbTable.convert.Count -eq 25) 'verb table does not contain 25 convert entries'
     $convertKeys = @(Get-OwnedConvertKeys -Table $verbTable)
     foreach ($item in $verbTable.convert) {
         $convertKey = Get-ConvertVerbKey $item

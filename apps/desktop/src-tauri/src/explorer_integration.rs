@@ -376,9 +376,9 @@ mod tests {
     }
 
     #[test]
-    fn bundled_table_has_nineteen_entries_with_unique_assoc_verb_pairs() {
+    fn bundled_table_has_twenty_five_entries_with_unique_assoc_verb_pairs() {
         let table = baseline_verb_table();
-        assert_eq!(table.len(), 19, "baseline table changed; update this test");
+        assert_eq!(table.len(), 25, "baseline table changed; update this test");
         let mut pairs = std::collections::BTreeSet::new();
         for definition in &table {
             assert!(

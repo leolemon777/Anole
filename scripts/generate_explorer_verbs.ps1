@@ -15,8 +15,8 @@ $ErrorActionPreference = 'Stop'
 
 $tablePath = (Resolve-Path -LiteralPath $Table).Path
 $spec = Get-Content -LiteralPath $tablePath -Raw -Encoding utf8 | ConvertFrom-Json
-if ($spec.convert.Count -ne 19) {
-    throw "explorer-verbs.json must declare exactly 19 convert verbs, found $($spec.convert.Count)"
+if ($spec.convert.Count -ne 25) {
+    throw "explorer-verbs.json must declare exactly 25 convert verbs, found $($spec.convert.Count)"
 }
 
 function New-Nsh {
