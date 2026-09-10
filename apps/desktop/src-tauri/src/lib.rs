@@ -3543,8 +3543,12 @@ mod tests {
                 |_| {},
             ))
         });
+        // Hang guard, not a latency assertion: the worker has to spin up its own
+        // runtime, open the store and pick the job up while `cargo test` is
+        // running the rest of the suite in parallel. Five seconds was tight
+        // enough to fail reproducibly on the loaded Linux runner.
         callback_entered_rx
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(Duration::from_secs(60))
             .expect("queue reached report callback");
 
         let visible = ui_store.list_jobs(100).expect("live job list");

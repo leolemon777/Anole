@@ -44,7 +44,20 @@ function Remove-CheckedTree {
     Assert-True (
         $resolvedTarget.StartsWith($resolvedParent + '\', [StringComparison]::OrdinalIgnoreCase)
     ) "refusing to remove a path outside $resolvedParent"
-    Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
+    # WebView2 runs its own msedgewebview2 process tree and keeps handles open
+    # under EBWebView for a moment after the host exits, so a single attempt
+    # races teardown. Retry rather than kill every msedgewebview2 on the box,
+    # which would take down unrelated apps on a developer machine.
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($true) {
+        try {
+            Remove-Item -LiteralPath $resolvedTarget -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            if ((Get-Date) -ge $deadline) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
 }
 
 $binaryPath = (Resolve-Path -LiteralPath $DesktopBinary).Path
