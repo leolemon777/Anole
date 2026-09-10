@@ -785,7 +785,10 @@ fn take_desktop_shell_convert_batch(
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
 fn desktop_queue_window_busy(state: tauri::State<'_, DesktopState>) -> bool {
-    state.queue_control.lock().is_ok_and(|guard| guard.is_some())
+    state
+        .queue_control
+        .lock()
+        .is_ok_and(|guard| guard.is_some())
 }
 
 #[tauri::command]
@@ -1825,9 +1828,9 @@ fn schedule_convert_quiet_flush(
 ) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(CONVERT_MERGE_QUIET).await;
-        let flushed = coordinator.lock().is_ok_and(|mut guard| {
-            guard.generation == generation && guard.flush_quiet().is_some()
-        });
+        let flushed = coordinator
+            .lock()
+            .is_ok_and(|mut guard| guard.generation == generation && guard.flush_quiet().is_some());
         if flushed {
             let _ = app.emit("formatwright://shell-convert-batch", ());
         }
