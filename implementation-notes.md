@@ -1257,3 +1257,52 @@ Verification: tsc clean, vitest 29/29, `cargo test -p
 anole-core --lib application_state` 9/9, `cargo test -p
 anole-desktop --lib` 43/43, `check_repository.py` valid
 (8 schemas), debug exe rebuilt and live-screenshotted at 800×560.
+
+## 2026-09-10 — Full rename to Anole (Leo override) + his icon shipped
+
+Leo overturned the 2026-09-03 "keep technical identifiers" decision and
+ordered a one-shot rename of every layer, plus shipped his own artwork
+as the app icon. Commit `e5b435d` (241 files), repo renamed to
+github.com/leolemon777/Anole (gh updated the local remote; old URLs
+redirect). Three sed passes in length order (FORMATWRIGHT/FormatWright/
+formatwright -> ANOLE/Anole/anole) over tracked text files, then fmt
+(reflows), Cargo.lock regen, and the full local battery: workspace
+check + clippy -D warnings green, core --lib 281 + 4 known symlink
+baseline, schema_contracts 9/9, desktop --lib 43/43, tsc, vitest 29/29,
+contracts, count_routes 290. CI run 34451454127 tri-platform GREEN on
+the first round (clippy --all-targets earned its keep: it caught a
+`palette` field missing in the schema_contracts integration literal
+that the --lib loop never compiles).
+
+Icon: Leo's chameleon PNG (committed at branding/anole-icon-source.png)
+-> `tauri icon` regenerated the whole set; app-icon.svg deleted;
+website favicon.png + link tags in index/demo.html. Live in the
+titlebar on first launch of the rebuilt exe.
+
+Rename fallout that had to be fixed LOCALLY (untracked artifacts the
+sed pass correctly never touched):
+
+1. `target/debug/engine-packs/starter/*` (the dev resource copy of
+   dist/engine-packs) still carried formatwright ids -> setup hook
+   aborted with "unsupported bundled engine definition" (bundle_id is
+   asserted == "anole-windows-starter"). Fixed by renaming inside the
+   JSON, then recomputing: manifest runtime_files/executables sha256,
+   supply_chain sources_sha256, the SBOM files[].checksumValue values
+   (the inventory check compares hash VALUES, not just paths), and
+   finally manifest supply_chain.sbom_sha256 over the rewritten SBOM.
+   Same fixes applied to dist/ so future copies start correct. A fresh
+   clone never sees this: build_windows_starter_pack.ps1 now emits
+   anole names natively (starter manifests are unsigned, signature
+   fields null, so local regeneration/editing is legitimate).
+2. The crate rename changed the dev binary name to
+   `target/debug/anole-desktop.exe`; launch bats updated.
+3. New identifier `local.anole.desktop` means a FRESH app-data root —
+   old jobs/settings/packs under local.formatwright.desktop are not
+   migrated (pre-release, accepted). First launch re-provisions packs
+   and shows no recovery banner.
+
+Left to Leo (manual): rename the checkout folder
+`E:\Desktop\FormatWright` -> `E:\Desktop\Anole` (repo scripts now
+assume that path), and note the Windows user-level env overrides
+named FORMATWRIGHT_ENGINE_* are dead letters — repo scripts set
+ANOLE_ENGINE_* themselves, but any hand-made env should be renamed.
