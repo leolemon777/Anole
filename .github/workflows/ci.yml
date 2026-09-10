@@ -97,6 +97,16 @@ jobs:
           pnpm check
           pnpm test
           pnpm build
+      - name: Stage empty engine-pack resource root
+        # tauri.windows.conf.json is merged automatically on Windows and declares
+        # dist/engine-packs/windows-x86_64/starter as a bundle resource, so
+        # tauri-build refuses to run when the path is absent. This job builds with
+        # --no-bundle and never packages resources, and the accessibility smoke
+        # exercises the UI shell rather than any engine, so an empty directory is
+        # enough. release-candidate.yml still stages the real pack via
+        # scripts/prepare_windows_starter_pack.ps1 before its bundling build.
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path dist/engine-packs/windows-x86_64/starter | Out-Null
       - name: Build accessibility-instrumented desktop
         # No `--` before the flags: the Tauri CLI treats it as the start of
         # runner (cargo) arguments, which made cargo reject `--debug`.
