@@ -346,11 +346,13 @@ type ConversionPreset = {
 
 type PresetImportResult = { imported: number; total: number };
 type ThemePreference = "system" | "light" | "dark";
+type PalettePreference = "classic" | "matcha" | "ocean";
 type ApplicationSettings = {
   schema_version: number;
   language: Language;
   expert_mode: boolean;
   theme: ThemePreference;
+  palette: PalettePreference;
 };
 
 const emptySnapshot: QueueSnapshot = {
@@ -382,6 +384,7 @@ export default function App() {
   );
   const [expert, setExpert] = useState(false);
   const [themePreference, setThemePreference] = useState<ThemePreference>("light");
+  const [palette, setPalette] = useState<PalettePreference>("classic");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("convert");
   const [inputPath, setInputPath] = useState("");
@@ -483,11 +486,16 @@ export default function App() {
   }, [themePreference]);
 
   useEffect(() => {
+    // Palette only re-skins the light context; the dark blocks override it.
+    document.documentElement.dataset.palette = palette;
+  }, [palette]);
+
+  useEffect(() => {
     if (!settingsLoaded || !("__TAURI_INTERNALS__" in window)) return;
     void invoke<ApplicationSettings>("save_desktop_settings", {
-      settings: { schema_version: 2, language, expert_mode: expert, theme: themePreference },
+      settings: { schema_version: 2, language, expert_mode: expert, theme: themePreference, palette },
     }).catch((reason) => setError(parseDesktopError(reason)));
-  }, [expert, language, themePreference, settingsLoaded]);
+  }, [expert, language, themePreference, palette, settingsLoaded]);
 
   useEffect(() => {
     mounted.current = true;
@@ -596,10 +604,12 @@ export default function App() {
                 : navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
             expert_mode: localStorage.getItem("fw-expert") === "true",
             theme: "light",
+            palette: "classic",
           };
           setLanguage(migrated.language);
           setExpert(migrated.expert_mode);
           setThemePreference(migrated.theme);
+          setPalette(migrated.palette);
           if (!settings) {
             try {
               await invoke<ApplicationSettings>("save_desktop_settings", { settings: migrated });
@@ -2117,6 +2127,7 @@ export default function App() {
           <label>{copy.language}<select value={language} onChange={(event) => setLanguage(event.target.value as Language)}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
           <label>{copy.mode}<select value={expert ? "expert" : "basic"} onChange={(event) => setExpert(event.target.value === "expert")}><option value="basic">{copy.basic}</option><option value="expert">{copy.expert}</option></select></label>
           <label>{copy.theme}<select value={themePreference} onChange={(event) => setThemePreference(event.target.value as ThemePreference)}><option value="system">{copy.themeSystem}</option><option value="light">{copy.themeLight}</option><option value="dark">{copy.themeDark}</option></select></label>
+          <label>{copy.palette}<select value={palette} onChange={(event) => setPalette(event.target.value as PalettePreference)}><option value="classic">{copy.paletteClassic}</option><option value="matcha">{copy.paletteMatcha}</option><option value="ocean">{copy.paletteOcean}</option></select></label>
           <div className="shell-verbs-section">
             <label>{copy.shellMenuTitle}</label>
             <small>{copy.shellMenuHint}</small>

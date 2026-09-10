@@ -128,6 +128,65 @@
    Applied on explicit dark choice; the media query resolves
    the "system" preference against the OS setting.
    ============================================================ */
+/* ============================================================
+   Color palettes (accent layer, light-context only)
+   Deliberately placed BEFORE the dark blocks: any dark context
+   (data-theme="dark" or system-resolved dark) overrides these
+   tokens wholesale, so dark mode keeps one unified skin while
+   light mode can pick a palette.
+   ============================================================ */
+:root[data-palette="matcha"] {
+  --color-page: #f5f4ea;
+  --color-surface-peach: #dce8d4;
+  --color-surface-sky: #d4e4da;
+
+  --color-ink: #2c3a2e;
+  --color-ink-soft: #55645a;
+
+  --color-primary: #5d8a4e;
+  --color-primary-deep: #47703a;
+  --color-secondary: #8a6d3b;
+  --color-secondary-deep: #6f562d;
+  --color-tertiary: #c9a83c;
+
+  --color-border: #e0dfcf;
+  --color-border-strong: #cfcdb4;
+  --color-focus: #5d8a4e;
+  --color-focus-ring: rgba(93, 138, 78, 0.32);
+  --color-peach-border: rgba(93, 138, 78, 0.25);
+  --color-peach-border-strong: rgba(93, 138, 78, 0.3);
+  --color-sky-border: rgba(138, 109, 59, 0.2);
+
+  --deco-wash-a: rgba(220, 232, 212, 0.55);
+  --deco-wash-b: rgba(212, 228, 218, 0.5);
+}
+
+:root[data-palette="ocean"] {
+  --color-page: #eef4f7;
+  --color-surface-peach: #d3e5ef;
+  --color-surface-sky: #cfe3e8;
+
+  --color-ink: #1d3440;
+  --color-ink-soft: #47596b;
+
+  --color-primary: #2f6f8f;
+  --color-primary-deep: #235a75;
+  --color-secondary: #c46a3f;
+  --color-secondary-deep: #a55430;
+  --color-tertiary: #3ca0a8;
+
+  --color-border: #dae3e8;
+  --color-border-strong: #c2d2da;
+  --color-focus: #2f6f8f;
+  --color-focus-ring: rgba(47, 111, 143, 0.32);
+  --color-peach-border: rgba(47, 111, 143, 0.25);
+  --color-peach-border-strong: rgba(47, 111, 143, 0.3);
+  --color-sky-border: rgba(196, 106, 63, 0.2);
+
+  --deco-wash-a: rgba(211, 229, 239, 0.55);
+  --deco-wash-b: rgba(207, 227, 232, 0.5);
+}
+
 :root[data-theme="dark"] {
   --color-page: #10181b;
   --color-surface: #1a262b;
@@ -1806,6 +1865,24 @@ label.wide,
 @media (max-width: 960px) {
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  /* Keep all seven tabs on one strip row: compact metrics instead of
+     the wrapped/garbled two-row strip seen at 760-960px. */
+  .c95-tabs__strip {
+    flex-wrap: nowrap;
+    gap: var(--space-sm);
+    overflow-x: auto;
+  }
+
+  .c95-tabs__tab {
+    padding: 0.5rem 0.15rem;
+    font-size: var(--text-caption);
+    white-space: nowrap;
+  }
+
+  .path-control {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .side-panel {

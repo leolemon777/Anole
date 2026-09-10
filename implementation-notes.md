@@ -1223,3 +1223,37 @@ recorded in memory). Two findings:
 
 Verification: `tsc -b` clean, vitest 29/29. Desktop Rust side
 untouched (no explorer baseline / crate changes).
+
+## 2026-09-10 — Color palettes + responsive tabs (Leo's second test wave)
+
+Leo's follow-up findings from hands-on testing: he wanted to change
+the COLOR scheme (not just light/dark — "想改个颜色主题，现在根本
+没有这个设置") and window-resize behavior was rough ("分辨率放大
+缩小的问题也挺大"). Reproduced by scripting window resizes:
+760–960px width wrapped the seven tabs into a garbled two-row strip.
+
+**Color palettes (E-14 in spirit, small scope):** palette is
+orthogonal to theme. `ApplicationSettings` gained an optional
+`palette` field (`classic` | `matcha` | `ocean`, serde default
+`classic`; v1→v2 migration fills it; validate() rejects unknown
+values). Schema `application-settings/v2.schema.json` gained the
+optional enum (not required — old files stay valid). CSS: the two new
+palettes override only the accent/surface tokens and are placed
+BEFORE the dark blocks, so every dark context (explicit dark or
+system-resolved) overrides them wholesale — dark mode keeps one
+unified skin, light mode picks a palette. Settings page gained a
+配色/Color palette dropdown next to 外观/Appearance (i18n zh/en).
+Also fixed a miss from the earlier theme-default commit: the RUST
+default (`default_settings_theme`) was still `"system"` — now
+`"light"` to match the front-end defaults.
+
+**Responsive tabs:** at ≤960px the tab strip goes compact
+(`nowrap`, smaller padding/gap/font, `overflow-x: auto`) and
+`.path-control` stacks input over button — verified live at
+800×560: single-row tabs, nothing clipped. (Window mins stay
+760×560; the earlier scroll-chain fix already covers short windows.)
+
+Verification: tsc clean, vitest 29/29, `cargo test -p
+formatwright-core --lib application_state` 9/9, `cargo test -p
+formatwright-desktop --lib` 43/43, `check_repository.py` valid
+(8 schemas), debug exe rebuilt and live-screenshotted at 800×560.

@@ -99,10 +99,16 @@ pub struct ApplicationSettings {
     pub expert_mode: bool,
     #[serde(default = "default_settings_theme")]
     pub theme: String,
+    #[serde(default = "default_settings_palette")]
+    pub palette: String,
 }
 
 fn default_settings_theme() -> String {
-    "system".to_owned()
+    "light".to_owned()
+}
+
+fn default_settings_palette() -> String {
+    "classic".to_owned()
 }
 
 impl ApplicationSettings {
@@ -125,6 +131,11 @@ impl ApplicationSettings {
                 "Application theme must be system, light, or dark",
             ));
         }
+        if !matches!(self.palette.as_str(), "classic" | "matcha" | "ocean") {
+            return Err(state_error(
+                "Application palette must be classic, matcha, or ocean",
+            ));
+        }
         Ok(())
     }
 }
@@ -136,6 +147,7 @@ impl Default for ApplicationSettings {
             language: "en".to_owned(),
             expert_mode: false,
             theme: default_settings_theme(),
+            palette: default_settings_palette(),
         }
     }
 }
@@ -172,6 +184,7 @@ impl ApplicationSettingsService {
             // next save persists v2. Older restore bundles hit this same path.
             settings.schema_version = APPLICATION_SETTINGS_SCHEMA_VERSION;
             settings.theme = default_settings_theme();
+            settings.palette = default_settings_palette();
         }
         settings.validate()?;
         Ok(Some(settings))
@@ -1674,7 +1687,8 @@ mod tests {
             .expect("v1 settings read")
             .expect("settings present");
         assert_eq!(settings.schema_version, APPLICATION_SETTINGS_SCHEMA_VERSION);
-        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.theme, "light");
+        assert_eq!(settings.palette, "classic");
         assert_eq!(settings.language, "zh-CN");
     }
 
@@ -1685,6 +1699,12 @@ mod tests {
             ..ApplicationSettings::default()
         };
         assert!(sepia.validate().is_err());
+
+        let neon_palette = ApplicationSettings {
+            palette: "neon".to_owned(),
+            ..ApplicationSettings::default()
+        };
+        assert!(neon_palette.validate().is_err());
 
         let future = ApplicationSettings {
             schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION + 1,
@@ -1765,6 +1785,7 @@ mod tests {
                 language: "zh-CN".to_owned(),
                 expert_mode: true,
                 theme: "dark".to_owned(),
+                palette: "ocean".to_owned(),
             })
             .expect("settings");
         fs::write(
