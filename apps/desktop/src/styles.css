@@ -625,6 +625,8 @@ label.wide,
   height: 20px;
   display: inline-block;
   flex-shrink: 0;
+  border-radius: 25%;
+  pointer-events: none;
   color: var(--color-primary);
   pointer-events: none;
 }
