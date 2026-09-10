@@ -22,7 +22,7 @@ EXPECTED_SCHEMA_NAMES = {
     "application-state-manifest",
     "application-settings",
 }
-EXPECTED_WORKFLOWS = {f"GW-{number:02d}" for number in range(1, 13)}
+EXPECTED_WORKFLOWS = {f"GW-{number:02d}" for number in range(1, 14)}
 EXACT_PACKAGE_MANAGER = re.compile(r"^pnpm@\d+\.\d+\.\d+$")
 
 
