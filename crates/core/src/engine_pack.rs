@@ -695,6 +695,10 @@ fn ensure_application_compatible(manifest: &EngineManifest) -> Result<()> {
     ))
 }
 
+// The whole body is Windows-only, so off Windows `path` goes unread and the
+// function can never fail. Scope the allows to those targets so the lints keep
+// working where the check actually runs.
+#[cfg_attr(not(windows), allow(unused_variables, clippy::unnecessary_wraps))]
 fn verify_native_executable(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
