@@ -95,6 +95,8 @@ const SINGLE_FILE_BITMAP_INPUTS: readonly string[] = [
 
 export function isDirectoryOutput(input: string, target: string): boolean {
   const normalized = target.toLowerCase();
+  // xlsx → csv：每张工作表一个 csv，输出为分页目录（内置 office-csv 引擎）。
+  if (normalized === "csv" && pathStemAndExt(input).ext === "xlsx") return true;
   if (!["png", "jpg", "jpeg"].includes(normalized)) return false;
   const extension = pathStemAndExt(input).ext;
   return !SINGLE_FILE_BITMAP_INPUTS.includes(extension);

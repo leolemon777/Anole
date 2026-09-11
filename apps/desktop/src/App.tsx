@@ -1936,8 +1936,8 @@ export default function App() {
             <div className="action-row">
               {convertMode === "file" && <button className="secondary" type="button" disabled={!inputPath || !outputPath || busy !== null || capabilityBusy || !routeAvailable} onClick={previewPlan}>{busy === "plan" ? copy.planning : copy.inspectPlan}</button>}
               {convertMode === "file" && <button className="primary" type="button" disabled={!preview || busy !== null || !routeAvailable} onClick={runConversion}>{busy === "run" ? copy.running : copy.run}</button>}
-              {convertMode === "file" && <button className="secondary" type="button" disabled={!preview || (preview.chain != null && preview.chain.length > 0) || busy !== null || !routeAvailable} title={preview?.chain ? copy.chainQueueUnsupported : undefined} onClick={queueConversion}>{busy === "queue" ? copy.queueing : copy.queueOnly}</button>}
-              {convertMode === "file" && busy === "run" && !preview?.chain && <button className="danger" type="button" onClick={cancel}>{copy.cancel}</button>}
+              {convertMode === "file" && <button className="secondary" type="button" disabled={!preview || busy !== null || !routeAvailable} onClick={queueConversion}>{busy === "queue" ? copy.queueing : copy.queueOnly}</button>}
+              {convertMode === "file" && busy === "run" && <button className="danger" type="button" onClick={cancel}>{copy.cancel}</button>}
               {convertMode === "folder" && <button className="secondary" type="button" disabled={!folderInputRoot || !folderOutputRoot || !target || folderBusy !== null} onClick={previewFolderBatch}>{folderBusy === "preview" ? copy.planningFolder : copy.previewFolderMapping}</button>}
               {convertMode === "folder" && <button className="primary" type="button" disabled={!folderPreview || !folderPreview.disk_budget.sufficient || folderBusy !== null} onClick={queueFolderBatch}>{folderBusy === "queue" ? copy.queueingFolder : copy.queueFolderBatch}</button>}
             </div>

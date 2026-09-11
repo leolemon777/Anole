@@ -58,8 +58,13 @@ describe("desktop workflow model", () => {
     // 相机/图像族输入直达单文件位图，不是目录。
     expect(isDirectoryOutput("C:\\in\\photo.heic", "jpg")).toBe(false);
     expect(isDirectoryOutput("C:\\in\\scan.tiff", "png")).toBe(false);
-    // 非位图目标不受影响。
-    expect(isDirectoryOutput("C:\\in\\budget.xlsx", "csv")).toBe(false);
+    // xlsx → csv 每张工作表一个 csv：分页目录（内置 office-csv）。
+    expect(isDirectoryOutput("C:\\in\\budget.xlsx", "csv")).toBe(true);
+    expect(suggestedOutput("C:\\in\\budget.xlsx", "csv")).toBe(
+      "C:\\in\\budget.converted-csv-sheets",
+    );
+    // 扁平数据族 csv 输入互转不受影响。
+    expect(isDirectoryOutput("C:\\in\\data.csv", "json")).toBe(false);
   });
 
   it("builds a non-overwriting suggested output", () => {

@@ -638,10 +638,44 @@ fn chain_first_hop_output(final_output: &Path, intermediate: &str) -> PathBuf {
     directory.join(format!(".{file_name}.chain-preview.{intermediate}"))
 }
 
+/// 链式队列 job 的构造：第一段 plan 与 `preview` 同路径规则（审批 `hash`
+/// 一致），随后附加链元数据并把 `output_path` 指向最终输出。执行期
+/// 队列 worker 由元数据重建整链，每段独立 prepare/验收。
+async fn prepare_chained_queue_plan(
+    request: &DesktopConversionRequest,
+    chain: &anole_core::ConversionChain,
+) -> Result<(Probe, Plan), String> {
+    let first_target = chain
+        .hops()
+        .first()
+        .map(|hop| hop.to.clone())
+        .ok_or_else(|| "empty conversion chain".to_owned())?;
+    let mut first_request = request.plan_request();
+    first_request.target_format = first_target.clone();
+    first_request.output_path = Some(chain_first_hop_output(&request.output_path, &first_target));
+    let (probe, mut plan, _) = prepare_conversion(&request.input_path, &first_request)
+        .await
+        .map_err(serialize_error)?;
+    anole_core::ensure_plan_approved(&plan, request.approved_plan_hash.as_deref())
+        .map_err(serialize_error)?;
+    let hop_targets = chain
+        .hops()
+        .iter()
+        .map(|hop| hop.to.clone())
+        .collect::<Vec<_>>();
+    anole_core::chain::attach_chain_plan_metadata(&mut plan, &request.plan_request(), &hop_targets)
+        .map_err(serialize_error)?;
+    Ok((probe, plan))
+}
+
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 async fn run_desktop_chained_conversion(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
     request: DesktopConversionRequest,
 ) -> Result<DesktopChainedRunResult, String> {
+    let _operation = acquire_active_operation(&state.operation_gate)?;
     let chain =
         find_conversion_chain(&request.input_path, &request.target_format).ok_or_else(|| {
             serialize_error(anole_core::AnoleError::new(
@@ -678,17 +712,77 @@ async fn run_desktop_chained_conversion(
             "Preview the plan again, then run.",
         )));
     }
+    // 合成 job 事件流：链式运行不在 job store，但沿用 job-updated /
+    // job-progress 协议让前端的运行态与取消按钮照常工作。
     let cancellation = CancellationToken::new();
     let chain_job_id = Uuid::new_v4();
-    let result = execute_conversion_chain(
+    lock(&state.cancellations)?.insert(chain_job_id, cancellation.clone());
+    let running_record = JobRecord {
+        id: chain_job_id,
+        state: JobState::Running,
+        input_path: request.input_path.clone(),
+        output_path: request.output_path.clone(),
+        plan_hash: first_plan.plan_hash.clone(),
+        sequence: 0,
+        created_unix_ms: unix_ms_now(),
+        updated_unix_ms: unix_ms_now(),
+    };
+    let _ = window.emit("anole://job-updated", &running_record);
+    let _ = window.emit(
+        "anole://job-progress",
+        &QueueProgressUpdate {
+            schema_version: 1,
+            job_id: chain_job_id,
+            job_sequence: 0,
+            state: JobState::Running,
+            wait_reason: None,
+            occurred_unix_ms: unix_ms_now(),
+            eta_milliseconds: None,
+            measured_throughput_bytes_per_sec: None,
+        },
+    );
+    let outcome = execute_conversion_chain(
         &request.input_path,
         &request.plan_request(),
         &chain,
         chain_job_id,
         cancellation,
     )
-    .await
-    .map_err(serialize_error)?;
+    .await;
+    lock(&state.cancellations)?.remove(&chain_job_id);
+    // 终态事件：报告状态映射到 JobState（Cancel 错误诚实传播）。
+    let result = match outcome {
+        Ok(result) => result,
+        Err(error) => {
+            let terminal_state = if error.code == anole_core::ErrorCode::Cancelled {
+                JobState::Cancelled
+            } else {
+                JobState::Failed
+            };
+            let _ = window.emit(
+                "anole://job-updated",
+                &JobRecord {
+                    state: terminal_state,
+                    updated_unix_ms: unix_ms_now(),
+                    ..running_record
+                },
+            );
+            return Err(serialize_error(error));
+        }
+    };
+    let terminal_state = match result.report.status {
+        anole_core::ValidationStatus::Pass => JobState::Completed,
+        anole_core::ValidationStatus::Warning => JobState::Warning,
+        _ => JobState::Failed,
+    };
+    let _ = window.emit(
+        "anole://job-updated",
+        &JobRecord {
+            state: terminal_state,
+            updated_unix_ms: unix_ms_now(),
+            ..running_record
+        },
+    );
     let hops = chain
         .hops()
         .iter()
@@ -775,20 +869,16 @@ async fn queue_desktop_conversion(
     request: DesktopConversionRequest,
 ) -> Result<JobRecord, String> {
     let _operation = acquire_active_operation(&state.operation_gate)?;
-    let (probe, plan, _) = match prepare_approved_desktop_conversion(&request).await {
-        Ok(prepared) => prepared,
+    let (probe, plan) = match prepare_approved_desktop_conversion(&request).await {
+        Ok(prepared) => (prepared.0, prepared.1),
         Err(message) => {
-            // 链式目标诚实拒绝：链式只支持立即转换（每段惰性 plan，
-            // 无法持久化为单个队列 job）。
-            if find_conversion_chain(&request.input_path, &request.target_format).is_some() {
-                return Err(serialize_error(anole_core::AnoleError::new(
-                    anole_core::ErrorCode::Unsupported,
-                    anole_core::Stage::Plan,
-                    "Chained conversions run immediately and cannot be queued",
-                    "Use Convert now; queue each step separately if needed.",
-                )));
-            }
-            return Err(message);
+            // 链式目标：构造链式队列 job——第一段 plan 供审批与 UI 展示，
+            // constraints 附链元数据，执行期整链惰性执行（每段独立验收）。
+            let Some(chain) = find_conversion_chain(&request.input_path, &request.target_format)
+            else {
+                return Err(message);
+            };
+            prepare_chained_queue_plan(&request, &chain).await?
         }
     };
     let job = {
