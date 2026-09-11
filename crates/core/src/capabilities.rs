@@ -295,9 +295,9 @@ pub(crate) fn required_engines(input: Option<&str>, target: &str) -> Vec<String>
     if input == "docx" && matches!(target.as_str(), "txt" | "md" | "html" | "epub") {
         return engine_names(&["pandoc"]);
     }
-    // xlsx 数据导出只需要 soffice；csv 验收是内置解析，不依赖 Poppler。
+    // xlsx 数据导出是内置 anole.office-csv（calamine），无外部引擎。
     if input == "xlsx" && target == "csv" {
-        return engine_names(&["soffice"]);
+        return Vec::new();
     }
     if matches!(input, "html" | "htm") && target == "md" {
         return engine_names(&["pandoc"]);

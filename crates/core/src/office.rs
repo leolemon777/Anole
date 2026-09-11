@@ -4,6 +4,7 @@ use std::io::{Read, Seek};
 use std::path::Path;
 
 use anole_engine_sdk::{EngineIdentity, LossClass, Operation};
+use calamine::Reader as CalamineReader;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde_json::{Value, json};
@@ -397,10 +398,12 @@ pub fn plan_office_document_exchange(
     Ok(plan)
 }
 
-/// Plans a macro-disabled `LibreOffice` XLSX data export to CSV.
+/// Plans the built-in XLSX data export: every worksheet becomes one CSV
+/// file under a paged output directory (the pdf→png precedent).
 ///
-/// `LibreOffice` 的 CSV filter 只导出激活的工作表（通常为第一张），
-/// 公式以计算值写出——这些限制在 `dropped`/`changed` 里如实声明。
+/// 引擎是内置 `anole.office-csv`（calamine 纯 Rust 解析）——不依赖
+/// LibreOffice，公式读出的是工作簿缓存的计算值；多 sheet 在
+/// `constraints` 里声明为 all worksheets。
 ///
 /// # Errors
 ///
@@ -408,37 +411,34 @@ pub fn plan_office_document_exchange(
 pub fn plan_office_csv_export(
     probe: &Probe,
     output_path: std::path::PathBuf,
-    soffice: &EngineIdentity,
+    engine: &EngineIdentity,
 ) -> Result<Plan> {
     if probe.format.id != "xlsx" {
         return Err(unsupported(
             "Office CSV export requires XLSX spreadsheet input",
         ));
     }
-    if soffice.engine_id != "soffice" {
+    if engine.engine_id != "anole.office-csv" {
         return Err(AnoleError::new(
             ErrorCode::EngineIncompatible,
             Stage::Plan,
             "Office CSV export Plan was given an incorrect engine",
-            "Run doctor and use soffice.",
+            "Run doctor and use the built-in anole.office-csv engine.",
         ));
     }
     let conversion = PlanStep {
         step_id: "step-1".to_owned(),
-        capability_id: "libreoffice.xlsx-to-csv.headless".to_owned(),
-        engine: soffice.clone(),
+        capability_id: "anole.office-csv.xlsx-all-sheets".to_owned(),
+        engine: engine.clone(),
         operation: Operation::Transform,
-        loss_class: LossClass::Unknown,
+        loss_class: LossClass::Lossy,
         arguments: BTreeMap::from([
             ("source_format".to_owned(), "xlsx".to_owned()),
             ("target_format".to_owned(), "csv".to_owned()),
-            ("sheet".to_owned(), "active".to_owned()),
-            ("headless".to_owned(), "true".to_owned()),
-            ("isolated_profile".to_owned(), "true".to_owned()),
-            ("macros".to_owned(), "disabled".to_owned()),
-            ("external_resources".to_owned(), "deny".to_owned()),
+            ("worksheets".to_owned(), "all".to_owned()),
+            ("formulas".to_owned(), "cached-values".to_owned()),
         ]),
-        estimated_temporary_bytes: Some(probe.artifact.size_bytes.saturating_mul(8)),
+        estimated_temporary_bytes: Some(probe.artifact.size_bytes.saturating_mul(4)),
     };
     let mut plan = Plan {
         schema_version: SCHEMA_VERSION,
@@ -448,30 +448,34 @@ pub fn plan_office_csv_export(
         target_format: "csv".to_owned(),
         constraints: BTreeMap::from([
             ("network".to_owned(), json!("deny")),
-            ("macros".to_owned(), json!("disabled")),
             ("external_resources".to_owned(), json!("deny")),
-            ("isolated_user_profile".to_owned(), json!(true)),
-            ("worksheet".to_owned(), json!("active sheet only")),
+            (
+                "worksheets".to_owned(),
+                json!("all worksheets, one CSV per sheet"),
+            ),
+            (
+                "output_shape".to_owned(),
+                json!("paged directory of CSV files"),
+            ),
         ]),
         steps: vec![conversion],
         changes: ChangeSet {
             preserved: vec![
-                "cell values of the active worksheet supported by LibreOffice".to_owned(),
-                "row order produced by the isolated office converter".to_owned(),
+                "cell values of every worksheet as cached by the workbook".to_owned(),
+                "row order and sheet order".to_owned(),
             ],
             changed: vec![
-                "formulas are written as their computed values".to_owned(),
-                "cell styling, number formats, and multi-sheet structure are flattened to text"
-                    .to_owned(),
+                "formulas are exported as their cached computed values".to_owned(),
+                "each worksheet is flattened to its own text grid".to_owned(),
             ],
-            dropped: vec![
-                "worksheets other than the active one".to_owned(),
-                "macros and interactive behavior".to_owned(),
+            dropped: vec!["cell styling, number formats, charts, and macros".to_owned()],
+            unknown: vec![
+                "cells whose cached value predates the last edit show the cache".to_owned(),
             ],
-            unknown: vec!["locale-dependent number and date text formatting".to_owned()],
         },
         validators: vec![
             "office.csv-opens".to_owned(),
+            "office.csv-sheet-count".to_owned(),
             "office.csv-rows-present".to_owned(),
         ],
         network_policy: NetworkPolicy::Deny,
@@ -482,47 +486,225 @@ pub fn plan_office_csv_export(
     Ok(plan)
 }
 
-/// Validation for the XLSX → CSV export: the output must re-open as UTF-8
-/// CSV with at least one row and one field. 宽松解析（无表头约束）——
-/// `LibreOffice` 导出的首行可能是数据而非列名。
+/// 内置 calamine 执行：每张工作表写一个 `sheet-NN[-name].csv` 到
+/// `output_dir`。返回写出的 sheet 数（验收用）。公式单元格读缓存值。
+pub(crate) fn convert_xlsx_to_csv_sheets(
+    input: &Path,
+    output_dir: &Path,
+    plan: &Plan,
+) -> Result<usize> {
+    let step = plan.steps.first().ok_or_else(|| {
+        AnoleError::new(
+            ErrorCode::Internal,
+            Stage::Execute,
+            "Office CSV export Plan has no conversion step",
+            "Preview the plan again.",
+        )
+    })?;
+    if !matches!(
+        step.arguments.get("worksheets").map(String::as_str),
+        Some("all")
+    ) || !matches!(
+        step.arguments.get("formulas").map(String::as_str),
+        Some("cached-values")
+    ) {
+        return Err(AnoleError::new(
+            ErrorCode::Internal,
+            Stage::Execute,
+            "Office CSV export Plan carries unexpected arguments",
+            "Preview the plan again.",
+        ));
+    }
+    let mut workbook = calamine::open_workbook_auto(input).map_err(|error| {
+        AnoleError::new(
+            ErrorCode::InputInvalid,
+            Stage::Execute,
+            "The XLSX workbook cannot be opened for CSV export",
+            "Re-save the workbook as .xlsx and retry.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    let sheet_names = workbook.sheet_names().clone();
+    if sheet_names.is_empty() {
+        return Err(AnoleError::new(
+            ErrorCode::InputInvalid,
+            Stage::Execute,
+            "The XLSX workbook has no worksheets",
+            "Add a worksheet and retry.",
+        ));
+    }
+    std::fs::create_dir_all(output_dir).map_err(|error| {
+        AnoleError::new(
+            ErrorCode::StorageFailed,
+            Stage::Execute,
+            "Unable to create the CSV export directory",
+            "Check destination permissions and storage health.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    for (index, sheet_name) in sheet_names.iter().enumerate() {
+        let range = workbook.worksheet_range(sheet_name).map_err(|error| {
+            AnoleError::new(
+                ErrorCode::InputInvalid,
+                Stage::Execute,
+                format!("Worksheet {sheet_name} cannot be read"),
+                "Inspect the workbook and retry.",
+            )
+            .with_diagnostic(error.to_string())
+        })?;
+        let file_name = format!(
+            "sheet-{:02}{}.csv",
+            index + 1,
+            sanitize_sheet_suffix(sheet_name)
+        );
+        let destination = output_dir.join(file_name);
+        let file = std::fs::File::create(&destination).map_err(|error| {
+            AnoleError::new(
+                ErrorCode::StorageFailed,
+                Stage::Execute,
+                "Unable to create a CSV sheet export",
+                "Check destination permissions and storage health.",
+            )
+            .with_diagnostic(error.to_string())
+        })?;
+        let mut writer = csv::WriterBuilder::new().from_writer(file);
+        for row in range.rows() {
+            let record = row.iter().map(calamine_cell_text);
+            writer
+                .write_record(record)
+                .map_err(|error| csv_write_error(&error))?;
+        }
+        writer.flush().map_err(|error| {
+            AnoleError::new(
+                ErrorCode::StorageFailed,
+                Stage::Execute,
+                "Unable to finalize a CSV sheet export",
+                "Check destination permissions and storage health.",
+            )
+            .with_diagnostic(error.to_string())
+        })?;
+    }
+    Ok(sheet_names.len())
+}
+
+fn csv_write_error(error: &csv::Error) -> AnoleError {
+    AnoleError::new(
+        ErrorCode::StorageFailed,
+        Stage::Execute,
+        "Unable to write a CSV sheet export",
+        "Check destination permissions and storage health.",
+    )
+    .with_diagnostic(error.to_string())
+}
+
+/// sheet 文件名后缀：保留 Unicode 字母数字与连字符/下划线，其余折叠
+/// 为 `_`，限长 32（按字符计），避免跨文件系统字符问题。
+fn sanitize_sheet_suffix(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .take(32)
+        .map(|character| {
+            if character.is_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        String::new()
+    } else {
+        format!("-{cleaned}")
+    }
+}
+
+fn calamine_cell_text(cell: &calamine::Data) -> String {
+    use calamine::Data;
+    match cell {
+        Data::Empty => String::new(),
+        Data::String(value) => value.clone(),
+        Data::Float(value) => {
+            // 整数值浮点（Excel 数字常态）格式化为无小数点文本；
+            // 非整数走 Debug 风格的 to_string，不经数值截断。
+            if value.fract() == 0.0 && value.abs() < 1e15 {
+                format!("{value}")
+            } else {
+                value.to_string()
+            }
+        }
+        Data::Int(value) => value.to_string(),
+        Data::Bool(value) => value.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Validation for the built-in XLSX → CSV export: every produced sheet CSV
+/// must re-open as UTF-8 CSV, the sheet-file count must equal the workbook's
+/// sheet count, and at least one row must exist across all sheets.
 pub(crate) fn validate_office_csv_output(
     input: &Probe,
-    output: &Probe,
+    output_dir: &Path,
     plan: &Plan,
     job_id: Uuid,
 ) -> ValidationReport {
-    let path = &output.artifact.canonical_path;
-    let (rows, max_fields, parse_error) = match count_csv_rows(path) {
-        Ok(values) => (values.0, values.1, None),
-        Err(error) => (0, 0, Some(error.clone())),
-    };
-    let parses = parse_error.is_none();
-    let rows_present = parses && rows >= 1;
-    let fields_present = parses && max_fields >= 1;
+    let mut workbook = calamine::open_workbook_auto(&input.artifact.canonical_path).ok();
+    let expected_sheets = workbook.as_mut().map_or(0, |book| book.sheet_names().len());
+    let mut entries = std::fs::read_dir(output_dir)
+        .map(|directory| {
+            directory
+                .flatten()
+                .filter_map(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .and_then(|value| value.to_str())
+                        .is_some_and(|value| value.eq_ignore_ascii_case("csv"))
+                        .then(|| entry.path())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    entries.sort();
+    let observed_sheets = entries.len();
+    let mut parse_failures = Vec::new();
+    let mut total_rows = 0_usize;
+    for entry in &entries {
+        match count_csv_rows(entry) {
+            Ok((rows, _)) => total_rows += rows,
+            Err(error) => parse_failures.push(format!("{}: {error}", entry.display())),
+        }
+    }
+    let parses = parse_failures.is_empty();
+    let sheet_count_ok = observed_sheets == expected_sheets && expected_sheets > 0;
+    let rows_present = parses && total_rows >= 1;
     let checks = vec![
         check(
             "OFFICE_CSV_OPENS",
             status(parses),
             true,
-            json!("utf-8 csv re-parse"),
-            json!(parse_error.unwrap_or_else(|| "parsed".to_owned())),
-            "Lenient CSV reader re-opened the complete export.",
+            json!("every sheet CSV re-parses"),
+            json!(if parses {
+                format!("{observed_sheets} sheets parsed")
+            } else {
+                parse_failures.join("; ")
+            }),
+            "Lenient CSV reader re-opened every sheet export.",
+        ),
+        check(
+            "OFFICE_CSV_SHEET_COUNT",
+            status(sheet_count_ok),
+            true,
+            json!(expected_sheets),
+            json!(observed_sheets),
+            "Workbook worksheet count equals produced CSV files.",
         ),
         check(
             "OFFICE_CSV_ROWS_PRESENT",
             status(rows_present),
             true,
-            json!(">= 1 row"),
-            json!(rows),
-            "Row inventory of the exported active worksheet.",
-        ),
-        check(
-            "OFFICE_CSV_FIELDS_PRESENT",
-            status(fields_present),
-            true,
-            json!(">= 1 field"),
-            json!(max_fields),
-            "Widest row of the exported active worksheet.",
+            json!(">= 1 row across all sheets"),
+            json!(total_rows),
+            "Row inventory across the exported worksheets.",
         ),
     ];
     let report_status = checks
@@ -537,7 +719,7 @@ pub(crate) fn validate_office_csv_output(
         plan_hash: plan.plan_hash.clone(),
         status: report_status,
         input: artifact_summary(input),
-        output: artifact_summary(output),
+        output: directory_artifact_summary(output_dir, observed_sheets),
         engines: plan.steps.iter().map(|step| step.engine.clone()).collect(),
         checks,
         intentional_changes: plan.changes.changed.clone(),
@@ -545,6 +727,27 @@ pub(crate) fn validate_office_csv_output(
             paths_redacted: false,
             metadata_values_redacted: true,
         },
+    }
+}
+
+/// 目录输出的 artifact 摘要：不做指纹（目录不是单文件），格式 id 标记
+/// csv-sheets 便于 UI 区分。
+fn directory_artifact_summary(output_dir: &Path, sheet_count: usize) -> ArtifactSummary {
+    let size_bytes = std::fs::read_dir(output_dir)
+        .map(|directory| {
+            directory
+                .flatten()
+                .filter_map(|entry| entry.metadata().ok())
+                .map(|metadata| metadata.len())
+                .sum()
+        })
+        .unwrap_or_default();
+    ArtifactSummary {
+        display_path: Some(output_dir.to_string_lossy().into_owned()),
+        format_id: "csv-sheets".to_owned(),
+        size_bytes,
+        fast_fingerprint: format!("{sheet_count} sheets"),
+        full_blake3: None,
     }
 }
 
@@ -563,59 +766,6 @@ fn count_csv_rows(path: &Path) -> std::result::Result<(usize, usize), String> {
         max_fields = max_fields.max(record.len());
     }
     Ok((rows, max_fields))
-}
-
-/// `LibreOffice` 写出的 CSV 输出 probe：Data 族格式描述 + 行/字段统计，
-/// 供验收报告的 artifact 摘要使用。
-pub(crate) async fn csv_output_probe(path: &Path) -> Result<Probe> {
-    let artifact = identify_artifact(path).await?;
-    let (rows, max_fields) = count_csv_rows(path).map_err(|error| {
-        AnoleError::new(
-            ErrorCode::ValidationFailed,
-            Stage::Validate,
-            format!("Converted CSV cannot be re-read: {error}"),
-            "Inspect the validation report and adjust the source.",
-        )
-    })?;
-    Ok(Probe {
-        schema_version: SCHEMA_VERSION,
-        artifact,
-        format: FormatDescriptor {
-            id: "csv".to_owned(),
-            kind: FormatKind::Data,
-            mime_type: Some("text/csv".to_owned()),
-            container: None,
-            extension_matches: Some(true),
-            confidence: 0.9,
-        },
-        streams: vec![StreamProbe {
-            index: 0,
-            kind: StreamKind::RecordSet,
-            codec: None,
-            language: None,
-            duration_seconds: None,
-            width: None,
-            height: None,
-            frame_rate: None,
-            sample_rate: None,
-            channels: None,
-            properties: BTreeMap::from([
-                ("record_count".to_owned(), json!(rows.saturating_sub(1))),
-                ("max_fields".to_owned(), json!(max_fields)),
-                ("encoding".to_owned(), json!("utf-8")),
-                ("delimiter".to_owned(), json!(",")),
-            ]),
-        }],
-        metadata: BTreeMap::new(),
-        warnings: Vec::new(),
-        evidence: ProbeEvidence {
-            engine_id: "anole.office-csv".to_owned(),
-            engine_version: env!("CARGO_PKG_VERSION").to_owned(),
-            engine_binary_sha256: None,
-        },
-        duration_seconds: None,
-        bit_rate: None,
-    })
 }
 
 /// Structural validation for DOCX/ODF exchange output: the package must open
@@ -1483,7 +1633,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn xlsx_csv_export_plan_declares_worksheet_limits() {
+    async fn xlsx_csv_export_plan_declares_all_worksheet_semantics() {
         let directory = tempfile::tempdir().expect("tempdir");
         let xlsx = directory.path().join("budget.xlsx");
         write_xlsx(&xlsx);
@@ -1491,76 +1641,63 @@ mod tests {
         assert_eq!(probe.format.id, "xlsx");
         let plan = super::plan_office_csv_export(
             &probe,
-            directory.path().join("out.csv"),
-            &engine("soffice"),
+            directory.path().join("out-sheets"),
+            &engine("anole.office-csv"),
         )
         .expect("csv export plan");
         assert_eq!(plan.target_format, "csv");
         assert_eq!(
-            plan.steps[0].arguments.get("sheet").map(String::as_str),
-            Some("active")
+            plan.steps[0]
+                .arguments
+                .get("worksheets")
+                .map(String::as_str),
+            Some("all")
         );
         assert!(
             plan.changes
-                .dropped
+                .changed
                 .iter()
-                .any(|item| item.contains("worksheets other than the active")),
-            "multi-sheet drop is declared honestly"
+                .any(|item| item.contains("each worksheet")),
+            "per-sheet output is declared honestly"
         );
-        // 非 xlsx 输入与非 soffice 引擎都要拒绝。
+        assert!(
+            plan.steps[0].engine.engine_id == "anole.office-csv",
+            "the lane is the built-in engine, not soffice"
+        );
+        // 非 xlsx 输入与错误引擎都要拒绝。
         let docx = directory.path().join("letter.docx");
         write_docx(&docx);
         let docx_probe = inspect_office(&docx).await.expect("docx inspection");
         assert!(
             super::plan_office_csv_export(
                 &docx_probe,
-                PathBuf::from("out.csv"),
-                &engine("soffice")
+                PathBuf::from("out-sheets"),
+                &engine("anole.office-csv")
             )
             .is_err()
         );
         assert!(
-            super::plan_office_csv_export(&probe, PathBuf::from("out.csv"), &engine("pandoc"))
+            super::plan_office_csv_export(&probe, PathBuf::from("out-sheets"), &engine("soffice"))
                 .is_err()
         );
     }
 
-    #[tokio::test]
-    async fn csv_output_validation_requires_rows_and_fields() {
-        let directory = tempfile::tempdir().expect("tempdir");
-        let xlsx = directory.path().join("budget.xlsx");
-        write_xlsx(&xlsx);
-        let input_probe = inspect_office(&xlsx).await.expect("xlsx inspection");
-        let plan = super::plan_office_csv_export(
-            &input_probe,
-            directory.path().join("out.csv"),
-            &engine("soffice"),
-        )
-        .expect("csv export plan");
-
-        // LibreOffice 导出的首行可能就是数据而非表头：宽松解析必须 Pass。
-        let good = directory.path().join("good.csv");
-        std::fs::write(&good, "ELECTRIC,440,7700\nBOLT,2,10\n").expect("write csv");
-        let good_probe = super::csv_output_probe(&good).await.expect("csv probe");
-        let report = super::validate_office_csv_output(
-            &input_probe,
-            &good_probe,
-            &plan,
-            uuid::Uuid::new_v4(),
+    #[test]
+    fn sheet_suffix_sanitizes_cross_system_characters() {
+        assert_eq!(super::sanitize_sheet_suffix("Data"), "-Data");
+        assert_eq!(
+            super::sanitize_sheet_suffix("2024 年/预算"),
+            "-2024_年_预算"
         );
-        assert_eq!(report.status, crate::domain::ValidationStatus::Pass);
-
-        // 空导出（0 行）必须 Fail。
-        let empty = directory.path().join("empty.csv");
-        std::fs::write(&empty, b"").expect("write empty csv");
-        let empty_probe = super::csv_output_probe(&empty).await.expect("empty probe");
-        let empty_report = super::validate_office_csv_output(
-            &input_probe,
-            &empty_probe,
-            &plan,
-            uuid::Uuid::new_v4(),
+        assert_eq!(super::sanitize_sheet_suffix("电压表"), "-电压表");
+        assert_eq!(super::sanitize_sheet_suffix("___"), "-___");
+        assert_eq!(super::sanitize_sheet_suffix(""), "");
+        let long = "x".repeat(80);
+        assert_eq!(
+            super::sanitize_sheet_suffix(&long).chars().count(),
+            1 + 32,
+            "suffix is capped at 32 characters plus the dash"
         );
-        assert_eq!(empty_report.status, crate::domain::ValidationStatus::Fail);
     }
 
     fn engine(id: &str) -> EngineIdentity {

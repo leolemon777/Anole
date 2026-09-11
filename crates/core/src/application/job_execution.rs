@@ -327,20 +327,41 @@ impl JobExecutionService {
                             workers.spawn(async move {
                                 #[cfg(test)]
                                 run_worker_test_hook(&prepared.plan).await;
-                                let result = execute_plan_observed(
-                                    &prepared.probe,
+                                // 链式 job（constraints 带 chain 元数据）：整链走
+                                // execute_conversion_chain，每段独立 prepare/验收；
+                                // 单段 job 维持原执行路径。
+                                let result = match crate::chain::chain_execution_from_plan(
                                     &prepared.plan,
-                                    &prepared.validation_engine,
-                                    prepared.job_id,
-                                    worker_cancellation,
-                                    |milestone| {
-                                        if milestone == ExecutionMilestone::EngineFinished {
-                                            let _ = worker_milestones.send(prepared.job_id);
-                                        }
-                                        Ok(())
-                                    },
-                                )
-                                .await;
+                                    &prepared.probe.artifact.canonical_path,
+                                ) {
+                                    None => {
+                                        execute_plan_observed(
+                                            &prepared.probe,
+                                            &prepared.plan,
+                                            &prepared.validation_engine,
+                                            prepared.job_id,
+                                            worker_cancellation,
+                                            |milestone| {
+                                                if milestone == ExecutionMilestone::EngineFinished {
+                                                    let _ = worker_milestones.send(prepared.job_id);
+                                                }
+                                                Ok(())
+                                            },
+                                        )
+                                        .await
+                                    }
+                                    Some(Err(error)) => Err(error),
+                                    Some(Ok((chain, request))) => {
+                                        crate::chain::execute_conversion_chain(
+                                            &prepared.probe.artifact.canonical_path,
+                                            &request,
+                                            &chain,
+                                            prepared.job_id,
+                                            worker_cancellation,
+                                        )
+                                        .await
+                                    }
+                                };
                                 QueueWorkerOutcome {
                                     job_id: prepared.job_id,
                                     result,

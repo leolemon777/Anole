@@ -13,10 +13,116 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::capabilities::{normalize_target, required_engines, supported_targets};
-use crate::domain::PlanRequest;
+use crate::domain::{Plan, PlanRequest};
 use crate::error::{AnoleError, ErrorCode, Result, Stage};
 use crate::runner::{ExecutionResult, execute_plan};
 use crate::workflow::prepare_conversion;
+
+/// plan.constraints 里链式元数据的键：hop 目标序列 + 原始请求快照。
+/// 用 constraints 而不是新增 Plan 字段，旧持久化 plan 天然兼容。
+pub(crate) const CHAIN_HOPS_KEY: &str = "chain";
+pub(crate) const CHAIN_REQUEST_KEY: &str = "chain_request";
+
+/// 队列侧（对桌面层公开）：把链元数据（hop 目标序列 + 原始请求快照）
+/// 写进 plan 的 constraints，并把 plan 的 `output_path` 指向最终输出
+/// （第一段的 steps 保持 preview 时的内容，供 UI 展示与审批审计）。
+///
+/// # Errors
+///
+/// 仅在原始请求无法序列化时失败（不应发生）。
+pub fn attach_chain_plan_metadata(
+    plan: &mut Plan,
+    request: &PlanRequest,
+    hop_targets: &[String],
+) -> Result<()> {
+    let request_json = serde_json::to_value(request).map_err(|error| {
+        AnoleError::new(
+            ErrorCode::Internal,
+            Stage::Plan,
+            "Unable to snapshot the chained conversion request",
+            "Retry the queue operation.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    plan.constraints.insert(
+        CHAIN_HOPS_KEY.to_owned(),
+        serde_json::Value::Array(
+            hop_targets
+                .iter()
+                .map(|target| serde_json::Value::String(target.clone()))
+                .collect(),
+        ),
+    );
+    plan.constraints
+        .insert(CHAIN_REQUEST_KEY.to_owned(), request_json);
+    plan.output_path.clone_from(&request.output_path);
+    Ok(())
+}
+
+/// 执行侧：从 plan 的 constraints 重建链与原始请求。非链式 plan 返回
+/// `None`（constraints 无 `chain` 键即普通单段 job）。
+pub(crate) fn chain_execution_from_plan(
+    plan: &Plan,
+    input: &Path,
+) -> Option<Result<(ConversionChain, PlanRequest)>> {
+    let hops_value = plan.constraints.get(CHAIN_HOPS_KEY)?.clone();
+    let Some(hop_targets) = hops_value.as_array().map(|values| {
+        values
+            .iter()
+            .filter_map(|value| value.as_str().map(str::to_owned))
+            .collect::<Vec<_>>()
+    }) else {
+        return Some(Err(AnoleError::new(
+            ErrorCode::Internal,
+            Stage::Plan,
+            "Chained plan carries a malformed hop list",
+            "Re-queue the conversion.",
+        )));
+    };
+    let input_format = input
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let Some(chain) = ConversionChain::from_hop_targets(&input_format, &hop_targets) else {
+        return Some(Err(AnoleError::new(
+            ErrorCode::Internal,
+            Stage::Plan,
+            "Chained plan carries an empty hop list",
+            "Re-queue the conversion.",
+        )));
+    };
+    let mut request = match plan.constraints.get(CHAIN_REQUEST_KEY) {
+        Some(snapshot) => match serde_json::from_value::<PlanRequest>(snapshot.clone()) {
+            Ok(request) => request,
+            Err(error) => {
+                return Some(Err(AnoleError::new(
+                    ErrorCode::Internal,
+                    Stage::Plan,
+                    "Chained plan carries an unreadable request snapshot",
+                    "Re-queue the conversion.",
+                )
+                .with_diagnostic(error.to_string())));
+            }
+        },
+        // 旧快照缺失时退化为最小请求：target/output 仍正确，quality 类
+        // knobs 取默认（诚实降级，不阻断执行）。
+        None => PlanRequest {
+            target_format: hop_targets
+                .last()
+                .cloned()
+                .unwrap_or_else(|| plan.target_format.clone()),
+            output_path: plan.output_path.clone(),
+            ..PlanRequest::default()
+        },
+    };
+    request.target_format = hop_targets
+        .last()
+        .cloned()
+        .unwrap_or_else(|| request.target_format.clone());
+    request.output_path.clone_from(&plan.output_path);
+    Some(Ok((chain, request)))
+}
 
 /// 链式搜索的深度上限：一段直接路由 + 至多一段中间格式。
 const MAX_CHAIN_DEPTH: usize = 2;
@@ -69,6 +175,37 @@ impl ConversionChain {
             [only] => format!("{} -> {}", only.from, only.to),
             _ => "empty conversion chain".to_owned(),
         }
+    }
+
+    /// 从 hop 目标序列重建链（与 `find_conversion_chain` 的 hop.to 顺序一致）。
+    /// 队列侧把链目标序列存进 plan 的 constraints，执行期由此重建。
+    /// `input_format` 只用于链描述展示，不影响执行。
+    #[must_use]
+    pub fn from_hop_targets(input_format: &str, targets: &[String]) -> Option<Self> {
+        if targets.is_empty() {
+            return None;
+        }
+        let mut hops = Vec::with_capacity(targets.len());
+        for (index, to) in targets.iter().enumerate() {
+            let from = if index == 0 {
+                input_format.to_owned()
+            } else {
+                targets[index - 1].clone()
+            };
+            hops.push(ChainHop {
+                from: from.clone(),
+                to: to.clone(),
+                required_engines: required_engines(
+                    Some(if index == 0 {
+                        input_format
+                    } else {
+                        targets[index - 1].as_str()
+                    }),
+                    to,
+                ),
+            });
+        }
+        Some(Self { hops })
     }
 }
 

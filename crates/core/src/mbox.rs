@@ -1,6 +1,11 @@
 //! MBOX 邮箱聚合输入：解析拆分为逐封 EML，txt/html 直接聚合渲染，
 //! pdf 则逐封渲染→逐封 PDF→qpdf 合并，实现「整个邮箱导出一个 PDF」。
 //! 内置 `anole.mbox` 引擎；解析失败 fail-closed。
+//!
+//! 变体策略：带 `Content-Length` 头的文件按 mboxcl 精确切分（声明与
+//! 实际不符时拒绝）；无该头时无法区分 mboxrd/mboxo，保守按 mboxo
+//! 解析——`>From ` 行原样保留（漏转义只多一个 `>`，错误 unescape 会
+//! 删字符破坏正文），假设记录进 Probe 属性。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -31,13 +36,60 @@ pub struct MboxMail {
     pub email: ParsedEmail,
 }
 
-/// 按 mboxrd 语义拆分 MBOX：以行首 `From `（前面是文件头或空行）分界，
-/// 正文中的 `>From ` 系列回退一层转义。
+/// MBOX 存储变体：决定切分与 `>From ` 转义还原策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MboxVariant {
+    /// mboxcl：写入方附带 `Content-Length` 头（转义方案同 mboxrd），
+    /// 读取时优先按该头精确切分，并还原一层转义。
+    Cl,
+    /// mboxo：写入方投递时不转义 `>From `；读取时按正文原样保留。
+    O,
+    /// mboxrd：写入方转义 `>*From `；读取时还原一层转义。
+    Rd,
+}
+
+impl MboxVariant {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cl => "mboxcl",
+            Self::O => "mboxo",
+            Self::Rd => "mboxrd",
+        }
+    }
+
+    /// 该变体下是否把 `>From ` 开头的行还原一层转义。
+    fn unescapes(self) -> bool {
+        matches!(self, Self::Cl | Self::Rd)
+    }
+}
+
+/// 按行首 `From `（前面是文件头或空行）分界拆分 MBOX；变体自动检测：
+/// 任一封带 `Content-Length` 头 → mboxcl，否则保守按 mboxo。
 ///
 /// # Errors
 ///
-/// `InputInvalid`：空邮箱、超限（字节或封数）或任何一封解析失败。
+/// `InputInvalid`：空邮箱、超限（字节或封数）、变体切分校验失败
+/// （如 `Content-Length` 与实际正文不符）。
 pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
+    split_mbox_bytes_variant(bytes, None).map(|(_, messages)| messages)
+}
+
+/// 同 [`split_mbox_bytes`]，但可用 `requested` 显式声明变体；`None`
+/// 时自动检测。返回实际使用的变体供 Probe 记录（assumed variant）。
+///
+/// - mboxcl：优先用 `Content-Length` 精确切分邮件体（正文中的 `From `
+///   行属于正文）；无该头的邮件回退 From_ 启发式；读到的长度与实际
+///   不符时 fail-closed，不静默截断。
+/// - mboxo/mboxrd：From_ 启发式切分；前者不还原 `>From ` 转义（保守
+///   假设），后者还原一层。
+///
+/// # Errors
+///
+/// 同 [`split_mbox_bytes`]。
+pub fn split_mbox_bytes_variant(
+    bytes: &[u8],
+    requested: Option<MboxVariant>,
+) -> Result<(MboxVariant, Vec<Vec<u8>>)> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
         AnoleError::new(
             ErrorCode::InputInvalid,
@@ -47,46 +99,18 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         )
         .with_diagnostic(error.to_string())
     })?;
-    // Every mbox message starts with a "From " envelope line; a file that
-    // never has one is not an mbox (fail-closed instead of one fake mail).
-    if !text
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .is_some_and(|line| line.starts_with("From "))
-    {
-        return Err(AnoleError::new(
-            ErrorCode::InputInvalid,
-            Stage::Inspect,
-            "The file does not start with an mbox \"From \" envelope line",
-            "Choose a file in mbox/mboxrd format.",
-        ));
-    }
-    let mut messages: Vec<Vec<u8>> = Vec::new();
-    let mut current: Vec<String> = Vec::new();
-    let mut last_line_blank = true;
-    for line in text.lines() {
-        if last_line_blank && line.starts_with("From ") {
-            if !current.is_empty() {
-                messages.push(current.join("\r\n").into_bytes());
-            }
-            current = Vec::new();
-            last_line_blank = false;
-            continue;
-        }
-        // mboxrd：正文中的 ">>*From " 被发件方转义，还原一层。
-        let rendered = if let Some(rest) = line.strip_prefix('>')
-            && rest.starts_with("From ")
-        {
-            rest.to_owned()
-        } else {
-            line.to_owned()
-        };
-        last_line_blank = rendered.trim().is_empty();
-        current.push(rendered);
-    }
-    if !current.is_empty() {
-        messages.push(current.join("\r\n").into_bytes());
-    }
+    let (spans, saw_content_length) = split_into_spans(text)?;
+    // mboxrd 与 mboxo 无法从文件本身可靠区分：默认按 mboxo 保守解析，
+    // 漏转义（多一个 `>`）比错误 unescape（删字符）安全。
+    let variant = requested.unwrap_or(if saw_content_length {
+        MboxVariant::Cl
+    } else {
+        MboxVariant::O
+    });
+    let messages: Vec<Vec<u8>> = spans
+        .iter()
+        .map(|span| render_span(span, variant))
+        .collect();
     if messages.is_empty() {
         return Err(AnoleError::new(
             ErrorCode::InputInvalid,
@@ -106,7 +130,207 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
             "Split the mailbox before converting.",
         ));
     }
-    Ok(messages)
+    Ok((variant, messages))
+}
+
+/// 单封邮件的切分结果（不含 envelope `From_` 行）。
+enum MessageSpan<'a> {
+    /// From_ 启发式切出：整封行（头部 + 空 + 正文）。
+    Scanned { lines: Vec<&'a str> },
+    /// `Content-Length` 精确定位：头部行 + 正文字节段。
+    Measured { header: Vec<&'a str>, body: &'a str },
+}
+
+/// 行首字节偏移 + 剥掉 `\n`/`\r\n` 行尾的行文本。
+struct LineSpan<'a> {
+    start: usize,
+    text: &'a str,
+}
+
+fn split_line_spans(text: &str) -> Vec<LineSpan<'_>> {
+    let mut spans = Vec::new();
+    let mut start = 0;
+    for with_ending in text.split_inclusive('\n') {
+        let text = match with_ending.strip_suffix('\n') {
+            Some(line) => line.strip_suffix('\r').unwrap_or(line),
+            None => with_ending,
+        };
+        spans.push(LineSpan { start, text });
+        start += with_ending.len();
+    }
+    spans
+}
+
+/// 头部行里查找 `Content-Length`（头名大小写不敏感；无效值当作不存在）。
+fn content_length_of(header: &[&str]) -> Option<usize> {
+    header.iter().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// 逐封定位：有 `Content-Length` 的封按字节精切（并校验声明与实际相符），
+/// 否则回退「空行 + 行首 `From `」启发式。返回切分结果与是否见过
+/// `Content-Length` 头。
+///
+/// # Errors
+///
+/// `InputInvalid`：首行不是 `From_` envelope、`Content-Length` 超出
+/// 文件或与其后的正文/下一封 envelope 不符（fail-closed，不静默截断）。
+#[allow(clippy::too_many_lines)]
+fn split_into_spans(text: &str) -> Result<(Vec<MessageSpan<'_>>, bool)> {
+    let lines = split_line_spans(text);
+    let envelope_error = || {
+        AnoleError::new(
+            ErrorCode::InputInvalid,
+            Stage::Inspect,
+            "The file does not start with an mbox \"From \" envelope line",
+            "Choose a file in mbox/mboxo/mboxrd/mboxcl format.",
+        )
+    };
+    let Some(first) = lines.iter().position(|line| !line.text.trim().is_empty()) else {
+        return Err(envelope_error());
+    };
+    if !lines[first].text.starts_with("From ") {
+        return Err(envelope_error());
+    }
+    // 启发式切点：行首 `From ` 且前面是文件头或空行。
+    let starts: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(index, line)| {
+            line.text.starts_with("From ")
+                && (*index == 0 || lines[index - 1].text.trim().is_empty())
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let length_mismatch = |declared: usize| {
+        AnoleError::new(
+            ErrorCode::InputInvalid,
+            Stage::Inspect,
+            format!(
+                "A mail declares Content-Length {declared} bytes but the stored body does not match"
+            ),
+            "Re-export the mailbox or repair the Content-Length header.",
+        )
+    };
+    let mut spans = Vec::new();
+    let mut saw_content_length = false;
+    let mut hint = 0_usize;
+    let mut cursor = first;
+    loop {
+        while hint < starts.len() && starts[hint] <= cursor {
+            hint += 1;
+        }
+        let next_heuristic = starts.get(hint).copied();
+        let limit = next_heuristic.unwrap_or(lines.len());
+        let mut header_end = None;
+        let mut index = cursor + 1;
+        while index < limit {
+            if lines[index].text.trim().is_empty() {
+                header_end = Some(index);
+                break;
+            }
+            index += 1;
+        }
+        let declared = header_end
+            .map(|end| (cursor + 1..end).map(|j| lines[j].text).collect::<Vec<_>>())
+            .and_then(|header| content_length_of(&header));
+        if let (Some(end), Some(declared)) = (header_end, declared) {
+            // mboxcl：正文按声明字节数精切，其中的 `From ` 行属于正文。
+            saw_content_length = true;
+            let body_start_line = end + 1;
+            let body_start = if body_start_line < lines.len() {
+                lines[body_start_line].start
+            } else {
+                text.len()
+            };
+            let body_end = body_start + declared;
+            if body_end > text.len() {
+                return Err(length_mismatch(declared));
+            }
+            // 正文之后：第一个非空行必须是下一封的 envelope From_ 行
+            // （或到文件尾全空白），否则说明声明偏短截断了正文。
+            let mut offset = 0_usize;
+            let mut next_from: Option<usize> = None;
+            for segment in text[body_end..].split_inclusive('\n') {
+                if segment.trim().is_empty() {
+                    offset += segment.len();
+                    continue;
+                }
+                if !segment.trim_end_matches(['\n', '\r']).starts_with("From ") {
+                    return Err(length_mismatch(declared));
+                }
+                let target = body_end + offset;
+                let aligned = lines.partition_point(|line| line.start < target);
+                if aligned >= lines.len()
+                    || lines[aligned].start != target
+                    || !lines[aligned].text.starts_with("From ")
+                {
+                    return Err(length_mismatch(declared));
+                }
+                next_from = Some(aligned);
+                break;
+            }
+            spans.push(MessageSpan::Measured {
+                header: (cursor + 1..end).map(|j| lines[j].text).collect(),
+                body: &text[body_start..body_end],
+            });
+            match next_from {
+                Some(next) => cursor = next,
+                None => break,
+            }
+        } else {
+            // From_ 启发式（mboxo/mboxrd 共用切分）。
+            let mut collected = Vec::new();
+            for line in &lines[cursor + 1..limit] {
+                collected.push(line.text);
+            }
+            if collected.is_empty() {
+                break;
+            }
+            spans.push(MessageSpan::Scanned { lines: collected });
+            match next_heuristic {
+                Some(next) => cursor = next,
+                None => break,
+            }
+        }
+    }
+    Ok((spans, saw_content_length))
+}
+
+/// 按变体渲染一封邮件：行统一 `\r\n` 连接；mboxrd/mboxcl 把 `>From `
+/// 开头的行还原一层转义，mboxo 保留原样。
+fn render_span(span: &MessageSpan<'_>, variant: MboxVariant) -> Vec<u8> {
+    let unescape = variant.unescapes();
+    let lines: Vec<String> = match span {
+        MessageSpan::Scanned { lines } => lines
+            .iter()
+            .map(|line| unescape_from_line(line, unescape))
+            .collect(),
+        MessageSpan::Measured { header, body } => header
+            .iter()
+            .map(|line| unescape_from_line(line, unescape))
+            .chain(std::iter::once(String::new()))
+            .chain(body.lines().map(|line| unescape_from_line(line, unescape)))
+            .collect(),
+    };
+    lines.join("\r\n").into_bytes()
+}
+
+fn unescape_from_line(line: &str, enabled: bool) -> String {
+    if enabled
+        && let Some(rest) = line.strip_prefix('>')
+        && rest.starts_with("From ")
+    {
+        rest.to_owned()
+    } else {
+        line.to_owned()
+    }
 }
 
 /// 拆分并把每封解析为 [`ParsedEmail`]（任何一封失败即整体 fail-closed）。
@@ -115,6 +339,18 @@ pub fn split_mbox_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
 ///
 /// 同 [`split_mbox_bytes`]，外加逐封 EML 解析错误。
 pub fn parse_mbox_file(path: &Path) -> Result<Vec<MboxMail>> {
+    parse_mbox_file_variant(path, None).map(|(_, mails)| mails)
+}
+
+/// 同 [`parse_mbox_file`]，但可显式声明变体；返回实际使用的变体。
+///
+/// # Errors
+///
+/// 同 [`parse_mbox_file`]。
+pub fn parse_mbox_file_variant(
+    path: &Path,
+    requested: Option<MboxVariant>,
+) -> Result<(MboxVariant, Vec<MboxMail>)> {
     if let Ok(metadata) = std::fs::metadata(path)
         && metadata.len() > MAX_MBOX_BYTES
     {
@@ -134,13 +370,13 @@ pub fn parse_mbox_file(path: &Path) -> Result<Vec<MboxMail>> {
         )
         .with_diagnostic(error.to_string())
     })?;
-    split_mbox_bytes(&bytes)?
-        .into_iter()
-        .map(|eml_bytes| {
-            let email = eml::parse_eml_bytes(&eml_bytes)?;
-            Ok(MboxMail { eml_bytes, email })
-        })
-        .collect()
+    let (variant, messages) = split_mbox_bytes_variant(&bytes, requested)?;
+    let mut mails = Vec::with_capacity(messages.len());
+    for eml_bytes in messages {
+        let email = eml::parse_eml_bytes(&eml_bytes)?;
+        mails.push(MboxMail { eml_bytes, email });
+    }
+    Ok((variant, mails))
 }
 
 /// 构建 MBOX Probe：逐封聚合的属性挂在首条 stream 上（与 EML/MSG 同形）。
@@ -150,7 +386,7 @@ pub fn parse_mbox_file(path: &Path) -> Result<Vec<MboxMail>> {
 /// 返回读取/解析错误。
 pub async fn inspect_mbox(path: &Path) -> Result<Probe> {
     let artifact = identify_artifact(path).await?;
-    let mails = parse_mbox_file(path)?;
+    let (variant, mails) = parse_mbox_file_variant(path, None)?;
     Ok(Probe {
         schema_version: SCHEMA_VERSION,
         artifact,
@@ -158,7 +394,7 @@ pub async fn inspect_mbox(path: &Path) -> Result<Probe> {
             id: "mbox".to_owned(),
             kind: FormatKind::Document,
             mime_type: Some("application/mbox".to_owned()),
-            container: Some("mboxrd".to_owned()),
+            container: Some(variant.as_str().to_owned()),
             extension_matches: Some(true),
             confidence: 1.0,
         },
@@ -173,7 +409,7 @@ pub async fn inspect_mbox(path: &Path) -> Result<Probe> {
             frame_rate: None,
             sample_rate: None,
             channels: None,
-            properties: mbox_properties(&mails),
+            properties: mbox_properties(&mails, variant),
         }],
         metadata: BTreeMap::new(),
         warnings: Vec::new(),
@@ -187,7 +423,7 @@ pub async fn inspect_mbox(path: &Path) -> Result<Probe> {
     })
 }
 
-fn mbox_properties(mails: &[MboxMail]) -> BTreeMap<String, Value> {
+fn mbox_properties(mails: &[MboxMail], variant: MboxVariant) -> BTreeMap<String, Value> {
     let concatenated = mails
         .iter()
         .map(|mail| mail.email.visible_text())
@@ -202,6 +438,17 @@ fn mbox_properties(mails: &[MboxMail]) -> BTreeMap<String, Value> {
     });
     let mut properties = BTreeMap::new();
     properties.insert("mail_count".to_owned(), json!(mails.len()));
+    // 诚实披露变体判定依据：mboxcl 由 Content-Length 头检测，其余是
+    // 保守假设（mboxrd/mboxo 无法从文件本身区分）。
+    properties.insert("mbox_variant".to_owned(), json!(variant.as_str()));
+    properties.insert(
+        "variant_basis".to_owned(),
+        json!(if variant == MboxVariant::Cl {
+            "content-length-header"
+        } else {
+            "assumed"
+        }),
+    );
     if let Some(first) = mails.first()
         && let Some(value) = &first.email.subject
     {
@@ -262,7 +509,7 @@ pub fn plan_mbox_export(
             ErrorCode::Unsupported,
             Stage::Plan,
             "MBOX export input must be an mbox mailbox",
-            "Choose a file in mbox/mboxrd format.",
+            "Choose a file in mbox/mboxo/mboxrd/mboxcl format.",
         ));
     }
     if !matches!(target.as_str(), "txt" | "html" | "pdf" | "md") {
@@ -880,7 +1127,7 @@ fn write_error(error: &std::io::Error) -> AnoleError {
 mod tests {
     use tempfile::TempDir;
 
-    use super::{MBOX_ENGINE_ID, split_mbox_bytes};
+    use super::{MBOX_ENGINE_ID, MboxVariant, split_mbox_bytes, split_mbox_bytes_variant};
 
     const THREE_MAILS: &str = "From alice@example.org Fri Sep  4 10:00:00 2026\r
 From: Alice <alice@example.org>\r
@@ -925,12 +1172,105 @@ Content-Type: text/html\r
     }
 
     #[test]
-    fn splits_three_mails_and_unescapes_mboxrd() {
-        let messages = split_mbox_bytes(THREE_MAILS.as_bytes()).expect("split");
+    fn splits_three_mails_and_keeps_quoted_from_lines_by_default() {
+        let (variant, messages) =
+            split_mbox_bytes_variant(THREE_MAILS.as_bytes(), None).expect("split");
         assert_eq!(messages.len(), 3);
+        // 无 Content-Length 时无法区分 mboxrd/mboxo：保守假设 mboxo，
+        // `>From ` 行按正文原样保留（漏转义比错误 unescape 安全）。
+        assert_eq!(variant, MboxVariant::O);
+        let first = String::from_utf8(messages[0].clone()).expect("utf8");
+        assert!(first.contains(">From the escaped line stays."));
+    }
+
+    #[test]
+    fn explicit_mboxrd_variant_unescapes_one_level() {
+        let (_, messages) =
+            split_mbox_bytes_variant(THREE_MAILS.as_bytes(), Some(MboxVariant::Rd)).expect("split");
         let first = String::from_utf8(messages[0].clone()).expect("utf8");
         assert!(first.contains("From the escaped line stays."));
         assert!(!first.contains(">From the escaped line stays."));
+    }
+
+    #[test]
+    fn mboxcl_content_length_keeps_from_lines_in_body() {
+        // 正文里含「空行 + From_ 行」（启发式会误切），由 Content-Length
+        // 精确保护；第二封无该头，回退 From_ 启发式。
+        let body_one = "CL body one MAILCL1TOKEN\r
+\r
+From forged@example.org Thu Sep  3 10:00:00 2026\r
+CL body continues 中文 MAILCL1B\r
+";
+        let mailbox = format!(
+            "From alice@example.org Thu Sep  3 09:00:00 2026\r
+From: Alice <alice@example.org>\r
+Subject: CL one 440010147700\r
+Content-Length: {}\r
+\r
+{}From bob@example.org Fri Sep  4 11:00:00 2026\r
+From: Bob <bob@example.org>\r
+Subject: =?UTF-8?B?56ys5LqM5bCB?= MAILCL2\r
+\r
+CL body two MAILCL2TOKEN.\r
+",
+            body_one.len(),
+            body_one
+        );
+        let (variant, messages) =
+            split_mbox_bytes_variant(mailbox.as_bytes(), None).expect("split");
+        assert_eq!(variant, MboxVariant::Cl);
+        assert_eq!(
+            messages.len(),
+            2,
+            "Content-Length must override the From_ heuristic"
+        );
+        let first = String::from_utf8(messages[0].clone()).expect("utf8");
+        assert!(first.contains("From forged@example.org"));
+        assert!(first.contains("CL body continues"));
+        let second = crate::eml::parse_eml_bytes(&messages[1]).expect("parse");
+        assert_eq!(second.subject.as_deref(), Some("第二封 MAILCL2"));
+    }
+
+    #[test]
+    fn mboxcl_content_length_mismatch_fails_closed() {
+        let body = "0123456789abcdefghijklmnopqrstuvwxyz\r\nstill more body\r\n";
+        // 声明偏短：正文残留不是 From_ 行 → 拒绝，不静默截断。
+        let short = format!(
+            "From alice@example.org Thu Sep  3 09:00:00 2026\r
+Content-Length: 30\r
+\r
+{body}"
+        );
+        let error = split_mbox_bytes(short.as_bytes()).expect_err("short Content-Length");
+        assert_eq!(error.code, crate::ErrorCode::InputInvalid);
+        // 声明超出文件：同样拒绝。
+        let over = format!(
+            "From alice@example.org Thu Sep  3 09:00:00 2026\r
+Content-Length: {}\r
+\r
+{body}",
+            body.len() + 512
+        );
+        let error = split_mbox_bytes(over.as_bytes()).expect_err("overlong Content-Length");
+        assert_eq!(error.code, crate::ErrorCode::InputInvalid);
+    }
+
+    #[test]
+    fn mboxo_quoted_from_lines_stay_verbatim() {
+        let mailbox = "From alice@example.org Thu Sep  3 09:00:00 2026\r
+From: Alice <alice@example.org>\r
+Subject: =?UTF-8?B?5rWL6K+V6YKu5Lu2?= MBOXOTOKEN\r
+\r
+Hello 中文正文 MBOXO1.\r
+>From the quoted line stays verbatim.\r
+";
+        let (variant, messages) =
+            split_mbox_bytes_variant(mailbox.as_bytes(), None).expect("split");
+        assert_eq!(variant, MboxVariant::O);
+        let first = String::from_utf8(messages[0].clone()).expect("utf8");
+        assert!(first.contains(">From the quoted line stays verbatim."));
+        let parsed = crate::eml::parse_eml_bytes(&messages[0]).expect("parse");
+        assert_eq!(parsed.subject.as_deref(), Some("测试邮件 MBOXOTOKEN"));
     }
 
     #[test]
@@ -986,6 +1326,65 @@ solo body\r
                 assert!(!text.contains("<script>"), "scripts stripped");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn mboxcl_txt_export_keeps_every_mail_separator() {
+        let directory = TempDir::new().expect("tempdir");
+        let body_one = "CL body one MAILCL1TOKEN\r\n\r\nFrom forged@example.org Thu Sep  3 10:00:00 2026\r\nCL body continues\r\n";
+        let mailbox = format!(
+            "From alice@example.org Thu Sep  3 09:00:00 2026\r
+From: Alice <alice@example.org>\r
+Subject: CL one 440010147700\r
+Content-Length: {}\r
+\r
+{}From bob@example.org Fri Sep  4 11:00:00 2026\r
+From: Bob <bob@example.org>\r
+Subject: =?UTF-8?B?56ys5LqM5bCB?= MAILCL2\r
+\r
+CL body two MAILCL2TOKEN.\r
+",
+            body_one.len(),
+            body_one
+        );
+        let source = directory.path().join("cl.mbox");
+        std::fs::write(&source, mailbox).expect("write mbox");
+        let probe = super::inspect_mbox(&source).await.expect("probe");
+        assert_eq!(probe.format.container.as_deref(), Some("mboxcl"));
+        assert_eq!(
+            probe.streams[0].properties.get("mail_count"),
+            Some(&serde_json::json!(2))
+        );
+        assert_eq!(
+            probe.streams[0].properties.get("mbox_variant"),
+            Some(&serde_json::json!("mboxcl"))
+        );
+        assert_eq!(
+            probe.streams[0].properties.get("variant_basis"),
+            Some(&serde_json::json!("content-length-header"))
+        );
+        let plan = super::plan_mbox_export(
+            &probe,
+            directory.path().join("out.txt"),
+            &builtin_engine(),
+            &qpdf_engine(),
+            "txt",
+        )
+        .expect("plan");
+        let (path, report) = super::execute_mbox_export(
+            &probe,
+            &plan,
+            uuid::Uuid::new_v4(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("execute");
+        assert!(path.is_file());
+        assert_ne!(report.status, crate::domain::ValidationStatus::Fail);
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert!(text.contains("==== Anole Mail 1/2 ===="));
+        assert!(text.contains("==== Anole Mail 2/2 ===="));
+        assert!(text.contains("From forged@example.org"));
     }
 
     #[tokio::test]
