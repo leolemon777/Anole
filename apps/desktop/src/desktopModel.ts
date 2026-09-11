@@ -561,6 +561,7 @@ type ErrorCopy = {
   errorGenericPolicy: string;
   errorGenericInput: string;
   errorRevealFailed: string;
+  outputExistsRecovery: string;
 };
 
 function looksEnglish(text: string): boolean {
@@ -611,6 +612,15 @@ export function localizeDesktopError(error: DesktopError, copy: ErrorCopy): Loca
   }
   if (/file browser could not be opened/i.test(blob)) {
     return { title: heading, message: copy.errorRevealFailed };
+  }
+
+  // 输出冲突的后端 recovery 是英文原文，换成面向用户的中文固定文案。
+  if (code === "OUTPUT_CONFLICT") {
+    return {
+      title: heading,
+      message: copy.outputExists,
+      recovery: copy.outputExistsRecovery,
+    };
   }
 
   const byCode = fallbackMessageForCode(code, copy);

@@ -839,6 +839,15 @@ label.wide,
   align-items: start;
 }
 
+/* ::before 的"！"圆点占据第一列；所有文本子元素显式钉在第二列，
+   否则第三个子元素（消息 span）会掉回 42px 窄列，长中文逐字竖排。 */
+.error-banner > strong,
+.error-banner > span,
+.error-banner > small {
+  grid-column: 2;
+  min-width: 0;
+}
+
 .error-banner::before {
   content: "!";
   width: 42px;
@@ -900,6 +909,13 @@ label.wide,
   color: var(--color-ink);
   background: var(--color-surface-peach);
   border-color: var(--color-peach-border-strong);
+}
+
+/* 黄色预警（非阻断）：如保存位置已存在，提前于提交失败前告知。 */
+.capability-warn {
+  color: var(--color-ink);
+  background: var(--color-surface-sun, #fdf3dc);
+  border-color: var(--color-sun-border, #e2c069);
 }
 
 .restore-confirm {

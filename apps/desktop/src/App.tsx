@@ -29,6 +29,7 @@ import {
   progressForJob,
   recommendedTargets,
   resolvePendingCapabilityTarget,
+  suggestedConvertedName,
   suggestedOutput,
   targetOptionViews,
   type EmptyStateCardId,
@@ -411,6 +412,7 @@ export default function App() {
   const [reportBusy, setReportBusy] = useState<"report" | "recipe" | "reveal" | "revalidate" | null>(null);
   const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [outputPreview, setOutputPreview] = useState<string | null>(null);
+  const [outputPathExists, setOutputPathExists] = useState(false);
   const [redactReportPaths, setRedactReportPaths] = useState(true);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
@@ -464,6 +466,7 @@ export default function App() {
   const jobRefreshSequence = useRef(0);
   const mounted = useRef(true);
   const pendingShellConvert = useRef<string | null>(null);
+  const suggestionSeq = useRef(0);
   const shellConvertRunning = useRef(false);
   const [probePdfRoutes, setProbePdfRoutes] = useState<CapabilitySnapshot["routes"] | null>(null);
   const [probeVideoRoutes, setProbeVideoRoutes] = useState<CapabilitySnapshot["routes"] | null>(null);
@@ -684,8 +687,9 @@ export default function App() {
           pendingShellConvert.current = null;
         }
         if (decision.target) {
+          // 输出路径由触发入口（applyShellOpen）的去重建议负责，这里
+          // 不再用普通建议名覆盖它。
           setTarget(decision.target);
-          setOutputPath(suggestedOutput(inputPath, decision.target));
         }
       })
       .catch((reason) => {
@@ -698,6 +702,27 @@ export default function App() {
       current = false;
     };
   }, [inputPath]);
+
+  // "保存位置已存在"预警：每次输出路径变化都探测一次，把提交期的
+  // OUTPUT_CONFLICT 拒绝提前成可见的黄色提示。
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    if (!outputPath) {
+      setOutputPathExists(false);
+      return;
+    }
+    let current = true;
+    void invoke<boolean>("desktop_path_exists", { path: outputPath })
+      .then((exists) => {
+        if (current) setOutputPathExists(exists);
+      })
+      .catch(() => {
+        if (current) setOutputPathExists(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [outputPath]);
 
   function applyDefaultPlanConstraints(nextTarget: string) {
     const defaults = defaultPlanConstraints(nextTarget);
@@ -736,7 +761,7 @@ export default function App() {
       if (shellOpen.convert_to) {
         applyDefaultPlanConstraints(shellOpen.convert_to);
         setTarget(shellOpen.convert_to);
-        setOutputPath(suggestedOutput(shellOpen.path, shellOpen.convert_to));
+        suggestAndSetOutput(shellOpen.path, shellOpen.convert_to);
         pendingShellConvert.current = shellOpen.convert_to;
       } else {
         pendingShellConvert.current = null;
@@ -784,12 +809,56 @@ export default function App() {
     }
   }
 
+  // 建议输出路径 + 文件系统去重：确定性建议名（X.converted.<target> /
+  // 分页目录）与上一次转换的产物相同时，直接给出第一个空闲名，把
+  // "目标已存在" 冲突从提交失败提前到建议阶段。suggestionSeq 防止
+  // 快速连续切换目标时的乱序回写。
+  function suggestAndSetOutput(input: string, target: string) {
+    if (!input || !target) {
+      suggestionSeq.current += 1;
+      setOutputPath("");
+      return;
+    }
+    const seq = (suggestionSeq.current += 1);
+    void suggestOutputPath(input, target).then((path) => {
+      if (suggestionSeq.current === seq) setOutputPath(path);
+    });
+  }
+
+  async function suggestOutputPath(input: string, target: string): Promise<string> {
+    if (!input || !target) return "";
+    const reserved: string[] = [];
+    let candidate = suggestedOutput(input, target);
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      let exists = false;
+      try {
+        exists = await invoke<boolean>("desktop_path_exists", { path: candidate });
+      } catch {
+        return candidate;
+      }
+      if (!exists) return candidate;
+      reserved.push(candidate);
+      candidate = suggestedConvertedName(input, target, reserved);
+    }
+    return candidate;
+  }
+
   function changeTarget(next: string) {
     pendingShellConvert.current = null;
     setTarget(next);
-    setOutputPath(suggestedOutput(inputPath, next));
     setPreview(null);
     setFolderPreview(null);
+    if (!inputPath || !next) {
+      suggestionSeq.current += 1;
+      setOutputPath("");
+      return;
+    }
+    const previousSuggestion = suggestedOutput(inputPath, target);
+    if (outputPath && outputPath !== previousSuggestion) {
+      // 用户手动改过输出路径：不覆盖，交给"已存在"预警提示。
+      return;
+    }
+    suggestAndSetOutput(inputPath, next);
   }
 
   async function chooseInput() {
@@ -822,7 +891,7 @@ export default function App() {
       setConvertMode("file");
       applyDefaultPlanConstraints(spec.target);
       setTarget(spec.target);
-      setOutputPath(suggestedOutput(selected, spec.target));
+      setOutputPath(await suggestOutputPath(selected, spec.target));
     } catch (reason) {
       setError(parseDesktopError(reason));
     }
@@ -1055,7 +1124,7 @@ export default function App() {
     if (effectiveFirst) {
       setInputPath(effectiveFirst);
       setTarget(batch.target);
-      setOutputPath(suggestedOutput(effectiveFirst, batch.target));
+      suggestAndSetOutput(effectiveFirst, batch.target);
       setConvertMode("file");
       setTab("convert");
     }
@@ -1489,7 +1558,7 @@ export default function App() {
       preset.audio_bitrate_kbps == null ? "" : String(preset.audio_bitrate_kbps),
     );
     setPreserveAllStreams(preset.preserve_all_streams);
-    setOutputPath(suggestedOutput(inputPath, preset.target_format));
+    suggestAndSetOutput(inputPath, preset.target_format);
     setPreview(null);
     setReport(null);
     setTab(destination);
@@ -1834,6 +1903,7 @@ export default function App() {
             <strong>{localized.title}</strong>
             <span>{localized.message}</span>
             {localized.recovery && <small>{localized.recovery}</small>}
+            {inputPath && <small className="error-context">{copy.errorContext.replace("{input}", inputPath).replace("{target}", target || "—")}</small>}
           </section>
         );
       })()}
@@ -1923,6 +1993,7 @@ export default function App() {
               {expert && <label className="checkbox-control"><input type="checkbox" checked={preserveAllStreams} onChange={(event) => { setPreserveAllStreams(event.target.checked); setPreview(null); }} />{copy.preserveAllStreams}</label>}
             </div>
 
+            {convertMode === "file" && outputPathExists && <p className="capability-notice capability-warn" role="status">{copy.outputPathExistsWarning}</p>}
             {inputPath && (capabilityBusy ? <p className="capability-notice" role="status">{copy.capabilityLoading}</p> : route && !route.available ? <p className="capability-notice capability-blocked" role="status"><strong>{copy.routeUnavailable}</strong> {basicModeFailureCopy(inputPath, { code: route.missing_engines.length > 0 ? "ENGINE_MISSING" : "UNSUPPORTED", message: "" }, route.missing_engines, { oldExcel: copy.oldExcel, unsupported: copy.pairUnsupported, engineMissing: copy.engineMissingPack, outputConflict: copy.outputExists, policyBlocked: copy.policyBlocked })}</p> : capabilities && !Object.values(capabilities.routes).some((candidate) => candidate.available) ? <p className="capability-notice capability-blocked" role="status">{["xls", "xlsm", "xlsb"].includes(inputPath.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "") ? copy.oldExcel : inputHasRunnableFamily(capabilities.routes) ? copy.noAvailableTargets : copy.inputNotSupported}</p> : null)}
 
             <div className="preset-row" aria-label="Presets">

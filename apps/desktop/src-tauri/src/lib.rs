@@ -462,6 +462,13 @@ async fn desktop_doctor() -> DoctorReport {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // tauri commands deserialize owned args
+fn desktop_path_exists(path: PathBuf) -> bool {
+    // 前端输出建议去重与"保存位置已存在"预警的存在性探测（一次 stat）。
+    path.exists()
+}
+
+#[tauri::command]
 async fn desktop_capability_snapshot(input_path: PathBuf) -> CapabilitySnapshot {
     let mut snapshot =
         capability_snapshot_for_input(&input_path, EngineDiscoveryPolicy::for_current_build())
@@ -3399,6 +3406,7 @@ pub fn run() {
             run_queue_bridge_benchmark,
             desktop_doctor,
             desktop_capability_snapshot,
+            desktop_path_exists,
             import_desktop_engine_pack,
             list_imported_engine_packs,
             preview_conversion,

@@ -94,6 +94,23 @@ describe("desktop workflow model", () => {
     expect(localized.message).not.toMatch(/Folder batch/);
   });
 
+  it("translates the output-conflict rejection and its recovery into Chinese", () => {
+    const localized = localizeDesktopError(
+      parseDesktopError(JSON.stringify({
+        code: "OUTPUT_CONFLICT",
+        stage: "commit",
+        message: "Output already exists: C:\out\budget.converted-png-pages",
+        recovery: "Choose another output path or an explicit conflict policy.",
+      })),
+      messages["zh-CN"],
+    );
+    expect(localized.title).toBe("目标已存在 · 提交");
+    expect(localized.message).toBe(messages["zh-CN"].outputExists);
+    expect(localized.recovery).toBe(messages["zh-CN"].outputExistsRecovery);
+    expect(localized.message).not.toMatch(/Output already exists/);
+    expect(localized.recovery).not.toMatch(/Choose another/);
+  });
+
   it("translates an empty folder-route error into Chinese", () => {
     const localized = localizeDesktopError(
       parseDesktopError(JSON.stringify({
