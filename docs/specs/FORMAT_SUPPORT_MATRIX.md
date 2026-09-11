@@ -68,6 +68,8 @@ GW-13 的 Markdown 导出波（2026-09-08）：直连覆盖 DOCX/HTML→md（Pan
 
 GW-14 的 XLSX 数据导出 + 桌面链暴露（2026-09-10，Leo "全部都要"）：xlsx→csv 直连路由（soffice `csv:Text - txt - csv (StarCalc)` filter 导出激活 sheet；多 sheet 丢弃、公式写为计算值在 plan 的 dropped/changed 如实声明；验收 OFFICE_CSV_OPENS/ROWS_PRESENT/FIELDS_PRESENT 为内置宽松 CSV 解析，无 Poppler 依赖；老 xls 仍不支持）。桌面 GUI 同步暴露 CLI 已有的两跳链：`desktop_capability_snapshot` 对无直达路线但链可达且链上引擎齐备的目标标记 available（message 注明 Two-step conversion），preview 对 Unsupported 目标回落到链（preview 显示第一段 plan + chain 提示），运行走新命令 `run_desktop_chained_conversion`（`execute_conversion_chain` 每段独立验收，approved_plan_hash 与第一段 plan hash 强校验，不进 job 队列——queue 对链目标诚实拒绝）。CLI/server 的 snapshot 语义不变。e2e：xlsx→csv 与链式 xlsx→jpg（经 PDF 分页目录）真引擎全 Pass。
 
+GW-15 同日升级（Leo "全部一起开始"）：xlsx→csv 引擎换为内置 `anole.office-csv`（calamine 0.36.1 纯 Rust）——**全工作表**导出为分页目录（`sheet-NN[-名称].csv`，Unicode 工作表名保留），引擎需求清零（无 LibreOffice 也可用），验收加 OFFICE_CSV_SHEET_COUNT（sheet 数守恒）；soffice 版仅存活数小时即被替换。链式补全：入队（plan.constraints 携带链元数据 + 请求快照，队列 worker 重建整链惰性执行）、立即链式运行的取消与合成 job 事件（运行态/取消按钮照常）。mbox 家族支持 mboxcl（Content-Length 字节精切，不符即拒）与 mboxo（保守假设不 unescape，probe 记录 variant）。Web 轨道 W1：`/v1/uploads*` + `/v1/jobs*` 上传-转换-下载流（50MB 上限、TTL 清扫、每 IP 单活跃作业、路径注入剥离、分页输出懒 zip）+ `apps/web` SPA + 三阶段 Dockerfile。
+
 ## 5. MP4 planning baseline
 
 Dynamic engine inspection remains authoritative, but the first planner fixture uses:

@@ -1373,3 +1373,85 @@ Desktop restarted via the fixed `launch-desktop-gw13.bat` (full
 engine set). Lesson recorded for future sessions: always launch the
 debug exe through a launcher that sets `ANOLE_ENGINE_*`, or xlsx/pdf
 routes show missing-engine even though the build is fine.
+
+## 2026-09-10 — GW-15 "全部一起开始": chained queue/cancel, calamine all-sheets CSV, web track W1, mbox variants
+
+Leo ordered every remaining engineering track started at once. Five
+tracks, two run by background subagents (per the standing partition:
+agents never commit; main line integrated + verified everything).
+
+### 1. Chained conversions completed (queue + cancel + progress)
+- Queue: `queue_desktop_conversion` now builds chained jobs — the
+  first-hop Plan (same path rule as preview, approved-hash checked
+  BEFORE metadata) gets `constraints["chain"]` (hop targets) +
+  `constraints["chain_request"]` (full PlanRequest snapshot via serde),
+  and `output_path` repointed at the final output. The queue worker
+  (`job_execution.rs`) reconstructs the chain via
+  `ConversionChain::from_hop_targets` + `chain_execution_from_plan` and
+  runs `execute_conversion_chain` (per-hop prepare/validate). Chosen
+  over a new `Plan` field: 49 construction sites untouched, persisted
+  plan JSON stays backward compatible.
+- Immediate chained runs now register a cancellation token and emit
+  synthetic `job-updated`/`job-progress` events (Running →
+  Completed/Warning/Failed/Cancelled by report status), so the frontend
+  cancel button and run state work unchanged. Frontend re-enabled the
+  queue button and cancel button for chained previews.
+
+### 2. xlsx→csv rebuilt on calamine (all worksheets, built-in engine)
+- The morning's soffice active-sheet lane was replaced the same day by
+  built-in `anole.office-csv` (calamine 0.36.1, pure Rust): EVERY
+  worksheet exports as `sheet-NN[-name].csv` into a paged output
+  directory (pdf→png precedent); formulas export cached values; the
+  engine requirement list is now EMPTY (works without LibreOffice —
+  verified e2e with all ANOLE_ENGINE_* unset, two-sheet openpyxl
+  fixture, Chinese sheet names preserved via Unicode-alphanumeric
+  sanitize). Validation: OFFICE_CSV_OPENS (per-file lenient parse) +
+  OFFICE_CSV_SHEET_COUNT (workbook sheet count == produced files) +
+  OFFICE_CSV_ROWS_PRESENT. Frontend `isDirectoryOutput` extended
+  (xlsx→csv is a directory; suggested name `.converted-csv-sheets`).
+
+### 3. Web track W1 (subagent + main-line integration)
+- `crates/server/src/web.rs` (~1200 lines): POST /v1/uploads
+  (multipart, 50MB stream cap, extension whitelist), per-upload
+  capabilities/plan (path fields stripped), POST /v1/jobs (202, per-IP
+  single active job via X-Forwarded-For/X-Real-Ip — ConnectInfo
+  replaced because proxies front Render/HF and axum 0.8 Option<
+  ConnectInfo> extractor failed), job polling, streamed download with
+  lazy zip for paged outputs, TTL sweeper, SPA static hosting with
+  traversal-safe paths (Windows RootDir quirk fixed in
+  safe_relative_path).
+- `apps/web` new @anole/web Vite+React SPA (upload → explicit target
+  pick per the no-auto-target rule → convert → poll → download);
+  pnpm lockfile updated (all deps reuse desktop's versions, zero new
+  downloads); tsc + vite build pass.
+- Dockerfile (3-stage, ENGINE_PACK=lite|full) + .dockerignore added.
+- Main line fixed 6 compile errors, 2 real bugs (RESERVED list ate
+  upload_id; root-path 404) and ~30 clippy findings in the subagent's
+  unverified code; server tests now 13 old + 11 web = 24 green.
+
+### 4. mboxcl / mboxo variants (subagent, mbox.rs only)
+- mboxcl: Content-Length byte-exact segmenting with fail-closed
+  mismatch handling + heuristic fallback for headerless mails; mboxo:
+  assumed by default (no unescape — missed escaping beats corrupted
+  bodies), variant recorded in probe properties. 11 mbox tests green
+  (first authoritative-repo run after calamine landed).
+
+### 5. Debt triage (evaluated, not blindly "fixed")
+- chain staging in crash-recovery: ALREADY covered —
+  `staged_output_candidates` includes `.fw-chain-{job_id}`; memory was
+  stale. Closed.
+- encrypted queue resume after restart: by design — passwords live in
+  the execution-only secret store keyed by plan_id, never serialized;
+  resume already fails honestly (PolicyBlocked + "re-enter the
+  password"). Persisting passwords would violate the security stance.
+  Won't fix, documented.
+- sevenz-rust swap: no maintained pure-Rust 7z alternative exists
+  (libarchive needs C); RUSTSEC exemptions stand until Certified.
+- CR3 fixture: needs a real Canon camera file; synthetic generation
+  would be self-deceptive. Awaiting hardware/sample.
+
+Verification: workspace clippy 0 warnings, fmt clean, workspace tests
+no-fail-fast (baseline: 4 known Windows symlink-reparse failures only),
+desktop 43/43, server 24/24, frontend 29/29, web SPA tsc+build, e2e:
+two-sheet xlsx→csv zero-engine Pass. Desktop exe rebuild + relaunch
+pending at commit time (noted below if deferred).
