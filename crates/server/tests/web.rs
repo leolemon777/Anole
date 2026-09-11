@@ -147,14 +147,16 @@ async fn upload_fixture(router: &Router, content: &[u8]) -> String {
 }
 
 async fn wait_for_terminal_job(router: &Router, job_id: &str) -> serde_json::Value {
-    for _ in 0..250 {
+    // 转换本身是毫秒级内置引擎，但 CI 单核 runner 上并行测试会抢占
+    // 调度；窗口放宽到 30s（仍远小于 120s 转换超时，足够暴露真死锁）。
+    for _ in 0..240 {
         let (status, body) = get_json(router, &format!("/v1/jobs/{job_id}")).await;
         assert_eq!(status, StatusCode::OK, "body: {body}");
         let state = body["state"].as_str().unwrap_or_default();
         if state == "succeeded" || state == "failed" {
             return body;
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(125)).await;
     }
     panic!("job {job_id} did not reach a terminal state in time");
 }
