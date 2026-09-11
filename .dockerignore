@@ -1,0 +1,15 @@
+target/
+node_modules/
+**/node_modules/
+**/dist/
+test-corpus/
+plastic-fly-*/
+.zcode/
+.git/
+dist/
+branding/
+website/
+docs/
+*.md
+Cargo.lock.bak
+clippy-out.txt

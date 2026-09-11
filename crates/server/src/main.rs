@@ -24,20 +24,30 @@ async fn serve() -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to bind {bind}: {error}"))?;
     let state = AppState::new(default_state_db());
+    // Web track: hard-delete expired uploads/outputs once a minute.
+    anole_server::web::spawn_ttl_sweeper(state.web().clone());
     let app = build_router(state);
     println!("anole-server listening on http://{bind}");
-    axum::serve(listener, app)
-        .await
-        .map_err(|error| format!("server error: {error}"))
+    // ConnectInfo powers the web track's per-IP admission checks.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(|error| format!("server error: {error}"))
 }
 
 /// Parses an optional `--bind <addr>` flag; defaults to loopback only.
+/// Container platforms (Render/HF Spaces) expose `PORT` instead, which
+/// widens the default bind to all interfaces when set.
 fn parse_bind_address<I>(args: I) -> Result<SocketAddr, String>
 where
     I: Iterator<Item = String>,
 {
-    const DEFAULT_BIND: &str = "127.0.0.1:8787";
-    let mut bind = DEFAULT_BIND.to_owned();
+    let mut bind = match std::env::var("PORT") {
+        Ok(port) if !port.trim().is_empty() => format!("0.0.0.0:{}", port.trim()),
+        _ => "127.0.0.1:8787".to_owned(),
+    };
     let mut iter = args.peekable();
     while let Some(arg) = iter.next() {
         match arg.as_str() {

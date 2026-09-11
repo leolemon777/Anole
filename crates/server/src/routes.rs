@@ -21,18 +21,44 @@ use tokio_util::sync::CancellationToken;
 /// Maximum accepted request body size (1 MiB) for this local API.
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// Shared per-server state: the durable job-store database backing conversions.
+/// Shared per-server state: the durable job-store database backing conversions
+/// plus the web-track state (uploads, queued jobs, TTL sweep).
 #[derive(Clone, Debug)]
 pub struct AppState {
     state_db: PathBuf,
+    pub(crate) web: crate::web::WebState,
 }
 
 impl AppState {
     #[must_use]
     pub fn new(state_db: impl Into<PathBuf>) -> Self {
+        let state_db = state_db.into();
+        let web_root = state_db
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        Self {
+            web: crate::web::WebState::new(crate::web::WebConfig::from_env(&web_root)),
+            state_db,
+        }
+    }
+
+    /// Builds a state with an explicit web configuration (tests and embedders).
+    #[must_use]
+    pub fn with_web_config(state_db: impl Into<PathBuf>, web: crate::web::WebState) -> Self {
         Self {
             state_db: state_db.into(),
+            web,
         }
+    }
+
+    pub(crate) fn state_db(&self) -> &Path {
+        &self.state_db
+    }
+
+    pub fn web(&self) -> &crate::web::WebState {
+        &self.web
     }
 }
 
@@ -77,6 +103,27 @@ impl From<AnoleError> for ApiError {
     }
 }
 
+impl ApiError {
+    /// Overrides the HTTP status derived from the error code (used by the
+    /// web routes for 404/409 semantics that share the error schema).
+    pub(crate) fn with_status(mut self, status: StatusCode) -> Self {
+        self.status = status;
+        self
+    }
+
+    /// Serializes the error into the unified wire body shape.
+    pub(crate) fn into_json(self) -> serde_json::Value {
+        json!({
+            "code": self.code,
+            "stage": self.stage,
+            "message": self.message,
+            "action": self.action,
+            "retryable": self.retryable,
+            "diagnostic": self.diagnostic,
+        })
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = json!({
@@ -99,7 +146,7 @@ impl IntoResponse for ApiError {
 /// rejection here is remapped to `INPUT_INVALID` / stage `Inspect` (HTTP 400)
 /// so API clients only ever see one error schema.
 #[derive(Debug)]
-struct ValidJson<T>(T);
+pub struct ValidJson<T>(pub T);
 
 impl<S, T> FromRequest<S> for ValidJson<T>
 where
@@ -210,16 +257,53 @@ fn require_absolute_input(path: &Path) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Builds the full API router with the 1 MiB body limit applied.
+/// Builds the full API router with the 1 MiB body limit applied. Web-track
+/// routes (uploads/jobs/SPA) are registered alongside the existing local
+/// surface; the upload route raises the body limit to the configured cap
+/// (route-level layers override the router-wide default in axum).
 pub fn build_router(state: AppState) -> axum::Router {
     use axum::routing::{get, post};
 
-    axum::Router::new()
+    let upload_limit = state
+        .web()
+        .config()
+        .max_upload_bytes
+        .saturating_add(1024 * 1024);
+    let spa_enabled = state.web().config().static_dir.is_some();
+
+    let mut router = axum::Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .route("/v1/plan", post(plan))
         .route("/v1/convert", post(convert))
         .route("/v1/capabilities", get(capabilities))
+        // Web track (W1): browser uploads, plan preview per upload, queued
+        // conversions with polling, and result downloads.
+        .route(
+            "/v1/uploads",
+            post(crate::web::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(upload_limit)),
+        )
+        .route(
+            "/v1/uploads/{upload_id}/capabilities",
+            get(crate::web::upload_capabilities),
+        )
+        .route(
+            "/v1/uploads/{upload_id}/plan",
+            post(crate::web::upload_plan),
+        )
+        .route("/v1/jobs", post(crate::web::create_job))
+        .route("/v1/jobs/{job_id}", get(crate::web::get_job))
+        .route(
+            "/v1/jobs/{job_id}/download",
+            get(crate::web::download_job_output),
+        );
+    if spa_enabled {
+        // Same-origin SPA hosting (ANOLE_WEB_DIR): unknown page routes
+        // re-serve index.html while unknown API paths stay structured 404s.
+        router = router.fallback(get(crate::web::spa_fallback));
+    }
+    router
         // The demo page (website/demo.html) runs from file://; this is a
         // loopback-only local service, so a permissive CORS layer keeps the
         // browser from blocking the calls without any real exposure.
@@ -345,7 +429,7 @@ fn plan_response(probe: &Probe, plan: &Plan) -> Value {
     })
 }
 
-fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, ApiError> {
+pub(crate) fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, ApiError> {
     if let Some(parent) = database_path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -363,7 +447,7 @@ fn open_job_store(database_path: &Path) -> Result<SqliteJobStore, ApiError> {
     SqliteJobStore::open(database_path).map_err(ApiError::from)
 }
 
-fn default_reports_directory(database_path: &Path) -> PathBuf {
+pub(crate) fn default_reports_directory(database_path: &Path) -> PathBuf {
     database_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -491,6 +575,177 @@ pub fn openapi_document() -> Value {
                         "400": { "$ref": "#/components/responses/ApiError" }
                     }
                 }
+            },
+            "/v1/uploads": {
+                "post": {
+                    "summary": "Upload a browser file for web conversion (multipart field `file`)",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["file"],
+                                    "properties": {
+                                        "file": { "type": "string", "format": "binary" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Upload ticket (upload_id, file_name, size_bytes, expires_at)",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/UploadTicket" }
+                                }
+                            }
+                        },
+                        "400": { "$ref": "#/components/responses/ApiError" },
+                        "500": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
+            },
+            "/v1/uploads/{upload_id}/capabilities": {
+                "get": {
+                    "summary": "Capability snapshot for a live upload",
+                    "parameters": [
+                        {
+                            "name": "upload_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "type": "string" }
+                        }
+                    ],
+                    "responses": {
+                        "200": { "description": "CapabilitySnapshot for the uploaded input" },
+                        "404": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
+            },
+            "/v1/uploads/{upload_id}/plan": {
+                "post": {
+                    "summary": "Preview the Plan for a live upload without executing it",
+                    "parameters": [
+                        {
+                            "name": "upload_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "type": "string" }
+                        }
+                    ],
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WebPlanRequest" }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Probe and Plan (not executed); snake_case fields",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "probe": { "type": "object" },
+                                            "plan": { "type": "object" },
+                                            "plan_hash": { "type": "string" }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": { "$ref": "#/components/responses/ApiError" },
+                        "404": { "$ref": "#/components/responses/ApiError" },
+                        "422": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
+            },
+            "/v1/jobs": {
+                "post": {
+                    "summary": "Enqueue a web conversion for a live upload (202 Accepted)",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WebPlanRequest" }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "202": {
+                            "description": "Job accepted; poll poll_url until state is terminal",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "job_id": { "type": "string", "format": "uuid" },
+                                            "state": { "type": "string", "enum": ["queued"] },
+                                            "poll_url": { "type": "string" }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": { "$ref": "#/components/responses/ApiError" },
+                        "404": { "$ref": "#/components/responses/ApiError" },
+                        "422": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
+            },
+            "/v1/jobs/{job_id}": {
+                "get": {
+                    "summary": "Poll a web job (queued/running/succeeded/failed)",
+                    "parameters": [
+                        {
+                            "name": "job_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "type": "string", "format": "uuid" }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "WebJob status; succeeded jobs carry the ValidationReport and download_url",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/WebJob" }
+                                }
+                            }
+                        },
+                        "404": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
+            },
+            "/v1/jobs/{job_id}/download": {
+                "get": {
+                    "summary": "Download the converted artifact (paged directory outputs ship as zip)",
+                    "parameters": [
+                        {
+                            "name": "job_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "type": "string", "format": "uuid" }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Artifact stream (application/octet-stream)",
+                            "content": {
+                                "application/octet-stream": {
+                                    "schema": { "type": "string", "format": "binary" }
+                                }
+                            }
+                        },
+                        "404": { "$ref": "#/components/responses/ApiError" },
+                        "409": { "$ref": "#/components/responses/ApiError" }
+                    }
+                }
             }
         },
         "components": {
@@ -521,6 +776,48 @@ pub fn openapi_document() -> Value {
                         "status": { "type": "string" }
                     },
                     "additionalProperties": true
+                },
+                "UploadTicket": {
+                    "type": "object",
+                    "required": ["upload_id", "file_name", "size_bytes", "expires_at"],
+                    "properties": {
+                        "upload_id": { "type": "string" },
+                        "file_name": { "type": "string" },
+                        "size_bytes": { "type": "integer", "format": "int64" },
+                        "expires_at": { "type": "integer", "format": "int64", "description": "Unix seconds; unused uploads are hard-deleted at this TTL" },
+                        "ttl_secs": { "type": "integer" },
+                        "max_upload_bytes": { "type": "integer" }
+                    }
+                },
+                "WebPlanRequest": {
+                    "type": "object",
+                    "required": ["upload_id", "target_format"],
+                    "properties": {
+                        "upload_id": { "type": "string" },
+                        "target_format": { "type": "string" },
+                        "quality": { "type": "integer", "nullable": true },
+                        "width": { "type": "integer", "nullable": true },
+                        "dpi": { "type": "integer", "nullable": true }
+                    },
+                    "additionalProperties": true,
+                    "description": "upload_id plus the core PlanRequest snake_case fields; path fields are server-owned and rejected."
+                },
+                "WebJob": {
+                    "type": "object",
+                    "required": ["job_id", "state", "target_format"],
+                    "properties": {
+                        "job_id": { "type": "string", "format": "uuid" },
+                        "upload_id": { "type": "string" },
+                        "state": { "type": "string", "enum": ["queued", "running", "succeeded", "failed"] },
+                        "target_format": { "type": "string" },
+                        "created_at": { "type": "integer", "format": "int64" },
+                        "expires_at": { "type": "integer", "format": "int64" },
+                        "download_url": { "type": "string", "nullable": true },
+                        "download_name": { "type": "string", "nullable": true },
+                        "is_directory_output": { "type": "boolean" },
+                        "validation": { "$ref": "#/components/schemas/ValidationReport" },
+                        "error": { "$ref": "#/components/responses/ApiError" }
+                    }
                 }
             },
             "responses": {

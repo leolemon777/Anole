@@ -44,3 +44,5 @@ Desktop.ini
 *.p12
 *.key
 *.pem
+# TypeScript incremental build artifacts
+*.tsbuildinfo
