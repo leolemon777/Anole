@@ -66,6 +66,8 @@ GW-08 的引擎来源（2026-09-07，E-04）：可选 Document pack `anole-docum
 
 GW-13 的 Markdown 导出波（2026-09-08）：直连覆盖 DOCX/HTML→md（Pandoc，`--sandbox=true` + `resource_policy=deny-all`，HTML 输入含外部资源时 PolicyBlocked）、EML/MSG/MBOX→md（内置 Rust 适配器，`# 主题` + 加粗头字段 + 正文，邮件分隔标记与 txt/html 同构）、PDF→md（Poppler `pdftotext` 文本层提取，`loss_class=Lossy`——标题/表格/版式结构不保留，多栏阅读顺序为 Unknown）、图像 OCR→md（与 →txt 同一 Tesseract lane，识别文本装入 .md）。pptx/xlsx/odt/odp/rtf/svg 经 PDF 中转在 CLI 链式可达（`X→pdf→md`）。音频转录、YouTube、EXIF 元数据等 MarkItDown 式源明确不在范围（与本地优先/零网络定位冲突）。
 
+GW-14 的 XLSX 数据导出 + 桌面链暴露（2026-09-10，Leo "全部都要"）：xlsx→csv 直连路由（soffice `csv:Text - txt - csv (StarCalc)` filter 导出激活 sheet；多 sheet 丢弃、公式写为计算值在 plan 的 dropped/changed 如实声明；验收 OFFICE_CSV_OPENS/ROWS_PRESENT/FIELDS_PRESENT 为内置宽松 CSV 解析，无 Poppler 依赖；老 xls 仍不支持）。桌面 GUI 同步暴露 CLI 已有的两跳链：`desktop_capability_snapshot` 对无直达路线但链可达且链上引擎齐备的目标标记 available（message 注明 Two-step conversion），preview 对 Unsupported 目标回落到链（preview 显示第一段 plan + chain 提示），运行走新命令 `run_desktop_chained_conversion`（`execute_conversion_chain` 每段独立验收，approved_plan_hash 与第一段 plan hash 强校验，不进 job 队列——queue 对链目标诚实拒绝）。CLI/server 的 snapshot 语义不变。e2e：xlsx→csv 与链式 xlsx→jpg（经 PDF 分页目录）真引擎全 Pass。
+
 ## 5. MP4 planning baseline
 
 Dynamic engine inspection remains authoritative, but the first planner fixture uses:

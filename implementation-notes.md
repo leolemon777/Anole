@@ -1306,3 +1306,70 @@ Left to Leo (manual): rename the checkout folder
 assume that path), and note the Windows user-level env overrides
 named FORMATWRIGHT_ENGINE_* are dead letters — repo scripts set
 ANOLE_ENGINE_* themselves, but any hand-made env should be renamed.
+
+## 2026-09-10 — Convert flow: no more auto-picked output format (Leo's third test wave)
+
+Leo's finding: dropping a file in locked the output format immediately
+("放了一个文件就直接定好了输出格式，那肯定是不行的") — an .xlsx
+landing auto-selected PDF with no user decision. Product rule now:
+choosing/entering an input file NEVER picks the target; the user
+selects the output format explicitly.
+
+Changes (frontend only, Rust untouched):
+
+1. `App.tsx selectInput` no longer seeds `target` from
+   `recommendedTargets(path)[0]`; it clears target/output path and
+   resets plan constraints. Same for manual input-path typing.
+2. `desktopModel.ts resolvePendingCapabilityTarget` lost its
+   auto-fallback (firstRecommended/firstAvailable) — the function now
+   only pins an explicit Explorer shell-convert target (T-UI-06 /
+   T-UI-12 semantics preserved: wanted route available → pin; missing
+   → clear pending, fail honestly, never jump). The unused
+   `inputPath` arg was removed; callers updated.
+3. Target `useState("webp")` → `useState("")`; both target selects
+   (convert form + preset editor) render a disabled placeholder
+   option (`targetPlaceholder`: "请选择输出格式…" / "Select an output
+   format…") so an empty value can't masquerade as the first format.
+4. Guard rails for the now-legal empty target: folder-batch preview
+   button and preset save button disable until a format is chosen
+   (both would otherwise ship an empty `targetFormat` to the backend).
+
+Deliberately unchanged: Explorer right-click "convert to X" and the
+empty-state starter cards still set their explicit target (that IS a
+user decision); the RECOMMENDED side panel still offers one-click
+suggestions; `changeTarget` still auto-fills the suggested output
+path.
+
+Verification: desktop vitest 29/29 (resolvePendingCapabilityTarget
+assertions rewritten: no-pending cases now expect `{target: null}`),
+`tsc -b` clean, `target/build-desktop.bat` → BUILD_OK (14.56s), new
+exe launched for Leo's hands-on check. The lone `linker_messages`
+warning is pre-existing (no Rust source touched).
+
+## 2026-09-10 — "PDF 失效" root cause: bare launch + dead env names in target/ bats
+
+Leo reported the sole xlsx target (pdf) showing as unavailable in the
+rebuilt exe. Two stacked causes, both local-artifact, zero product
+code involved:
+
+1. The exe had been launched bare (`start anole-desktop.exe`) — no
+   `ANOLE_ENGINE_*` in the environment. This machine's soffice lives
+   in `E:\DevCaches\LibreOffice` (never on PATH); the starter pack
+   only ships pdfinfo/pdftoppm, so the xlsx→pdf lane (soffice +
+   pdfinfo + pdftoppm) reported missing soffice. Proof: `anole doctor`
+   without env → `soffice: unavailable / not found`, with env →
+   `soffice: available`.
+2. `target/launch-desktop.bat`, `launch-desktop-gw13.bat` and
+   `run-cli.bat` still set `FORMATWRIGHT_ENGINE_*` — dead letters
+   after the rename (core reads only `ANOLE_ENGINE_*`, see
+   `doctor.rs configured_engine_path`), and run-cli also builds the
+   old `formatwright-cli` package name. The rename sed pass correctly
+   never touched untracked target/ artifacts; the exe-name update in
+   the launch bats missed the env names. Fixed the two launchers
+   (sed FORMATWRIGHT_ENGINE_ → ANOLE_ENGINE_); run-cli.bat is now
+   redundant (built anole-cli directly with inline MSVC env).
+
+Desktop restarted via the fixed `launch-desktop-gw13.bat` (full
+engine set). Lesson recorded for future sessions: always launch the
+debug exe through a launcher that sets `ANOLE_ENGINE_*`, or xlsx/pdf
+routes show missing-engine even though the build is fine.
