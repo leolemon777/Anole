@@ -70,6 +70,12 @@ export function recommendedTargets(path: string): string[] {
   return [];
 }
 
+// 分页目录输出的后缀：csv 全工作表导出与位图分页渲染语义不同，
+// 目录名分开便于用户辨认。
+function directorySuffix(normalized: string): string {
+  return normalized === "csv" ? "converted-csv-sheets" : `converted-${normalized}-pages`;
+}
+
 export function suggestedOutput(input: string, target: string): string {
   if (!input || !target) return "";
   const normalized = target === "jpeg" ? "jpg" : target;
@@ -79,7 +85,7 @@ export function suggestedOutput(input: string, target: string): string {
   const dot = filename.lastIndexOf(".");
   const stem = dot > 0 ? filename.slice(0, dot) : filename;
   if (isDirectoryOutput(input, target)) {
-    return `${directory}${stem}.converted-${normalized}-pages`;
+    return `${directory}${stem}.${directorySuffix(normalized)}`;
   }
   return `${directory}${stem}.converted.${normalized}`;
 }
@@ -290,17 +296,17 @@ export function suggestedConvertedName(
   const normalized = target === "jpeg" ? "jpg" : target;
   const { directory, stem, ext } = pathStemAndExt(input);
   const first = isDirectoryOutput(input, normalized)
-    ? `${directory}${stem}.converted-${normalized}-pages`
+    ? `${directory}${stem}.${directorySuffix(normalized)}`
     : `${directory}${stem}.converted.${normalized}`;
   if (!reserved.includes(first)) return first;
   const second = isDirectoryOutput(input, normalized)
-    ? `${directory}${stem}.from-${ext}.converted-${normalized}-pages`
+    ? `${directory}${stem}.from-${ext}.${directorySuffix(normalized)}`
     : `${directory}${stem}.from-${ext}.converted.${normalized}`;
   if (!reserved.includes(second)) return second;
   let index = 2;
   while (true) {
     const candidate = isDirectoryOutput(input, normalized)
-      ? `${directory}${stem}.from-${ext}-${index}.converted-${normalized}-pages`
+      ? `${directory}${stem}.from-${ext}-${index}.${directorySuffix(normalized)}`
       : `${directory}${stem}.from-${ext}-${index}.converted.${normalized}`;
     if (!reserved.includes(candidate)) return candidate;
     index += 1;

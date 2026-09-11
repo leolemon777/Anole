@@ -1044,7 +1044,10 @@ fn content_disposition(download_name: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => {
                 encoded.push(byte as char);
             }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
