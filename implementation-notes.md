@@ -1455,3 +1455,38 @@ no-fail-fast (baseline: 4 known Windows symlink-reparse failures only),
 desktop 43/43, server 24/24, frontend 29/29, web SPA tsc+build, e2e:
 two-sheet xlsx→csv zero-engine Pass. Desktop exe rebuild + relaunch
 pending at commit time (noted below if deferred).
+
+## 2026-09-11 — Output-conflict UX: the four fixes behind the screenshot
+
+Leo's screenshot (OUTPUT_CONFLICT at commit, CJK message wrapped one
+character per line, English recovery line) decomposed into one working
+guard + three real defects. All fixed in c0b0585:
+
+1. Early warning instead of late refusal: output suggestions now walk
+   `suggestedConvertedName` against the FILESYSTEM (new tauri command
+   `desktop_path_exists`) so the suggested name is the first free one;
+   a `suggestionSeq` ref prevents rapid target switches from writing
+   stale paths; users who typed their own path keep it but see a yellow
+   `capability-warn` notice the moment their output path exists — the
+   conflict surfaces at selection time, not after a wasted run.
+2. Banner layout root cause: `.error-banner` is `42px 1fr` grid and its
+   `::before` "!" bubble auto-places into column 1, so with three text
+   children (title/message/recovery) the message span landed in the
+   42px column — CJK wraps per character and reads vertically. All text
+   children are now pinned to column 2 (`min-width: 0`).
+3. `localizeDesktopError` gained an OUTPUT_CONFLICT branch with a
+   Chinese `outputExistsRecovery`; the English backend action no longer
+   leaks into the banner.
+4. The banner shows `errorContext` (input → target) when an input is
+   loaded, so a conflict is attributable even mid-flow.
+
+Local-tool trap duplicated: clippy via bash-exported LIB hit flaky
+LNK1104/LNK1181 ("msvcrt.lib not found") while the identical env in a
+cmd .bat passed clean — the bash export of quoted Windows paths is not
+a reliable carrier for the MSVC env on this machine; use the bat
+helpers (target/build-desktop.bat pattern) for cargo invocations, or
+expect phantom linker errors. Temp bat deleted after use.
+
+Verification: vitest 30/30 (new OUTPUT_CONFLICT localization test),
+tsc clean, desktop clippy 0 (bat env), fmt clean, exe rebuilt +
+relaunched; CI tri-platform green (run 34572528755).
