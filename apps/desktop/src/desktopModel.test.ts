@@ -37,6 +37,7 @@ describe("desktop workflow model", () => {
     expect(recommendedTargets("C:\\photos\\image.heic")).toEqual(["jpg", "png"]);
     expect(recommendedTargets("report.pdf")).toEqual(["png", "jpg", "md"]);
     expect(recommendedTargets("report.docx")).toEqual(["pdf"]);
+    expect(recommendedTargets("budget.xlsx")).toEqual(["pdf", "csv"]);
     expect(recommendedTargets("notes.md")).toEqual(["pdf", "docx"]);
     expect(recommendedTargets("inbox.eml")).toEqual(["md"]);
     expect(recommendedTargets("archive.mbox")).toEqual(["md"]);
@@ -49,6 +50,16 @@ describe("desktop workflow model", () => {
     expect(suggestedOutput("C:\\in\\report.pdf", "png")).toBe(
       "C:\\in\\report.converted-png-pages",
     );
+    // 链式位图目标（如 xlsx→pdf→png）的末段同样是分页目录输出。
+    expect(isDirectoryOutput("C:\\in\\budget.xlsx", "png")).toBe(true);
+    expect(suggestedOutput("C:\\in\\budget.xlsx", "png")).toBe(
+      "C:\\in\\budget.converted-png-pages",
+    );
+    // 相机/图像族输入直达单文件位图，不是目录。
+    expect(isDirectoryOutput("C:\\in\\photo.heic", "jpg")).toBe(false);
+    expect(isDirectoryOutput("C:\\in\\scan.tiff", "png")).toBe(false);
+    // 非位图目标不受影响。
+    expect(isDirectoryOutput("C:\\in\\budget.xlsx", "csv")).toBe(false);
   });
 
   it("builds a non-overwriting suggested output", () => {
@@ -182,7 +193,7 @@ describe("target option views", () => {
     expect(audioTrackApplies("C:\\music\\song.flac", "mp3")).toBe(false);
   });
 
-  it("pins a pending shell-convert target and fails honestly when that route is missing", () => {
+  it("pins a pending shell-convert target and never auto-picks for a plain selectInput", () => {
     const routes = {
       png: { available: true, target_format: "png" },
       jpg: { available: true, target_format: "jpg" },
@@ -192,7 +203,6 @@ describe("target option views", () => {
       resolvePendingCapabilityTarget({
         pendingWanted: "png",
         currentTarget: "jpg",
-        inputPath: "C:\\\\in\\\\manual.pdf",
         routes,
       }),
     ).toEqual({ target: "png", clearPending: false });
@@ -200,7 +210,6 @@ describe("target option views", () => {
       resolvePendingCapabilityTarget({
         pendingWanted: "webp",
         currentTarget: "webp",
-        inputPath: "C:\\\\in\\\\manual.pdf",
         routes,
       }),
     ).toEqual({ target: null, clearPending: true });
@@ -208,10 +217,16 @@ describe("target option views", () => {
       resolvePendingCapabilityTarget({
         pendingWanted: null,
         currentTarget: "mp4",
-        inputPath: "C:\\\\in\\\\manual.pdf",
         routes,
       }),
-    ).toEqual({ target: "png", clearPending: false });
+    ).toEqual({ target: null, clearPending: false });
+    expect(
+      resolvePendingCapabilityTarget({
+        pendingWanted: null,
+        currentTarget: "",
+        routes,
+      }),
+    ).toEqual({ target: null, clearPending: false });
   });
 
   it("keeps the JSON empty-state card available and greys PDF/video from probe routes", () => {

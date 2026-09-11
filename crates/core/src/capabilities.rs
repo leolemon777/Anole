@@ -202,7 +202,10 @@ pub(crate) fn supported_targets(input: Option<&str>) -> BTreeSet<&'static str> {
         "heic" | "heif" => &["jpg", "png"],
         "docx" => &["pdf", "txt", "md", "html", "epub", "odt"],
         "odt" => &["pdf", "docx"],
-        "pptx" | "xlsx" | "ods" | "odp" | "rtf" | "svg" => &["pdf"],
+        // xlsx 的数据出口：soffice 导出激活 sheet 为 csv（多 sheet 会丢弃，
+        // 见 plan 的 dropped 声明）。老 xls 仍不支持。
+        "xlsx" => &["pdf", "csv"],
+        "pptx" | "ods" | "odp" | "rtf" | "svg" => &["pdf"],
         "html" | "htm" => &["pdf", "docx", "epub", "md"],
         "md" | "markdown" | "txt" | "text" => &["pdf", "docx", "epub"],
         "zip" => &["tar.gz", "7z"],
@@ -291,6 +294,10 @@ pub(crate) fn required_engines(input: Option<&str>, target: &str) -> Vec<String>
     }
     if input == "docx" && matches!(target.as_str(), "txt" | "md" | "html" | "epub") {
         return engine_names(&["pandoc"]);
+    }
+    // xlsx 数据导出只需要 soffice；csv 验收是内置解析，不依赖 Poppler。
+    if input == "xlsx" && target == "csv" {
+        return engine_names(&["soffice"]);
     }
     if matches!(input, "html" | "htm") && target == "md" {
         return engine_names(&["pandoc"]);

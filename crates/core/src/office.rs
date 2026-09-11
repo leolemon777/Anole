@@ -397,6 +397,227 @@ pub fn plan_office_document_exchange(
     Ok(plan)
 }
 
+/// Plans a macro-disabled `LibreOffice` XLSX data export to CSV.
+///
+/// `LibreOffice` 的 CSV filter 只导出激活的工作表（通常为第一张），
+/// 公式以计算值写出——这些限制在 `dropped`/`changed` 里如实声明。
+///
+/// # Errors
+///
+/// Returns a planning error for non-XLSX input or a wrong engine.
+pub fn plan_office_csv_export(
+    probe: &Probe,
+    output_path: std::path::PathBuf,
+    soffice: &EngineIdentity,
+) -> Result<Plan> {
+    if probe.format.id != "xlsx" {
+        return Err(unsupported(
+            "Office CSV export requires XLSX spreadsheet input",
+        ));
+    }
+    if soffice.engine_id != "soffice" {
+        return Err(AnoleError::new(
+            ErrorCode::EngineIncompatible,
+            Stage::Plan,
+            "Office CSV export Plan was given an incorrect engine",
+            "Run doctor and use soffice.",
+        ));
+    }
+    let conversion = PlanStep {
+        step_id: "step-1".to_owned(),
+        capability_id: "libreoffice.xlsx-to-csv.headless".to_owned(),
+        engine: soffice.clone(),
+        operation: Operation::Transform,
+        loss_class: LossClass::Unknown,
+        arguments: BTreeMap::from([
+            ("source_format".to_owned(), "xlsx".to_owned()),
+            ("target_format".to_owned(), "csv".to_owned()),
+            ("sheet".to_owned(), "active".to_owned()),
+            ("headless".to_owned(), "true".to_owned()),
+            ("isolated_profile".to_owned(), "true".to_owned()),
+            ("macros".to_owned(), "disabled".to_owned()),
+            ("external_resources".to_owned(), "deny".to_owned()),
+        ]),
+        estimated_temporary_bytes: Some(probe.artifact.size_bytes.saturating_mul(8)),
+    };
+    let mut plan = Plan {
+        schema_version: SCHEMA_VERSION,
+        plan_id: Uuid::new_v4(),
+        plan_hash: String::new(),
+        input_fingerprint: probe.artifact.fast_fingerprint.clone(),
+        target_format: "csv".to_owned(),
+        constraints: BTreeMap::from([
+            ("network".to_owned(), json!("deny")),
+            ("macros".to_owned(), json!("disabled")),
+            ("external_resources".to_owned(), json!("deny")),
+            ("isolated_user_profile".to_owned(), json!(true)),
+            ("worksheet".to_owned(), json!("active sheet only")),
+        ]),
+        steps: vec![conversion],
+        changes: ChangeSet {
+            preserved: vec![
+                "cell values of the active worksheet supported by LibreOffice".to_owned(),
+                "row order produced by the isolated office converter".to_owned(),
+            ],
+            changed: vec![
+                "formulas are written as their computed values".to_owned(),
+                "cell styling, number formats, and multi-sheet structure are flattened to text"
+                    .to_owned(),
+            ],
+            dropped: vec![
+                "worksheets other than the active one".to_owned(),
+                "macros and interactive behavior".to_owned(),
+            ],
+            unknown: vec!["locale-dependent number and date text formatting".to_owned()],
+        },
+        validators: vec![
+            "office.csv-opens".to_owned(),
+            "office.csv-rows-present".to_owned(),
+        ],
+        network_policy: NetworkPolicy::Deny,
+        output_path: Some(output_path),
+        estimated_output_bytes: None,
+    };
+    plan.plan_hash = deterministic_plan_hash(&plan)?;
+    Ok(plan)
+}
+
+/// Validation for the XLSX → CSV export: the output must re-open as UTF-8
+/// CSV with at least one row and one field. 宽松解析（无表头约束）——
+/// `LibreOffice` 导出的首行可能是数据而非列名。
+pub(crate) fn validate_office_csv_output(
+    input: &Probe,
+    output: &Probe,
+    plan: &Plan,
+    job_id: Uuid,
+) -> ValidationReport {
+    let path = &output.artifact.canonical_path;
+    let (rows, max_fields, parse_error) = match count_csv_rows(path) {
+        Ok(values) => (values.0, values.1, None),
+        Err(error) => (0, 0, Some(error.clone())),
+    };
+    let parses = parse_error.is_none();
+    let rows_present = parses && rows >= 1;
+    let fields_present = parses && max_fields >= 1;
+    let checks = vec![
+        check(
+            "OFFICE_CSV_OPENS",
+            status(parses),
+            true,
+            json!("utf-8 csv re-parse"),
+            json!(parse_error.unwrap_or_else(|| "parsed".to_owned())),
+            "Lenient CSV reader re-opened the complete export.",
+        ),
+        check(
+            "OFFICE_CSV_ROWS_PRESENT",
+            status(rows_present),
+            true,
+            json!(">= 1 row"),
+            json!(rows),
+            "Row inventory of the exported active worksheet.",
+        ),
+        check(
+            "OFFICE_CSV_FIELDS_PRESENT",
+            status(fields_present),
+            true,
+            json!(">= 1 field"),
+            json!(max_fields),
+            "Widest row of the exported active worksheet.",
+        ),
+    ];
+    let report_status = checks
+        .iter()
+        .fold(ValidationStatus::Pass, |current, check| {
+            current.worst(check.status)
+        });
+    ValidationReport {
+        schema_version: SCHEMA_VERSION,
+        report_id: Uuid::new_v4(),
+        job_id,
+        plan_hash: plan.plan_hash.clone(),
+        status: report_status,
+        input: artifact_summary(input),
+        output: artifact_summary(output),
+        engines: plan.steps.iter().map(|step| step.engine.clone()).collect(),
+        checks,
+        intentional_changes: plan.changes.changed.clone(),
+        redaction: ReportRedaction {
+            paths_redacted: false,
+            metadata_values_redacted: true,
+        },
+    }
+}
+
+/// 宽松 CSV 计数：无表头语义、允许行间列数差异。返回 (行数, 最宽行字段数)。
+fn count_csv_rows(path: &Path) -> std::result::Result<(usize, usize), String> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_path(path)
+        .map_err(|error| error.to_string())?;
+    let mut rows = 0_usize;
+    let mut max_fields = 0_usize;
+    for record in reader.records() {
+        let record = record.map_err(|error| error.to_string())?;
+        rows += 1;
+        max_fields = max_fields.max(record.len());
+    }
+    Ok((rows, max_fields))
+}
+
+/// `LibreOffice` 写出的 CSV 输出 probe：Data 族格式描述 + 行/字段统计，
+/// 供验收报告的 artifact 摘要使用。
+pub(crate) async fn csv_output_probe(path: &Path) -> Result<Probe> {
+    let artifact = identify_artifact(path).await?;
+    let (rows, max_fields) = count_csv_rows(path).map_err(|error| {
+        AnoleError::new(
+            ErrorCode::ValidationFailed,
+            Stage::Validate,
+            format!("Converted CSV cannot be re-read: {error}"),
+            "Inspect the validation report and adjust the source.",
+        )
+    })?;
+    Ok(Probe {
+        schema_version: SCHEMA_VERSION,
+        artifact,
+        format: FormatDescriptor {
+            id: "csv".to_owned(),
+            kind: FormatKind::Data,
+            mime_type: Some("text/csv".to_owned()),
+            container: None,
+            extension_matches: Some(true),
+            confidence: 0.9,
+        },
+        streams: vec![StreamProbe {
+            index: 0,
+            kind: StreamKind::RecordSet,
+            codec: None,
+            language: None,
+            duration_seconds: None,
+            width: None,
+            height: None,
+            frame_rate: None,
+            sample_rate: None,
+            channels: None,
+            properties: BTreeMap::from([
+                ("record_count".to_owned(), json!(rows.saturating_sub(1))),
+                ("max_fields".to_owned(), json!(max_fields)),
+                ("encoding".to_owned(), json!("utf-8")),
+                ("delimiter".to_owned(), json!(",")),
+            ]),
+        }],
+        metadata: BTreeMap::new(),
+        warnings: Vec::new(),
+        evidence: ProbeEvidence {
+            engine_id: "anole.office-csv".to_owned(),
+            engine_version: env!("CARGO_PKG_VERSION").to_owned(),
+            engine_binary_sha256: None,
+        },
+        duration_seconds: None,
+        bit_rate: None,
+    })
+}
+
 /// Structural validation for DOCX/ODF exchange output: the package must open
 /// as a ZIP, present its container-specific required parts, and be detected
 /// as the requested target family. 不依赖 Poppler（PDF 专用工具链）。
@@ -1242,6 +1463,104 @@ mod tests {
             &engine("pdftoppm"),
         );
         assert!(plan.is_ok(), "RTF plans through the office lane");
+    }
+
+    fn write_xlsx(path: &std::path::Path) {
+        let file = std::fs::File::create(path).expect("create xlsx");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        writer
+            .start_file("[Content_Types].xml", options)
+            .expect("content types");
+        std::io::Write::write_all(&mut writer, b"<Types/>").expect("content types XML");
+        writer.start_file("_rels/.rels", options).expect("rels");
+        std::io::Write::write_all(&mut writer, b"<Relationships/>").expect("rels XML");
+        writer
+            .start_file("xl/workbook.xml", options)
+            .expect("workbook part");
+        std::io::Write::write_all(&mut writer, b"<workbook/>").expect("workbook XML");
+        writer.finish().expect("finish xlsx");
+    }
+
+    #[tokio::test]
+    async fn xlsx_csv_export_plan_declares_worksheet_limits() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let xlsx = directory.path().join("budget.xlsx");
+        write_xlsx(&xlsx);
+        let probe = inspect_office(&xlsx).await.expect("xlsx inspection");
+        assert_eq!(probe.format.id, "xlsx");
+        let plan = super::plan_office_csv_export(
+            &probe,
+            directory.path().join("out.csv"),
+            &engine("soffice"),
+        )
+        .expect("csv export plan");
+        assert_eq!(plan.target_format, "csv");
+        assert_eq!(
+            plan.steps[0].arguments.get("sheet").map(String::as_str),
+            Some("active")
+        );
+        assert!(
+            plan.changes
+                .dropped
+                .iter()
+                .any(|item| item.contains("worksheets other than the active")),
+            "multi-sheet drop is declared honestly"
+        );
+        // 非 xlsx 输入与非 soffice 引擎都要拒绝。
+        let docx = directory.path().join("letter.docx");
+        write_docx(&docx);
+        let docx_probe = inspect_office(&docx).await.expect("docx inspection");
+        assert!(
+            super::plan_office_csv_export(
+                &docx_probe,
+                PathBuf::from("out.csv"),
+                &engine("soffice")
+            )
+            .is_err()
+        );
+        assert!(
+            super::plan_office_csv_export(&probe, PathBuf::from("out.csv"), &engine("pandoc"))
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn csv_output_validation_requires_rows_and_fields() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let xlsx = directory.path().join("budget.xlsx");
+        write_xlsx(&xlsx);
+        let input_probe = inspect_office(&xlsx).await.expect("xlsx inspection");
+        let plan = super::plan_office_csv_export(
+            &input_probe,
+            directory.path().join("out.csv"),
+            &engine("soffice"),
+        )
+        .expect("csv export plan");
+
+        // LibreOffice 导出的首行可能就是数据而非表头：宽松解析必须 Pass。
+        let good = directory.path().join("good.csv");
+        std::fs::write(&good, "ELECTRIC,440,7700\nBOLT,2,10\n").expect("write csv");
+        let good_probe = super::csv_output_probe(&good).await.expect("csv probe");
+        let report = super::validate_office_csv_output(
+            &input_probe,
+            &good_probe,
+            &plan,
+            uuid::Uuid::new_v4(),
+        );
+        assert_eq!(report.status, crate::domain::ValidationStatus::Pass);
+
+        // 空导出（0 行）必须 Fail。
+        let empty = directory.path().join("empty.csv");
+        std::fs::write(&empty, b"").expect("write empty csv");
+        let empty_probe = super::csv_output_probe(&empty).await.expect("empty probe");
+        let empty_report = super::validate_office_csv_output(
+            &input_probe,
+            &empty_probe,
+            &plan,
+            uuid::Uuid::new_v4(),
+        );
+        assert_eq!(empty_report.status, crate::domain::ValidationStatus::Fail);
     }
 
     fn engine(id: &str) -> EngineIdentity {

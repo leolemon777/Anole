@@ -24,7 +24,8 @@ use anole_core::{
     SelectionSnapshot, ShellVerbBinding, SignatureTrust, SqliteJobStore, StagedCleanupReport,
     StateBundleBackupReport, StateBundleOptions, StateBundlePreflightReport,
     SupplyChainReviewStatus, ValidationReport, VerifiedEnginePack, activate_engine_pack,
-    capability_snapshot_for_input, cleanup_staged_output, prepare_conversion,
+    capability_snapshot_for_input, cleanup_staged_output, execute_conversion_chain,
+    find_conversion_chain, inspect_engine, prepare_conversion,
 };
 use queue_bridge::{DEFAULT_BATCH_JOBS, DEFAULT_BENCHMARK_JOBS, QueueBatchIter};
 use serde::{Deserialize, Serialize};
@@ -366,6 +367,17 @@ impl DesktopConversionRequest {
 struct DesktopPreview {
     probe: Probe,
     plan: Plan,
+    /// 两跳链（如 xlsx → pdf → jpg）时的 hop 序列；直连转换为 `None`。
+    /// 链式 preview 的 `plan` 是第一段的 Plan（第二段要等中间文件落盘才能构建）。
+    chain: Option<Vec<String>>,
+}
+
+/// 链式立即转换的结果：每段各自验收，报告以末段为准（与 CLI 链语义一致，
+/// 不进 job 队列）。
+#[derive(Clone, Debug, Serialize)]
+struct DesktopChainedRunResult {
+    report: ValidationReport,
+    chain: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -451,7 +463,53 @@ async fn desktop_doctor() -> DoctorReport {
 
 #[tauri::command]
 async fn desktop_capability_snapshot(input_path: PathBuf) -> CapabilitySnapshot {
-    capability_snapshot_for_input(&input_path, EngineDiscoveryPolicy::for_current_build()).await
+    let mut snapshot =
+        capability_snapshot_for_input(&input_path, EngineDiscoveryPolicy::for_current_build())
+            .await;
+    enhance_snapshot_with_chains(&mut snapshot, &input_path).await;
+    snapshot
+}
+
+/// GUI-only 增强：无直达路线但两跳链可达的目标显示为可选（链上引擎齐备时），
+/// 并把链描述写进 message。CLI 与 server 的 snapshot 语义保持不变。
+async fn enhance_snapshot_with_chains(snapshot: &mut CapabilitySnapshot, input: &Path) {
+    let targets = snapshot.routes.keys().cloned().collect::<Vec<_>>();
+    for target in targets {
+        if snapshot.routes[&target].available {
+            continue;
+        }
+        let Some(chain) = find_conversion_chain(input, &target) else {
+            continue;
+        };
+        let mut engines = std::collections::BTreeSet::new();
+        for hop in chain.hops() {
+            engines.extend(hop.required_engines.iter().cloned());
+        }
+        let engines = engines.into_iter().collect::<Vec<_>>();
+        let mut missing = Vec::new();
+        for engine in &engines {
+            if inspect_engine(engine).await.is_err() {
+                missing.push(engine.clone());
+            }
+        }
+        let route = snapshot
+            .routes
+            .get_mut(&target)
+            .expect("target key came from the snapshot itself");
+        route.required_engines = engines;
+        if missing.is_empty() {
+            route.available = true;
+            route.missing_engines.clear();
+            route.message = format!("Two-step conversion: {}.", chain.description());
+        } else {
+            route.missing_engines = missing.clone();
+            route.message = format!(
+                "Two-step conversion {} still needs: {}.",
+                chain.description(),
+                missing.join(", ")
+            );
+        }
+    }
 }
 
 #[tauri::command]
@@ -517,10 +575,129 @@ async fn list_imported_engine_packs(
 
 #[tauri::command]
 async fn preview_conversion(request: DesktopConversionRequest) -> Result<DesktopPreview, String> {
-    let (probe, plan, _) = prepare_conversion(&request.input_path, &request.plan_request())
+    match prepare_conversion(&request.input_path, &request.plan_request()).await {
+        Ok((probe, plan, _)) => Ok(DesktopPreview {
+            probe,
+            plan,
+            chain: None,
+        }),
+        Err(error) => {
+            if error.code != anole_core::ErrorCode::Unsupported {
+                return Err(serialize_error(error));
+            }
+            let Some(chain) = find_conversion_chain(&request.input_path, &request.target_format)
+            else {
+                return Err(serialize_error(error));
+            };
+            preview_conversion_chain(&request, &chain).await
+        }
+    }
+}
+
+/// 链式 preview：构建第一段 Plan（中间文件放输出同目录的隐藏 staging，
+/// 与执行期路径规则一致），第二段在执行时惰性构建。
+async fn preview_conversion_chain(
+    request: &DesktopConversionRequest,
+    chain: &anole_core::ConversionChain,
+) -> Result<DesktopPreview, String> {
+    let first_target = chain
+        .hops()
+        .first()
+        .map(|hop| hop.to.clone())
+        .ok_or_else(|| "empty conversion chain".to_owned())?;
+    let staging = chain_first_hop_output(&request.output_path, &first_target);
+    let mut first_request = request.plan_request();
+    first_request.target_format = first_target;
+    first_request.output_path = Some(staging);
+    let (probe, plan, _) = prepare_conversion(&request.input_path, &first_request)
         .await
         .map_err(serialize_error)?;
-    Ok(DesktopPreview { probe, plan })
+    let hops = chain
+        .hops()
+        .iter()
+        .map(|hop| hop.to.clone())
+        .collect::<Vec<_>>();
+    Ok(DesktopPreview {
+        probe,
+        plan,
+        chain: Some(hops),
+    })
+}
+
+/// 链第一段的中间输出路径（仅 preview/审批 hash 用；执行期
+/// `execute_conversion_chain` 自己管理 staging）。后缀取 hop 目标，
+/// 便于 plan 校验目标扩展名。
+fn chain_first_hop_output(final_output: &Path, intermediate: &str) -> PathBuf {
+    let file_name = final_output
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("chain-input");
+    let directory = final_output
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    directory.join(format!(".{file_name}.chain-preview.{intermediate}"))
+}
+
+#[tauri::command]
+async fn run_desktop_chained_conversion(
+    request: DesktopConversionRequest,
+) -> Result<DesktopChainedRunResult, String> {
+    let chain =
+        find_conversion_chain(&request.input_path, &request.target_format).ok_or_else(|| {
+            serialize_error(anole_core::AnoleError::new(
+                anole_core::ErrorCode::Unsupported,
+                anole_core::Stage::Plan,
+                format!(
+                    "No direct or chained route: {} -> {}",
+                    request.input_path.display(),
+                    request.target_format
+                ),
+                "Choose a target shown as available.",
+            ))
+        })?;
+    // 审批一致性：approved hash 必须等于链第一段 plan 的 hash，保证
+    // preview 展示的内容与实际执行的第一段一致。
+    let first_target = chain
+        .hops()
+        .first()
+        .map(|hop| hop.to.clone())
+        .ok_or_else(|| "empty conversion chain".to_owned())?;
+    let mut first_request = request.plan_request();
+    first_request.target_format = first_target.clone();
+    first_request.output_path = Some(chain_first_hop_output(&request.output_path, &first_target));
+    let (_, first_plan, _) = prepare_conversion(&request.input_path, &first_request)
+        .await
+        .map_err(serialize_error)?;
+    if let Some(approved) = request.approved_plan_hash.as_deref()
+        && approved != first_plan.plan_hash
+    {
+        return Err(serialize_error(anole_core::AnoleError::new(
+            anole_core::ErrorCode::InputChanged,
+            anole_core::Stage::Plan,
+            "The approved chained plan no longer matches the input",
+            "Preview the plan again, then run.",
+        )));
+    }
+    let cancellation = CancellationToken::new();
+    let chain_job_id = Uuid::new_v4();
+    let result = execute_conversion_chain(
+        &request.input_path,
+        &request.plan_request(),
+        &chain,
+        chain_job_id,
+        cancellation,
+    )
+    .await
+    .map_err(serialize_error)?;
+    let hops = chain
+        .hops()
+        .iter()
+        .map(|hop| hop.to.clone())
+        .collect::<Vec<_>>();
+    Ok(DesktopChainedRunResult {
+        report: result.report,
+        chain: hops,
+    })
 }
 
 async fn prepare_approved_desktop_conversion(
@@ -598,7 +775,22 @@ async fn queue_desktop_conversion(
     request: DesktopConversionRequest,
 ) -> Result<JobRecord, String> {
     let _operation = acquire_active_operation(&state.operation_gate)?;
-    let (probe, plan, _) = prepare_approved_desktop_conversion(&request).await?;
+    let (probe, plan, _) = match prepare_approved_desktop_conversion(&request).await {
+        Ok(prepared) => prepared,
+        Err(message) => {
+            // 链式目标诚实拒绝：链式只支持立即转换（每段惰性 plan，
+            // 无法持久化为单个队列 job）。
+            if find_conversion_chain(&request.input_path, &request.target_format).is_some() {
+                return Err(serialize_error(anole_core::AnoleError::new(
+                    anole_core::ErrorCode::Unsupported,
+                    anole_core::Stage::Plan,
+                    "Chained conversions run immediately and cannot be queued",
+                    "Use Convert now; queue each step separately if needed.",
+                )));
+            }
+            return Err(message);
+        }
+    };
     let job = {
         let mut store = lock(&state.store)?;
         if let Some(key) = request.idempotency_key.as_deref() {
@@ -3121,6 +3313,7 @@ pub fn run() {
             list_imported_engine_packs,
             preview_conversion,
             run_desktop_conversion,
+            run_desktop_chained_conversion,
             queue_desktop_conversion,
             preview_desktop_folder_batch,
             queue_desktop_folder_batch,

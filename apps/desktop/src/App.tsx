@@ -79,7 +79,7 @@ type Plan = {
   constraints: JsonMap;
 };
 
-type Preview = { probe: Probe; plan: Plan };
+type Preview = { probe: Probe; plan: Plan; chain?: string[] | null };
 
 type ValidationCheck = {
   code: string;
@@ -395,7 +395,7 @@ export default function App() {
   const [folderPreview, setFolderPreview] = useState<FolderPreview | null>(null);
   const [folderBusy, setFolderBusy] = useState<"preview" | "queue" | null>(null);
   const [outputPath, setOutputPath] = useState("");
-  const [target, setTarget] = useState("webp");
+  const [target, setTarget] = useState("");
   const [quality, setQuality] = useState("85");
   const [width, setWidth] = useState("");
   const [dpi, setDpi] = useState("144");
@@ -678,7 +678,6 @@ export default function App() {
         const decision = resolvePendingCapabilityTarget({
           pendingWanted: pendingShellConvert.current,
           currentTarget: target,
-          inputPath,
           routes: snapshot.routes,
         });
         if (decision.clearPending) {
@@ -716,11 +715,10 @@ export default function App() {
   }
 
   function selectInput(path: string) {
-    const recommended = recommendedTargets(path)[0] ?? "";
-    applyDefaultPlanConstraints(recommended);
+    applyDefaultPlanConstraints("");
     setInputPath(path);
-    setTarget(recommended);
-    setOutputPath(recommended ? suggestedOutput(path, recommended) : "");
+    setTarget("");
+    setOutputPath("");
     setPreview(null);
     setReport(null);
     setError(null);
@@ -954,10 +952,17 @@ export default function App() {
     setProgressClock(Date.now());
     setError(null);
     try {
-      const result = await invoke<{ job: JobRecord; report: ValidationReport }>(
-        "run_desktop_conversion",
-        { request: request(preview.plan.plan_hash) },
-      );
+      // 链式（如 xlsx→pdf→jpg）：preview 的 plan 是第一段，运行走专用
+      // 命令，每段独立验收，报告以末段为准。
+      const result = preview.chain
+        ? await invoke<{ report: ValidationReport; chain: string[] }>(
+            "run_desktop_chained_conversion",
+            { request: request(preview.plan.plan_hash) },
+          )
+        : await invoke<{ job: JobRecord; report: ValidationReport }>(
+            "run_desktop_conversion",
+            { request: request(preview.plan.plan_hash) },
+          );
       setReport(result.report);
       setActiveJobId(null);
       await notifyToast(copy.toastSuccess, result.report.output.display_path ?? outputPath);
@@ -1907,6 +1912,7 @@ export default function App() {
               {convertMode === "folder" && <div className="form-field wide"><label htmlFor="input-folder">{copy.inputFolder}</label><span className="path-control"><input id="input-folder" dir="auto" spellCheck={false} value={folderInputRoot} onChange={(event) => { setFolderInputRoot(event.target.value); setFolderPreview(null); }} placeholder="C:\\…\\source-folder" /><button className="secondary" type="button" onClick={() => chooseFolderRoot("input")}>{copy.chooseInputFolder}</button></span></div>}
               {convertMode === "folder" && <div className="form-field wide"><label htmlFor="output-folder">{copy.outputFolder}</label><span className="path-control"><input id="output-folder" dir="auto" spellCheck={false} value={folderOutputRoot} onChange={(event) => { setFolderOutputRoot(event.target.value); setFolderPreview(null); }} placeholder="C:\\…\\output-folder" /><button className="secondary" type="button" onClick={() => chooseFolderRoot("output")}>{copy.chooseOutputFolder}</button></span></div>}
               <label>{copy.target}<select value={target} onChange={(event) => changeTarget(event.target.value)} disabled={convertMode === "file" && capabilityBusy}>
+                <option value="" disabled>{copy.targetPlaceholder}</option>
                 {targetOptions.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
               </select></label>
               {qualityFieldApplies(target) && <label>{copy.quality}<input type="number" min="1" max="100" value={quality} onChange={(event) => { setQuality(event.target.value); setPreview(null); }} /></label>}
@@ -1930,9 +1936,9 @@ export default function App() {
             <div className="action-row">
               {convertMode === "file" && <button className="secondary" type="button" disabled={!inputPath || !outputPath || busy !== null || capabilityBusy || !routeAvailable} onClick={previewPlan}>{busy === "plan" ? copy.planning : copy.inspectPlan}</button>}
               {convertMode === "file" && <button className="primary" type="button" disabled={!preview || busy !== null || !routeAvailable} onClick={runConversion}>{busy === "run" ? copy.running : copy.run}</button>}
-              {convertMode === "file" && <button className="secondary" type="button" disabled={!preview || busy !== null || !routeAvailable} onClick={queueConversion}>{busy === "queue" ? copy.queueing : copy.queueOnly}</button>}
-              {convertMode === "file" && busy === "run" && <button className="danger" type="button" onClick={cancel}>{copy.cancel}</button>}
-              {convertMode === "folder" && <button className="secondary" type="button" disabled={!folderInputRoot || !folderOutputRoot || folderBusy !== null} onClick={previewFolderBatch}>{folderBusy === "preview" ? copy.planningFolder : copy.previewFolderMapping}</button>}
+              {convertMode === "file" && <button className="secondary" type="button" disabled={!preview || (preview.chain != null && preview.chain.length > 0) || busy !== null || !routeAvailable} title={preview?.chain ? copy.chainQueueUnsupported : undefined} onClick={queueConversion}>{busy === "queue" ? copy.queueing : copy.queueOnly}</button>}
+              {convertMode === "file" && busy === "run" && !preview?.chain && <button className="danger" type="button" onClick={cancel}>{copy.cancel}</button>}
+              {convertMode === "folder" && <button className="secondary" type="button" disabled={!folderInputRoot || !folderOutputRoot || !target || folderBusy !== null} onClick={previewFolderBatch}>{folderBusy === "preview" ? copy.planningFolder : copy.previewFolderMapping}</button>}
               {convertMode === "folder" && <button className="primary" type="button" disabled={!folderPreview || !folderPreview.disk_budget.sufficient || folderBusy !== null} onClick={queueFolderBatch}>{folderBusy === "queue" ? copy.queueingFolder : copy.queueFolderBatch}</button>}
             </div>
 
@@ -1957,6 +1963,7 @@ export default function App() {
               </section>
             )}
 
+            {convertMode === "file" && preview?.chain && <p className="typed-note" role="status">{copy.chainNotice.replace("{path}", preview.chain.join(" → "))}</p>}
             {convertMode === "file" && preview && <PlanView preview={preview} expert={expert} copy={copy} />}
             {convertMode === "folder" && folderPreview && <section className="folder-preview"><div className="plan-heading"><div><p className="section-label">MAPPING PREVIEW</p><h2>{folderPreview.planned.toLocaleString()} {copy.filesReady}</h2></div><span className={`loss ${folderPreview.disk_budget.sufficient ? "loss-safe" : "loss-lossy"}`}>{folderPreview.disk_budget.sufficient ? copy.diskReady : copy.diskInsufficient}</span></div><p>{copy.folderPreviewSummary}: {folderPreview.discovered.toLocaleString()} {copy.discovered} · {folderPreview.planned.toLocaleString()} {copy.planned} · {folderPreview.skipped.toLocaleString()} {copy.skipped} · {copy.diskRequired} {formatBytes(folderPreview.disk_budget.required_bytes)} / {copy.diskAvailable} {formatBytes(folderPreview.disk_budget.available_bytes)}</p><div className="mapping-list">{folderPreview.sample.map((entry) => <div key={entry.input_path}><bdi>{entry.relative_input_path}</bdi><strong>→</strong><bdi>{entry.output_path}</bdi></div>)}</div>{folderPreview.truncated && <p className="typed-note">{copy.mappingTruncated}</p>}<p className="typed-note">{copy.previewExpires}: {new Date(folderPreview.expires_unix_ms).toLocaleTimeString()}</p></section>}
           </div>
@@ -2043,8 +2050,8 @@ export default function App() {
           {presetNotice && <p className="success-notice" role="status" aria-live="polite">{presetNotice}</p>}
           <section className="preset-editor" aria-label={copy.presetEditor}>
             <div><p className="section-label">{editingPresetId ? copy.editPreset : copy.newPreset}</p><h2>{editingPresetId ? copy.editPreset : copy.saveCurrentSettings}</h2></div>
-            <div className="preset-fields"><label>{copy.presetName}<input maxLength={80} value={presetName} onChange={(event) => setPresetName(event.target.value)} /></label><label>{copy.target}<select value={target} onChange={(event) => changeTarget(event.target.value)}>{presetTargetOptions.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>{qualityFieldApplies(target) && <label>{copy.quality}<input type="number" min="1" max="100" value={quality} onChange={(event) => { setQuality(event.target.value); applyPresetField("quality"); }} /></label>}<label>{copy.width}<input type="number" min="1" max="16384" value={width} onChange={(event) => { setWidth(event.target.value); applyPresetField("width"); }} /></label><label>{copy.dpi}<input type="number" min="36" max="600" value={dpi} onChange={(event) => { setDpi(event.target.value); applyPresetField("dpi"); }} /></label><label>{copy.colorMode}<select value={colorMode} onChange={(event) => { setColorMode(event.target.value); applyPresetField("color-mode"); }}><option value="rgb">RGB</option><option value="gray">Gray</option></select></label>{videoKnobsApply(target) && <label>{copy.videoCrf}<input type="number" min="0" max="51" value={videoCrf} onChange={(event) => { setVideoCrf(event.target.value); applyPresetField("video-crf"); }} /></label>}{videoKnobsApply(target) && <label>{copy.videoPreset}<select value={videoPreset} onChange={(event) => { setVideoPreset(event.target.value); applyPresetField("video-preset"); }}><option value="">medium (default)</option><option value="ultrafast">ultrafast</option><option value="superfast">superfast</option><option value="veryfast">veryfast</option><option value="faster">faster</option><option value="fast">fast</option><option value="medium">medium</option><option value="slow">slow</option><option value="slower">slower</option><option value="veryslow">veryslow</option></select></label>}{audioBitrateApplies(target) && <label>{copy.audioBitrate}<input type="number" min="8" max="320" value={audioBitrate} onChange={(event) => { setAudioBitrate(event.target.value); applyPresetField("audio-bitrate"); }} /></label>}<label className="checkbox-control"><input type="checkbox" checked={preserveAllStreams} onChange={(event) => { setPreserveAllStreams(event.target.checked); applyPresetField("preserve-all-streams"); }} />{copy.preserveAllStreams}</label></div>
-            <div className="action-row"><button className="primary" type="button" disabled={presetBusy || presetName.trim().length === 0} onClick={savePreset}>{presetBusy ? copy.savingPreset : copy.savePreset}</button>{editingPresetId && <button className="secondary" type="button" onClick={resetPresetEditor}>{copy.cancelEdit}</button>}</div>
+            <div className="preset-fields"><label>{copy.presetName}<input maxLength={80} value={presetName} onChange={(event) => setPresetName(event.target.value)} /></label><label>{copy.target}<select value={target} onChange={(event) => changeTarget(event.target.value)}><option value="" disabled>{copy.targetPlaceholder}</option>{presetTargetOptions.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>{qualityFieldApplies(target) && <label>{copy.quality}<input type="number" min="1" max="100" value={quality} onChange={(event) => { setQuality(event.target.value); applyPresetField("quality"); }} /></label>}<label>{copy.width}<input type="number" min="1" max="16384" value={width} onChange={(event) => { setWidth(event.target.value); applyPresetField("width"); }} /></label><label>{copy.dpi}<input type="number" min="36" max="600" value={dpi} onChange={(event) => { setDpi(event.target.value); applyPresetField("dpi"); }} /></label><label>{copy.colorMode}<select value={colorMode} onChange={(event) => { setColorMode(event.target.value); applyPresetField("color-mode"); }}><option value="rgb">RGB</option><option value="gray">Gray</option></select></label>{videoKnobsApply(target) && <label>{copy.videoCrf}<input type="number" min="0" max="51" value={videoCrf} onChange={(event) => { setVideoCrf(event.target.value); applyPresetField("video-crf"); }} /></label>}{videoKnobsApply(target) && <label>{copy.videoPreset}<select value={videoPreset} onChange={(event) => { setVideoPreset(event.target.value); applyPresetField("video-preset"); }}><option value="">medium (default)</option><option value="ultrafast">ultrafast</option><option value="superfast">superfast</option><option value="veryfast">veryfast</option><option value="faster">faster</option><option value="fast">fast</option><option value="medium">medium</option><option value="slow">slow</option><option value="slower">slower</option><option value="veryslow">veryslow</option></select></label>}{audioBitrateApplies(target) && <label>{copy.audioBitrate}<input type="number" min="8" max="320" value={audioBitrate} onChange={(event) => { setAudioBitrate(event.target.value); applyPresetField("audio-bitrate"); }} /></label>}<label className="checkbox-control"><input type="checkbox" checked={preserveAllStreams} onChange={(event) => { setPreserveAllStreams(event.target.checked); applyPresetField("preserve-all-streams"); }} />{copy.preserveAllStreams}</label></div>
+            <div className="action-row"><button className="primary" type="button" disabled={presetBusy || presetName.trim().length === 0 || !target} onClick={savePreset}>{presetBusy ? copy.savingPreset : copy.savePreset}</button>{editingPresetId && <button className="secondary" type="button" onClick={resetPresetEditor}>{copy.cancelEdit}</button>}</div>
           </section>
           <div className="preset-list">{presets.length === 0 ? <p className="empty">{copy.noPresets}</p> : presets.map((preset) => <article key={preset.preset_id}><div><strong>{preset.name}</strong><small>{preset.target_format.toUpperCase()} · Q {preset.quality ?? "—"} · {preset.width ? `${preset.width}px` : copy.originalSize}</small></div><div className="preset-actions"><button type="button" onClick={() => applyPreset(preset)}>{copy.applyPreset}</button><button type="button" onClick={() => editPreset(preset)}>{copy.editPreset}</button><button className={pendingDeleteId === preset.preset_id ? "danger" : "secondary"} type="button" disabled={presetBusy} onClick={() => deletePreset(preset.preset_id)}>{pendingDeleteId === preset.preset_id ? copy.confirmDelete : copy.deletePreset}</button></div></article>)}</div>
         </section>

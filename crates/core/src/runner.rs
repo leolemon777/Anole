@@ -339,6 +339,18 @@ where
             )
             .await;
         }
+        if plan.target_format == "csv" {
+            return execute_office_csv_export(
+                input,
+                plan,
+                job_id,
+                cancellation,
+                &output_path,
+                &partial_path,
+                &mut observer,
+            )
+            .await;
+        }
         return execute_office_document_exchange(
             input,
             plan,
@@ -1057,6 +1069,256 @@ where
     }
     if let Err(error) = std::fs::remove_dir_all(partial_path) {
         tracing::warn!(partial = %partial_path.display(), %error, "committed Office document but could not clean workspace");
+    }
+    report.output.display_path = Some(output_path.to_string_lossy().into_owned());
+    Ok(ExecutionResult {
+        output_path: output_path.to_owned(),
+        report,
+    })
+}
+
+/// XLSX → CSV：soffice 隔离 profile 导出激活 sheet，内置宽松解析验收。
+/// 结构与 [`execute_office_document_exchange`] 同构，差异集中在 filter、
+/// 产物扩展名与验收器。
+#[allow(clippy::too_many_lines)]
+async fn execute_office_csv_export<F>(
+    input: &Probe,
+    plan: &Plan,
+    job_id: Uuid,
+    cancellation: CancellationToken,
+    output_path: &Path,
+    partial_path: &Path,
+    observer: &mut F,
+) -> Result<ExecutionResult>
+where
+    F: FnMut(ExecutionMilestone) -> Result<()>,
+{
+    let step = plan
+        .steps
+        .first()
+        .ok_or_else(|| invalid_plan_argument("Office CSV export step"))?;
+    checked_argument(step, "source_format", &["xlsx"])?;
+    checked_argument(step, "target_format", &["csv"])?;
+    checked_argument(step, "sheet", &["active"])?;
+    checked_argument(step, "headless", &["true"])?;
+    checked_argument(step, "isolated_profile", &["true"])?;
+    checked_argument(step, "macros", &["disabled"])?;
+    checked_argument(step, "external_resources", &["deny"])?;
+    std::fs::create_dir(partial_path).map_err(|error| {
+        AnoleError::new(
+            ErrorCode::StorageFailed,
+            Stage::Execute,
+            "Unable to create the staged Office workspace",
+            "Check destination permissions and storage health.",
+        )
+        .with_diagnostic(error.to_string())
+    })?;
+    let conversion_directory = partial_path.join("converted");
+    let profile_directory = partial_path.join("profile");
+    for directory in [&conversion_directory, &profile_directory] {
+        if let Err(error) = std::fs::create_dir(directory) {
+            cleanup_partial(partial_path);
+            return Err(AnoleError::new(
+                ErrorCode::StorageFailed,
+                Stage::Execute,
+                "Unable to create an isolated Office work directory",
+                "Check destination permissions and storage health.",
+            )
+            .with_diagnostic(error.to_string()));
+        }
+    }
+    let profile_url = match local_file_url(&profile_directory) {
+        Ok(url) => url,
+        Err(error) => {
+            cleanup_partial(partial_path);
+            return Err(error);
+        }
+    };
+    // LibreOffice 的 Calc CSV filter：只导出激活的工作表，公式写为计算值。
+    let filter = "csv:Text - txt - csv (StarCalc)";
+    let output_parent = output_path
+        .parent()
+        .ok_or_else(|| invalid_plan_argument("output parent"))?;
+    let office_input_path = external_process_path(&input.artifact.canonical_path);
+    let office_output_directory = external_process_path(&conversion_directory);
+    let office_current_directory = external_process_path(output_parent);
+    let office_engine_path = external_process_path(&step.engine.binary_path);
+    let mut command = Command::new(office_engine_path);
+    command
+        .current_dir(office_current_directory)
+        .arg(format!("-env:UserInstallation={profile_url}"))
+        .arg("--headless")
+        .arg("--nologo")
+        .arg("--nodefault")
+        .arg("--nolockcheck")
+        .arg("--norestore")
+        .arg("--convert-to")
+        .arg(filter)
+        .arg("--outdir")
+        .arg(&office_output_directory)
+        .arg(&office_input_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    tracing::info!(
+        job_id = %job_id,
+        input = %input.artifact.canonical_path.display(),
+        partial = %partial_path.display(),
+        "starting isolated Office CSV export"
+    );
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            cleanup_partial(partial_path);
+            return Err(AnoleError::new(
+                ErrorCode::EngineIncompatible,
+                Stage::Execute,
+                "Unable to start LibreOffice",
+                "Run doctor and verify the soffice installation.",
+            )
+            .with_diagnostic(error.to_string()));
+        }
+    };
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| invalid_plan_argument("LibreOffice stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| invalid_plan_argument("LibreOffice stderr"))?;
+    let stdout_task = tokio::spawn(read_bounded_tail(stdout, MAX_STDERR_BYTES));
+    let stderr_task = tokio::spawn(read_bounded_tail(stderr, MAX_STDERR_BYTES));
+    let status = tokio::select! {
+        status = child.wait() => status.map_err(|error| {
+            AnoleError::new(
+                ErrorCode::ExecutionFailed,
+                Stage::Execute,
+                "Unable to wait for LibreOffice",
+                "Retry the conversion.",
+            )
+            .with_diagnostic(error.to_string())
+        })?,
+        () = cancellation.cancelled() => {
+            terminate_process_tree(&mut child).await;
+            cleanup_partial(partial_path);
+            return Err(AnoleError::new(
+                ErrorCode::Cancelled,
+                Stage::Execute,
+                "Office conversion was cancelled",
+                "Retry when ready.",
+            ));
+        }
+    };
+    let stdout = stdout_task
+        .await
+        .unwrap_or_else(|error| format!("stdout reader failed: {error}"));
+    let stderr = stderr_task
+        .await
+        .unwrap_or_else(|error| format!("stderr reader failed: {error}"));
+    let diagnostic = format!("{stdout}\n{stderr}");
+    if !status.success() {
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::ExecutionFailed,
+            Stage::Execute,
+            format!("LibreOffice exited with status {status}"),
+            "Inspect the diagnostic and verify the Office document.",
+        )
+        .with_diagnostic(diagnostic));
+    }
+    let source_stem = input
+        .artifact
+        .canonical_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| invalid_plan_argument("Office input filename"))?;
+    let produced = conversion_directory.join(format!("{source_stem}.csv"));
+    let output_appeared =
+        wait_for_regular_file(&produced, &cancellation, std::time::Duration::from_secs(30)).await;
+    if cancellation.is_cancelled() {
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::Cancelled,
+            Stage::Execute,
+            "Office conversion was cancelled while waiting for converter output",
+            "Retry when ready.",
+        ));
+    }
+    if !output_appeared {
+        let observed_entries = std::fs::read_dir(&conversion_directory)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let detailed_diagnostic = format!(
+            "{diagnostic}\ninput={}\noutdir={}\nprofile={profile_url}\nentries={observed_entries:?}",
+            office_input_path.display(),
+            office_output_directory.display()
+        );
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::ExecutionFailed,
+            Stage::Execute,
+            "LibreOffice reported success but produced no expected CSV",
+            "Inspect the diagnostic and retry.",
+        )
+        .with_diagnostic(detailed_diagnostic));
+    }
+    if let Err(error) = observer(ExecutionMilestone::EngineFinished) {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    if cancellation.is_cancelled() {
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::Cancelled,
+            Stage::Validate,
+            "Office conversion was cancelled before validation",
+            "Retry when ready.",
+        ));
+    }
+    if let Err(error) = ensure_input_unchanged(input, Stage::Commit).await {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    let output_probe = match crate::office::csv_output_probe(&produced).await {
+        Ok(probe) => probe,
+        Err(error) => {
+            cleanup_partial(partial_path);
+            return Err(error);
+        }
+    };
+    let mut report = crate::office::validate_office_csv_output(input, &output_probe, plan, job_id);
+    if report.status == ValidationStatus::Fail {
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::ValidationFailed,
+            Stage::Validate,
+            "Office CSV export failed validation",
+            "Inspect the validation report and adjust the source.",
+        )
+        .with_diagnostic(serde_json::to_string(&report).unwrap_or_default()));
+    }
+    if output_path.exists() {
+        cleanup_partial(partial_path);
+        return Err(AnoleError::new(
+            ErrorCode::OutputConflict,
+            Stage::Commit,
+            "The CSV destination appeared while LibreOffice was running",
+            "Choose another output path.",
+        ));
+    }
+    if let Err(error) = commit_path_no_replace(&produced, output_path) {
+        cleanup_partial(partial_path);
+        return Err(error);
+    }
+    if let Err(error) = std::fs::remove_dir_all(partial_path) {
+        tracing::warn!(partial = %partial_path.display(), %error, "committed Office CSV but could not clean workspace");
     }
     report.output.display_path = Some(output_path.to_string_lossy().into_owned());
     Ok(ExecutionResult {

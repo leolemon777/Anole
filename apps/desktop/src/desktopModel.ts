@@ -57,7 +57,9 @@ export function recommendedTargets(path: string): string[] {
   if (["wav", "flac", "aac", "m4a", "ogg", "opus", "mp3"].includes(extension)) {
     return ["m4a", "mp3", "wav"];
   }
-  if (["docx", "pptx", "xlsx"].includes(extension)) return ["pdf"];
+  // xlsx 多了一个数据出口：soffice 导出激活 sheet 为 csv。
+  if (extension === "xlsx") return ["pdf", "csv"];
+  if (["docx", "pptx"].includes(extension)) return ["pdf"];
   if (["xls", "xlsm", "xlsb"].includes(extension)) return [];
   if (["md", "markdown", "html", "htm"].includes(extension)) return ["pdf", "docx"];
   if (extension === "pdf") return ["png", "jpg", "md"];
@@ -82,9 +84,20 @@ export function suggestedOutput(input: string, target: string): string {
   return `${directory}${stem}.converted.${normalized}`;
 }
 
+// 到 png/jpg 的位图输出什么时候是目录：pdf 输入分页渲染是目录；
+// 只有能直达单文件位图的输入（相机/图像族）是单文件；其余输入
+// （office、标记文档等）到 png/jpg 只能经 pdf 中转，末段同样是
+// 分页目录输出。
+const SINGLE_FILE_BITMAP_INPUTS: readonly string[] = [
+  "heic", "heif", "psd", "dng", "cr2", "cr3", "arw", "nef", "orf", "rw2", "pef", "raf",
+  "tiff", "tif", "bmp",
+];
+
 export function isDirectoryOutput(input: string, target: string): boolean {
-  const extension = input.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
-  return extension === "pdf" && ["png", "jpg", "jpeg"].includes(target.toLowerCase());
+  const normalized = target.toLowerCase();
+  if (!["png", "jpg", "jpeg"].includes(normalized)) return false;
+  const extension = pathStemAndExt(input).ext;
+  return !SINGLE_FILE_BITMAP_INPUTS.includes(extension);
 }
 
 export const SUPPORTED_TARGET_FORMATS: readonly string[] = [
@@ -202,29 +215,21 @@ export type PendingCapabilityDecision = {
 };
 
 // T-UI-06 / T-UI-12: while Explorer convert is pending, keep the approved
-// target. If that route is missing, fail honestly instead of jumping.
+// target. If that route is missing, fail honestly instead of jumping. A plain
+// selectInput never auto-picks a target — the user chooses the output format.
 export function resolvePendingCapabilityTarget(args: {
   pendingWanted: string | null;
   currentTarget: string;
-  inputPath: string;
   routes: Readonly<Record<string, TargetRouteAvailability & { target_format?: string }>>;
 }): PendingCapabilityDecision {
-  if (args.pendingWanted) {
-    const wanted = normalizeTargetFormat(args.pendingWanted);
-    if (args.routes[wanted]?.available) {
-      return { target: wanted, clearPending: false };
-    }
-    return { target: null, clearPending: true };
-  }
-  const current = normalizeTargetFormat(args.currentTarget);
-  if (args.routes[current]?.available) {
+  if (!args.pendingWanted) {
     return { target: null, clearPending: false };
   }
-  const firstRecommended = recommendedTargets(args.inputPath).find(
-    (candidate) => args.routes[candidate]?.available,
-  );
-  const firstAvailable = Object.values(args.routes).find((route) => route.available)?.target_format;
-  return { target: firstRecommended ?? firstAvailable ?? null, clearPending: false };
+  const wanted = normalizeTargetFormat(args.pendingWanted);
+  if (args.routes[wanted]?.available) {
+    return { target: wanted, clearPending: false };
+  }
+  return { target: null, clearPending: true };
 }
 
 export type EmptyStateCardId = "pdf-png" | "json-yaml" | "video-mp4";

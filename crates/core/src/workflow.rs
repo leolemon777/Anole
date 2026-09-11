@@ -38,6 +38,17 @@ pub async fn prepare_conversion(
         crate::doctor::EngineDiscoveryPolicy::for_current_build(),
     )
     .await?;
+    // XLSX 数据导出：soffice 导出激活 sheet 为 csv；必须在 structured
+    // 分支之前拦截（csv 是 structured target，但 xlsx 输入不是扁平数据）。
+    if normalized_target(&request.target_format) == "csv"
+        && office_format_hint(input)? == Some("xlsx")
+    {
+        let probe = inspect_office(input).await?;
+        let soffice = inspect_engine("soffice").await?;
+        let output = required_output(request, "Office CSV export")?;
+        let plan = crate::office::plan_office_csv_export(&probe, output, &soffice)?;
+        return Ok((probe, plan, soffice));
+    }
     if is_structured_target(&request.target_format) {
         let probe = inspect_structured(input).await?;
         let engine = inspect_builtin_engine("anole.structured").await?;
